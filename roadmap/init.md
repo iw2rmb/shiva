@@ -72,7 +72,7 @@ Legend: [ ] todo, [x] done.
   - Tests: Re-run existing resolver suite unchanged; add focused tests to ensure incremental path behavior is preserved
 
 ## Revision Processor Orchestration
-- [ ] Replace current `parent_sha == ""` short-circuit with bootstrap decision flow — current behavior directly causes missed initial discovery
+- [x] Replace current `parent_sha == ""` short-circuit with bootstrap decision flow — current behavior directly causes missed initial discovery
   - Repository: `shiva`
   - Component: `cmd/shiva/main.go` (`revisionProcessor.Process`)
   - Scope: Compute ingestion mode before compare:

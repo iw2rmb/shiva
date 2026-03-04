@@ -7,19 +7,26 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 1. `POST /internal/webhooks/gitlab` persists ingest event and repo metadata.
 2. Worker claims pending ingest events from DB queue.
 3. Worker upserts revision from ingest event.
-4. If `parent_sha` is empty, revision is marked processed with `openapi_changed=false`.
-5. Otherwise resolver runs:
+4. Worker loads bootstrap state (`active_api_count`, `openapi_force_rescan`) and decides ingestion mode:
+   - bootstrap when `active_api_count == 0` or `openapi_force_rescan == true`,
+   - incremental otherwise.
+5. Bootstrap mode resolver runs:
+   - GitLab Repository Tree API at `ref=sha` for full repo file enumeration,
+   - `.shivaignore` + built-in ignore filtering,
+   - extension and top-level sniff filtering,
+   - root validation and local `$ref` closure resolution.
+6. Incremental mode resolver runs:
    - GitLab Compare API (`from=parent_sha`, `to=sha`) to get changed paths,
    - candidate filtering by include globs,
    - candidate file fetch via GitLab Repository Files API at `ref=sha`,
    - parse and validate top-level `openapi` or `swagger`,
    - recursive local `$ref` fetch/resolve with cycle and max-fetch guards.
-6. If resolver says OpenAPI changed:
+7. If resolver says OpenAPI changed:
    - build canonical JSON+YAML,
    - extract endpoints,
    - persist `spec_artifacts` and `endpoint_index`,
    - compute and persist semantic diff.
-7. Mark revision processed and emit outbound notifications.
+8. Mark revision processed and emit outbound notifications.
 
 ## GitLab APIs Used
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`
@@ -50,15 +57,8 @@ Marked permanent (revision failed, no further retries for that event):
 Other errors are retried by worker backoff policy.
 
 ## Current Limitation
-Current ingestion is delta-based from `compare(parent_sha, sha)`. Shiva does not perform initial full-tree bootstrap discovery yet.
-
-Resolver now also provides a bootstrap discovery entrypoint (`ResolveRepositoryOpenAPIAtSHA`) that:
-- lists repository tree at a target SHA,
-- applies `.shivaignore` + built-in ignore defaults,
-- prefilters by OpenAPI-like extensions and lightweight top-level sniff,
-- validates root documents and resolves local `$ref` dependency closure per discovered root.
-
-Worker orchestration still uses delta-only mode until bootstrap routing is implemented in `cmd/shiva`.
+Bootstrap routing is now active, but build persistence is still revision-level single-spec storage.
+Per-discovered-root persistence (`api_spec_revisions`, dependency rows, and per-root build loop semantics) is not wired yet.
 
 ## References
 - Setup and envs: `docs/setup.md`

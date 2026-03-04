@@ -199,6 +199,13 @@ type gitlabResolverClient interface {
 		toSHA string,
 	) ([]gitlab.ChangedPath, error)
 	GetFileContent(ctx context.Context, projectID int64, filePath, ref string) ([]byte, error)
+	ListRepositoryTree(
+		ctx context.Context,
+		projectID int64,
+		sha string,
+		path string,
+		recursive bool,
+	) ([]gitlab.TreeEntry, error)
 }
 
 type openapiResolver interface {
@@ -209,6 +216,12 @@ type openapiResolver interface {
 		fromSHA string,
 		toSHA string,
 	) (openapi.ResolutionResult, error)
+	ResolveRepositoryOpenAPIAtSHA(
+		ctx context.Context,
+		client openapi.GitLabBootstrapClient,
+		projectID int64,
+		sha string,
+	) ([]openapi.RootResolution, error)
 }
 
 type revisionStore interface {
@@ -216,6 +229,7 @@ type revisionStore interface {
 	MarkRevisionProcessed(ctx context.Context, revisionID int64, openapiChanged bool) error
 	MarkRevisionFailed(ctx context.Context, revisionID int64, errorMessage string) error
 	GetRepoByID(ctx context.Context, repoID int64) (store.Repo, error)
+	GetRepoBootstrapState(ctx context.Context, repoID int64) (store.RepoBootstrapState, error)
 	PersistCanonicalSpec(ctx context.Context, input store.PersistCanonicalSpecInput) error
 	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 		ctx context.Context,
@@ -229,6 +243,35 @@ type revisionStore interface {
 	GetRevisionByID(ctx context.Context, revisionID int64) (store.Revision, error)
 	GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (store.SpecArtifact, error)
 	GetSpecChangeByToRevision(ctx context.Context, toRevisionID int64) (store.SpecChange, error)
+}
+
+type ingestionMode string
+
+const (
+	ingestionModeIncremental ingestionMode = "incremental"
+	ingestionModeBootstrap   ingestionMode = "bootstrap"
+)
+
+func decideIngestionMode(state store.RepoBootstrapState) ingestionMode {
+	if state.ActiveAPICount == 0 || state.ForceRescan {
+		return ingestionModeBootstrap
+	}
+	return ingestionModeIncremental
+}
+
+func bootstrapRootsToResolutionResult(roots []openapi.RootResolution) openapi.ResolutionResult {
+	if len(roots) == 0 {
+		return openapi.ResolutionResult{
+			OpenAPIChanged: false,
+			CandidateFiles: []string{},
+			Documents:      map[string][]byte{},
+		}
+	}
+	return openapi.ResolutionResult{
+		OpenAPIChanged: true,
+		CandidateFiles: []string{roots[0].RootPath},
+		Documents:      roots[0].Documents,
+	}
 }
 
 func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
@@ -289,23 +332,19 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	processSpan.SetAttributes(attribute.Int64("revision.id", revisionID))
 
 	parentSHA := strings.TrimSpace(job.ParentSha)
-	if parentSHA == "" {
-		if err := p.store.MarkRevisionProcessed(ctx, revisionID, false); err != nil {
-			processSpan.RecordError(err)
-			processSpan.SetStatus(codes.Error, "mark revision processed failed")
-			return fmt.Errorf("mark revision %d processed without compare baseline: %w", revisionID, err)
-		}
-		if logger != nil {
-			logger.Debug(
-				"revision processed without openapi compare baseline",
-				"revision_id", revisionID,
-				"repo_id", job.RepoID,
-				"sha", job.Sha,
-			)
-		}
-		processSpan.SetStatus(codes.Ok, "")
-		return nil
+
+	bootstrapState, err := p.store.GetRepoBootstrapState(ctx, job.RepoID)
+	if err != nil {
+		processSpan.RecordError(err)
+		processSpan.SetStatus(codes.Error, "load repo bootstrap state failed")
+		return fmt.Errorf("load repo bootstrap state for repo %d: %w", job.RepoID, err)
 	}
+	mode := decideIngestionMode(bootstrapState)
+	processSpan.SetAttributes(
+		attribute.String("ingestion.mode", string(mode)),
+		attribute.Int64("repo.active_api_count", bootstrapState.ActiveAPICount),
+		attribute.Bool("repo.force_rescan", bootstrapState.ForceRescan),
+	)
 
 	repo, err := p.store.GetRepoByID(ctx, job.RepoID)
 	if err != nil {
@@ -314,28 +353,58 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		return fmt.Errorf("load repo %d for ingest event %d: %w", job.RepoID, job.EventID, err)
 	}
 
-	compareCtx, compareSpan := p.tracer.Start(ctx, "gitlab.compare", trace.WithAttributes(
-		attribute.Int64("repo.id", job.RepoID),
-		attribute.String("delivery.id", job.DeliveryID),
-		attribute.String("revision.sha", job.Sha),
-		attribute.String("revision.parent_sha", parentSHA),
-		attribute.Int64("gitlab.project_id", repo.GitLabProjectID),
-	))
-	resolution, err := p.openapiLoader.ResolveChangedOpenAPI(
-		compareCtx,
-		p.gitlabClient,
-		repo.GitLabProjectID,
-		parentSHA,
-		job.Sha,
-	)
-	if err != nil {
-		compareSpan.RecordError(err)
-		compareSpan.SetStatus(codes.Error, "openapi compare failed")
-	} else {
-		compareSpan.SetAttributes(attribute.Bool("openapi.changed", resolution.OpenAPIChanged))
-		compareSpan.SetStatus(codes.Ok, "")
+	var resolution openapi.ResolutionResult
+	switch mode {
+	case ingestionModeBootstrap:
+		bootstrapCtx, bootstrapSpan := p.tracer.Start(ctx, "gitlab.bootstrap", trace.WithAttributes(
+			attribute.Int64("repo.id", job.RepoID),
+			attribute.String("delivery.id", job.DeliveryID),
+			attribute.String("revision.sha", job.Sha),
+			attribute.Int64("gitlab.project_id", repo.GitLabProjectID),
+		))
+		roots, resolveErr := p.openapiLoader.ResolveRepositoryOpenAPIAtSHA(
+			bootstrapCtx,
+			p.gitlabClient,
+			repo.GitLabProjectID,
+			job.Sha,
+		)
+		if resolveErr != nil {
+			bootstrapSpan.RecordError(resolveErr)
+			bootstrapSpan.SetStatus(codes.Error, "openapi bootstrap failed")
+		} else {
+			resolution = bootstrapRootsToResolutionResult(roots)
+			bootstrapSpan.SetAttributes(
+				attribute.Int("openapi.bootstrap.root_count", len(roots)),
+				attribute.Bool("openapi.changed", resolution.OpenAPIChanged),
+			)
+			bootstrapSpan.SetStatus(codes.Ok, "")
+		}
+		bootstrapSpan.End()
+		err = resolveErr
+	default:
+		compareCtx, compareSpan := p.tracer.Start(ctx, "gitlab.compare", trace.WithAttributes(
+			attribute.Int64("repo.id", job.RepoID),
+			attribute.String("delivery.id", job.DeliveryID),
+			attribute.String("revision.sha", job.Sha),
+			attribute.String("revision.parent_sha", parentSHA),
+			attribute.Int64("gitlab.project_id", repo.GitLabProjectID),
+		))
+		resolution, err = p.openapiLoader.ResolveChangedOpenAPI(
+			compareCtx,
+			p.gitlabClient,
+			repo.GitLabProjectID,
+			parentSHA,
+			job.Sha,
+		)
+		if err != nil {
+			compareSpan.RecordError(err)
+			compareSpan.SetStatus(codes.Error, "openapi compare failed")
+		} else {
+			compareSpan.SetAttributes(attribute.Bool("openapi.changed", resolution.OpenAPIChanged))
+			compareSpan.SetStatus(codes.Ok, "")
+		}
+		compareSpan.End()
 	}
-	compareSpan.End()
 	if err != nil {
 		if isPermanentOpenAPIProcessingError(err) {
 			if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {

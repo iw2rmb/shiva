@@ -308,6 +308,7 @@ func (q *integrationQueue) processedCount() int {
 
 type integrationGitLabClient struct {
 	changedPaths []gitlab.ChangedPath
+	treeEntries  []gitlab.TreeEntry
 	files        map[string]string
 }
 
@@ -333,10 +334,21 @@ func (c *integrationGitLabClient) GetFileContent(
 	return []byte(content), nil
 }
 
+func (c *integrationGitLabClient) ListRepositoryTree(
+	_ context.Context,
+	_ int64,
+	_ string,
+	_ string,
+	_ bool,
+) ([]gitlab.TreeEntry, error) {
+	return c.treeEntries, nil
+}
+
 type integrationRevisionStore struct {
 	mu             sync.Mutex
 	tenant         store.Tenant
 	repo           store.Repo
+	bootstrapState store.RepoBootstrapState
 	nextRevisionID int64
 	revisions      map[int64]store.Revision
 	revisionBySHA  map[string]int64
@@ -354,6 +366,10 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 			GitLabProjectID:   42,
 			PathWithNamespace: "acme/platform-api",
 			DefaultBranch:     "main",
+		},
+		bootstrapState: store.RepoBootstrapState{
+			ActiveAPICount: 1,
+			ForceRescan:    false,
 		},
 		nextRevisionID: 1000,
 		revisions:      make(map[int64]store.Revision),
@@ -421,6 +437,16 @@ func (s *integrationRevisionStore) GetRepoByID(_ context.Context, repoID int64) 
 		return store.Repo{}, fmt.Errorf("repo %d not found", repoID)
 	}
 	return s.repo, nil
+}
+
+func (s *integrationRevisionStore) GetRepoBootstrapState(
+	_ context.Context,
+	repoID int64,
+) (store.RepoBootstrapState, error) {
+	if s.repo.ID != repoID {
+		return store.RepoBootstrapState{}, fmt.Errorf("repo %d not found", repoID)
+	}
+	return s.bootstrapState, nil
 }
 
 func (s *integrationRevisionStore) PersistCanonicalSpec(_ context.Context, input store.PersistCanonicalSpecInput) error {
