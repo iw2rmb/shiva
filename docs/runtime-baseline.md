@@ -23,6 +23,12 @@
 - `SHIVA_LOG_LEVEL` (default `info`, values: `debug`, `info`, `warn`, `error`)
 - `SHIVA_OPENAPI_PATH_GLOBS` (optional comma-separated include globs)
 - `SHIVA_OPENAPI_REF_MAX_FETCHES` (default `128`)
+- `SHIVA_INGRESS_BODY_LIMIT_BYTES` (default `1048576`)
+- `SHIVA_INGRESS_RATE_LIMIT_MAX` (default `120`)
+- `SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS` (default `60`)
+- `SHIVA_METRICS_PATH` (default `/internal/metrics`)
+- `SHIVA_TRACING_ENABLED` (default `true`)
+- `SHIVA_TRACING_STDOUT` (default `false`)
 
 ## Health endpoint
 - `GET /healthz` returns `200` and JSON payload.
@@ -40,6 +46,7 @@
 - Semantic diff engine for item 8 is documented in `docs/semantic-diff-engine.md`.
 - Outbound notifications for item 9 are documented in `docs/outbound-webhook-notifications.md`.
 - Read API selector routes (item 10) are implemented; see `docs/read-api-selector-resolution.md`.
-- Hardening work (item 11) and release-readiness test expansion (item 12) are not implemented yet.
+- Hardening controls from item 11 are implemented; see `docs/hardening-observability-security-controls.md`.
+- Release-readiness test expansion (item 12) is not implemented yet.
 - Database baseline artifacts are documented in `docs/database-schema-baseline.md`.
 - See `design/shiva.md` for the broader architecture and `roadmap/shiva.md` for remaining items.

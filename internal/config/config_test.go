@@ -20,6 +20,12 @@ func TestLoad_DefaultValues(t *testing.T) {
 			"SHIVA_TENANT_KEY",
 			"SHIVA_OPENAPI_PATH_GLOBS",
 			"SHIVA_OPENAPI_REF_MAX_FETCHES",
+			"SHIVA_INGRESS_BODY_LIMIT_BYTES",
+			"SHIVA_INGRESS_RATE_LIMIT_MAX",
+			"SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS",
+			"SHIVA_METRICS_PATH",
+			"SHIVA_TRACING_ENABLED",
+			"SHIVA_TRACING_STDOUT",
 		} {
 			os.Unsetenv(name)
 		}
@@ -50,6 +56,24 @@ func TestLoad_DefaultValues(t *testing.T) {
 	}
 	if cfg.OpenAPIRefMaxFetches != 128 {
 		t.Fatalf("expected default openapi ref max fetches 128, got %d", cfg.OpenAPIRefMaxFetches)
+	}
+	if cfg.IngressBodyLimit != 1024*1024 {
+		t.Fatalf("expected default ingress body limit 1048576, got %d", cfg.IngressBodyLimit)
+	}
+	if cfg.IngressRateLimitMax != 120 {
+		t.Fatalf("expected default ingress rate limit max 120, got %d", cfg.IngressRateLimitMax)
+	}
+	if cfg.IngressRateLimit != 60*time.Second {
+		t.Fatalf("expected default ingress rate limit 60s, got %s", cfg.IngressRateLimit)
+	}
+	if cfg.MetricsPath != "/internal/metrics" {
+		t.Fatalf("expected default metrics path /internal/metrics, got %q", cfg.MetricsPath)
+	}
+	if !cfg.TracingEnabled {
+		t.Fatalf("expected tracing enabled by default")
+	}
+	if cfg.TracingStdout {
+		t.Fatalf("expected tracing stdout disabled by default")
 	}
 }
 
@@ -102,5 +126,38 @@ func TestLoad_OutboundTimeout(t *testing.T) {
 
 	if cfg.OutboundTimeout != 42*time.Second {
 		t.Fatalf("expected OutboundTimeout=42s, got %s", cfg.OutboundTimeout)
+	}
+}
+
+func TestLoad_IngressAndTracingConfig(t *testing.T) {
+	t.Setenv("SHIVA_INGRESS_BODY_LIMIT_BYTES", "2097152")
+	t.Setenv("SHIVA_INGRESS_RATE_LIMIT_MAX", "20")
+	t.Setenv("SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS", "30")
+	t.Setenv("SHIVA_METRICS_PATH", "/metrics")
+	t.Setenv("SHIVA_TRACING_ENABLED", "false")
+	t.Setenv("SHIVA_TRACING_STDOUT", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	if cfg.IngressBodyLimit != 2097152 {
+		t.Fatalf("expected IngressBodyLimit=2097152, got %d", cfg.IngressBodyLimit)
+	}
+	if cfg.IngressRateLimitMax != 20 {
+		t.Fatalf("expected IngressRateLimitMax=20, got %d", cfg.IngressRateLimitMax)
+	}
+	if cfg.IngressRateLimit != 30*time.Second {
+		t.Fatalf("expected IngressRateLimit=30s, got %s", cfg.IngressRateLimit)
+	}
+	if cfg.MetricsPath != "/metrics" {
+		t.Fatalf("expected MetricsPath=/metrics, got %q", cfg.MetricsPath)
+	}
+	if cfg.TracingEnabled {
+		t.Fatalf("expected TracingEnabled=false")
+	}
+	if !cfg.TracingStdout {
+		t.Fatalf("expected TracingStdout=true")
 	}
 }

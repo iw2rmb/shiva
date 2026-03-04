@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/iw2rmb/shiva/internal/store"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
@@ -188,7 +190,12 @@ func TestDispatchEvent_RetryAndTerminalStates(t *testing.T) {
 			err := notifier.dispatchEvent(
 				context.Background(),
 				storeMock.subscriptions[0],
-				555,
+				RevisionNotification{
+					RepoID:     2,
+					RevisionID: 555,
+					DeliveryID: "delivery-555",
+					Sha:        "sha-555",
+				},
 				builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedFull, body: []byte(`{"type":"spec.updated.full"}`)},
 			)
 			if err != nil {
@@ -247,7 +254,12 @@ func TestDispatchEvent_SkipsTerminalAttempt(t *testing.T) {
 	err := notifier.dispatchEvent(
 		context.Background(),
 		storeMock.subscriptions[0],
-		777,
+		RevisionNotification{
+			RepoID:     2,
+			RevisionID: 777,
+			DeliveryID: "delivery-777",
+			Sha:        "sha-777",
+		},
 		builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedDiff, body: []byte(`{"type":"spec.updated.diff"}`)},
 	)
 	if err != nil {
@@ -285,6 +297,67 @@ func TestCalculateBackoff(t *testing.T) {
 				t.Fatalf("expected %s, got %s", testCase.expected, got)
 			}
 		})
+	}
+}
+
+func TestDispatchEvent_EmitsNotifyDispatchSpan(t *testing.T) {
+	t.Parallel()
+
+	storeMock := newFakeNotifierStore(store.Subscription{
+		ID:                    50,
+		TenantID:              1,
+		RepoID:                2,
+		TargetURL:             "https://example.com/hook",
+		Secret:                "secret",
+		MaxAttempts:           1,
+		BackoffInitialSeconds: 1,
+		BackoffMaxSeconds:     1,
+	})
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	traceProvider := sdktrace.NewTracerProvider()
+	traceProvider.RegisterSpanProcessor(spanRecorder)
+	t.Cleanup(func() {
+		_ = traceProvider.Shutdown(context.Background())
+	})
+	tracer := traceProvider.Tracer("notify-test")
+
+	notifier := New(
+		storeMock,
+		WithHTTPClient(&scriptedHTTPClient{responses: []int{http.StatusOK}}),
+		WithSleep(func(_ context.Context, _ time.Duration) error { return nil }),
+		WithTracer(tracer),
+	)
+
+	err := notifier.dispatchEvent(
+		context.Background(),
+		storeMock.subscriptions[0],
+		RevisionNotification{
+			RepoID:     2,
+			RevisionID: 901,
+			DeliveryID: "delivery-901",
+			Sha:        "sha-901",
+		},
+		builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedFull, body: []byte(`{"type":"spec.updated.full"}`)},
+	)
+	if err != nil {
+		t.Fatalf("dispatchEvent() unexpected error: %v", err)
+	}
+
+	spans := spanRecorder.Ended()
+	if len(spans) == 0 {
+		t.Fatalf("expected ended spans")
+	}
+
+	found := false
+	for _, span := range spans {
+		if span.Name() == "notify.dispatch" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected notify.dispatch span in ended spans")
 	}
 }
 

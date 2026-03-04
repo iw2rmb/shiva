@@ -18,6 +18,10 @@ const (
 	defaultShutdownTimeoutSecond = 15
 	defaultOutboundTimeoutSecond = 10
 	defaultLogLevel              = "info"
+	defaultIngressBodyLimitBytes = 1024 * 1024
+	defaultIngressRateLimitMax   = 120
+	defaultIngressRateLimitSec   = 60
+	defaultMetricsPath           = "/internal/metrics"
 )
 
 type Config struct {
@@ -33,6 +37,12 @@ type Config struct {
 	LogLevel             slog.Level
 	OpenAPIPathGlobs     []string
 	OpenAPIRefMaxFetches int
+	IngressBodyLimit     int
+	IngressRateLimitMax  int
+	IngressRateLimit     time.Duration
+	MetricsPath          string
+	TracingEnabled       bool
+	TracingStdout        bool
 }
 
 func Load() (Config, error) {
@@ -49,6 +59,12 @@ func Load() (Config, error) {
 		LogLevel:             slog.LevelInfo,
 		OpenAPIPathGlobs:     openapi.DefaultIncludeGlobs(),
 		OpenAPIRefMaxFetches: openapi.DefaultMaxFetches,
+		IngressBodyLimit:     defaultIngressBodyLimitBytes,
+		IngressRateLimitMax:  defaultIngressRateLimitMax,
+		IngressRateLimit:     time.Duration(defaultIngressRateLimitSec) * time.Second,
+		MetricsPath:          defaultMetricsPath,
+		TracingEnabled:       true,
+		TracingStdout:        false,
 	}
 
 	if rawLevel, ok := os.LookupEnv("SHIVA_LOG_LEVEL"); ok {
@@ -109,6 +125,66 @@ func Load() (Config, error) {
 			return Config{}, errors.New("SHIVA_OPENAPI_REF_MAX_FETCHES must be at least 1")
 		}
 		cfg.OpenAPIRefMaxFetches = maxFetches
+	}
+
+	if rawBodyLimit, ok := os.LookupEnv("SHIVA_INGRESS_BODY_LIMIT_BYTES"); ok {
+		bodyLimit, err := strconv.Atoi(strings.TrimSpace(rawBodyLimit))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_INGRESS_BODY_LIMIT_BYTES: %w", err)
+		}
+		if bodyLimit < 1 {
+			return Config{}, errors.New("SHIVA_INGRESS_BODY_LIMIT_BYTES must be at least 1")
+		}
+		cfg.IngressBodyLimit = bodyLimit
+	}
+
+	if rawRateLimitMax, ok := os.LookupEnv("SHIVA_INGRESS_RATE_LIMIT_MAX"); ok {
+		rateLimitMax, err := strconv.Atoi(strings.TrimSpace(rawRateLimitMax))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_INGRESS_RATE_LIMIT_MAX: %w", err)
+		}
+		if rateLimitMax < 1 {
+			return Config{}, errors.New("SHIVA_INGRESS_RATE_LIMIT_MAX must be at least 1")
+		}
+		cfg.IngressRateLimitMax = rateLimitMax
+	}
+
+	if rawRateLimitSec, ok := os.LookupEnv("SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS"); ok {
+		rateLimitSec, err := strconv.Atoi(strings.TrimSpace(rawRateLimitSec))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS: %w", err)
+		}
+		if rateLimitSec < 1 {
+			return Config{}, errors.New("SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS must be at least 1")
+		}
+		cfg.IngressRateLimit = time.Duration(rateLimitSec) * time.Second
+	}
+
+	if rawMetricsPath, ok := os.LookupEnv("SHIVA_METRICS_PATH"); ok {
+		metricsPath := strings.TrimSpace(rawMetricsPath)
+		if metricsPath == "" {
+			return Config{}, errors.New("SHIVA_METRICS_PATH must not be empty")
+		}
+		if !strings.HasPrefix(metricsPath, "/") {
+			return Config{}, errors.New("SHIVA_METRICS_PATH must start with /")
+		}
+		cfg.MetricsPath = metricsPath
+	}
+
+	if rawTracingEnabled, ok := os.LookupEnv("SHIVA_TRACING_ENABLED"); ok {
+		tracingEnabled, err := strconv.ParseBool(strings.TrimSpace(rawTracingEnabled))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_TRACING_ENABLED: %w", err)
+		}
+		cfg.TracingEnabled = tracingEnabled
+	}
+
+	if rawTracingStdout, ok := os.LookupEnv("SHIVA_TRACING_STDOUT"); ok {
+		tracingStdout, err := strconv.ParseBool(strings.TrimSpace(rawTracingStdout))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_TRACING_STDOUT: %w", err)
+		}
+		cfg.TracingStdout = tracingStdout
 	}
 
 	if cfg.HTTPAddr == "" {

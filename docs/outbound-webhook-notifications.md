@@ -9,7 +9,7 @@
   - persist retry/backoff and terminal failure state in `delivery_attempts`.
 - Explicitly out of scope for this item:
   - selector/read API routes (item 10),
-  - hardening/observability/security controls from item 11.
+  - release-readiness test expansion from item 12.
 
 ## Processor Integration
 - File: `cmd/shiva/main.go`
@@ -81,6 +81,10 @@
 ## Components
 - Notifier implementation:
   - `internal/notify/notifier.go`
+  - with item-11 hardening integration:
+    - `notify.dispatch` tracing span per dispatch path,
+    - delivery stage latency/failure metrics,
+    - structured dispatch logs with correlation fields (`delivery_id`, `repo_id`, `revision_id`, `sha`).
 - Store wrappers:
   - `internal/store/subscriptions.go`
   - `internal/store/delivery_attempts.go`
@@ -98,11 +102,13 @@
   - `TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning`
   - `TestDispatchEvent_RetryAndTerminalStates` (table-driven)
   - `TestDispatchEvent_SkipsTerminalAttempt`
+  - `TestDispatchEvent_EmitsNotifyDispatchSpan`
   - `TestCalculateBackoff` (table-driven)
 
 ## References
 - Runtime baseline: `docs/runtime-baseline.md`
 - Worker processing: `docs/ingest-worker-processing.md`
+- Hardening controls: `docs/hardening-observability-security-controls.md`
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
 - Semantic diff engine: `docs/semantic-diff-engine.md`
 - Database schema baseline: `docs/database-schema-baseline.md`

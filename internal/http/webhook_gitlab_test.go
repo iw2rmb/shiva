@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/iw2rmb/shiva/internal/config"
 	"github.com/iw2rmb/shiva/internal/store"
@@ -140,6 +142,10 @@ func newWebhookTestServer(ingestor gitlabWebhookIngestor) *Server {
 		GitLabWebhookSecret: "secret-token",
 		TenantKey:           "tenant-a",
 	}
+	return newWebhookTestServerWithConfig(ingestor, cfg)
+}
+
+func newWebhookTestServerWithConfig(ingestor gitlabWebhookIngestor, cfg config.Config) *Server {
 	server := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), &store.Store{})
 	server.gitlabIngestor = ingestor
 	return server
@@ -169,4 +175,63 @@ func decodeWebhookBody(t *testing.T, response *http.Response) gitlabWebhookRespo
 		t.Fatalf("failed to decode response body: %v", err)
 	}
 	return body
+}
+
+func TestGitLabWebhookIngressBodyLimit(t *testing.T) {
+	t.Parallel()
+
+	ingestor := &fakeGitLabIngestor{}
+	server := newWebhookTestServerWithConfig(ingestor, config.Config{
+		HTTPAddr:            ":8080",
+		GitLabWebhookSecret: "secret-token",
+		TenantKey:           "tenant-a",
+		IngressBodyLimit:    32,
+	})
+
+	oversizedBody := bytes.Repeat([]byte("x"), 128)
+	req := httptest.NewRequest(http.MethodPost, "/internal/webhooks/gitlab", bytes.NewReader(oversizedBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Gitlab-Token", "secret-token")
+	req.Header.Set("X-Gitlab-Delivery", "delivery-oversized")
+
+	resp, err := server.App().Test(req, -1)
+	if err == nil {
+		defer resp.Body.Close()
+		t.Fatalf("expected request to fail due to body size limit")
+	}
+	if !strings.Contains(err.Error(), "body size exceeds the given limit") {
+		t.Fatalf("expected body size limit error, got %v", err)
+	}
+	if len(ingestor.calls) != 0 {
+		t.Fatalf("expected no ingestor calls for oversized request, got %d", len(ingestor.calls))
+	}
+}
+
+func TestGitLabWebhookIngressRateLimit(t *testing.T) {
+	t.Parallel()
+
+	ingestor := &fakeGitLabIngestor{}
+	server := newWebhookTestServerWithConfig(ingestor, config.Config{
+		HTTPAddr:            ":8080",
+		GitLabWebhookSecret: "secret-token",
+		TenantKey:           "tenant-a",
+		IngressRateLimitMax: 1,
+		IngressRateLimit:    time.Minute,
+		IngressBodyLimit:    1024 * 1024,
+	})
+
+	first := doWebhookRequest(t, server, "delivery-rate-1")
+	defer first.Body.Close()
+	second := doWebhookRequest(t, server, "delivery-rate-2")
+	defer second.Body.Close()
+
+	if first.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected first status 202, got %d", first.StatusCode)
+	}
+	if second.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected second status 429, got %d", second.StatusCode)
+	}
+	if len(ingestor.calls) != 1 {
+		t.Fatalf("expected one ingestor call under rate limit, got %d", len(ingestor.calls))
+	}
 }

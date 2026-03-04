@@ -10,12 +10,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/iw2rmb/shiva/internal/observability"
 	"github.com/iw2rmb/shiva/internal/store"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -49,6 +54,9 @@ type Notifier struct {
 	httpClient HTTPClient
 	now        func() time.Time
 	sleep      func(context.Context, time.Duration) error
+	logger     *slog.Logger
+	metrics    *observability.Metrics
+	tracer     trace.Tracer
 }
 
 type RevisionNotification struct {
@@ -57,6 +65,7 @@ type RevisionNotification struct {
 	RepoID      int64
 	RepoPath    string
 	RevisionID  int64
+	DeliveryID  string
 	Sha         string
 	Branch      string
 	ProcessedAt time.Time
@@ -110,6 +119,8 @@ func New(store Store, options ...Option) *Notifier {
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 		now:        time.Now,
 		sleep:      sleepContext,
+		logger:     slog.Default(),
+		tracer:     trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva"),
 	}
 
 	for _, option := range options {
@@ -139,6 +150,28 @@ func WithSleep(sleep func(context.Context, time.Duration) error) Option {
 	return func(n *Notifier) {
 		if sleep != nil {
 			n.sleep = sleep
+		}
+	}
+}
+
+func WithLogger(logger *slog.Logger) Option {
+	return func(n *Notifier) {
+		if logger != nil {
+			n.logger = logger
+		}
+	}
+}
+
+func WithMetrics(metrics *observability.Metrics) Option {
+	return func(n *Notifier) {
+		n.metrics = metrics
+	}
+}
+
+func WithTracer(tracer trace.Tracer) Option {
+	return func(n *Notifier) {
+		if tracer != nil {
+			n.tracer = tracer
 		}
 	}
 }
@@ -181,7 +214,7 @@ func (n *Notifier) NotifyRevision(ctx context.Context, notification RevisionNoti
 
 	for _, subscription := range subscriptions {
 		for _, event := range events {
-			if err := n.dispatchEvent(ctx, subscription, notification.RevisionID, event); err != nil {
+			if err := n.dispatchEvent(ctx, subscription, notification, event); err != nil {
 				return err
 			}
 		}
@@ -262,9 +295,26 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 func (n *Notifier) dispatchEvent(
 	ctx context.Context,
 	subscription store.Subscription,
-	revisionID int64,
+	notification RevisionNotification,
 	event builtEvent,
 ) error {
+	if n.tracer == nil {
+		n.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+	}
+
+	revisionID := notification.RevisionID
+	dispatchLogger := n.logger
+	if dispatchLogger != nil {
+		dispatchLogger = dispatchLogger.With(
+			"subscription_id", subscription.ID,
+			"event_type", event.eventType,
+			"repo_id", notification.RepoID,
+			"revision_id", revisionID,
+			"delivery_id", notification.DeliveryID,
+			"sha", notification.Sha,
+		)
+	}
+
 	latestAttempt, hasAttempt, err := n.store.GetLatestDeliveryAttemptByKey(
 		ctx,
 		subscription.ID,
@@ -282,13 +332,30 @@ func (n *Notifier) dispatchEvent(
 	}
 
 	if hasAttempt && isTerminalStatus(latestAttempt.Status) {
+		if dispatchLogger != nil {
+			dispatchLogger.Debug("notify dispatch skipped due to terminal state", "status", latestAttempt.Status)
+		}
 		return nil
 	}
+
+	startedAt := time.Now()
+	ctx, span := n.tracer.Start(ctx, "notify.dispatch", trace.WithAttributes(
+		attribute.Int64("subscription.id", subscription.ID),
+		attribute.String("event.type", event.eventType),
+		attribute.Int64("repo.id", notification.RepoID),
+		attribute.Int64("revision.id", revisionID),
+		attribute.String("delivery.id", notification.DeliveryID),
+		attribute.String("revision.sha", notification.Sha),
+	))
+	defer span.End()
 
 	if hasAttempt && latestAttempt.Status == store.DeliveryAttemptStatusRetryScheduled && latestAttempt.NextRetryAt != nil {
 		wait := latestAttempt.NextRetryAt.Sub(n.now().UTC())
 		if wait > 0 {
 			if err := n.sleep(ctx, wait); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "sleep before retry failed")
+				n.observeDeliveryMetric(startedAt, false)
 				return err
 			}
 		}
@@ -306,9 +373,14 @@ func (n *Notifier) dispatchEvent(
 				Status: store.DeliveryAttemptStatusFailed,
 				Error:  "max attempts exhausted",
 			}); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "mark failed after max attempts")
+				n.observeDeliveryMetric(startedAt, false)
 				return fmt.Errorf("mark delivery attempt %d failed after max attempts exhausted: %w", latestAttempt.ID, err)
 			}
 		}
+		span.SetStatus(codes.Ok, "")
+		n.observeDeliveryMetric(startedAt, true)
 		return nil
 	}
 
@@ -321,6 +393,9 @@ func (n *Notifier) dispatchEvent(
 			Status:         store.DeliveryAttemptStatusPending,
 		})
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "create delivery attempt failed")
+			n.observeDeliveryMetric(startedAt, false)
 			return fmt.Errorf(
 				"create delivery attempt for subscription %d revision %d event %q attempt_no=%d: %w",
 				subscription.ID,
@@ -339,7 +414,15 @@ func (n *Notifier) dispatchEvent(
 				Status:       store.DeliveryAttemptStatusSucceeded,
 				ResponseCode: outcome.responseCode,
 			}); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "mark delivery succeeded failed")
+				n.observeDeliveryMetric(startedAt, false)
 				return fmt.Errorf("mark delivery attempt %d succeeded: %w", createdAttempt.ID, err)
+			}
+			span.SetStatus(codes.Ok, "")
+			n.observeDeliveryMetric(startedAt, true)
+			if dispatchLogger != nil {
+				dispatchLogger.Info("notify dispatch succeeded", "attempt_no", attemptNo)
 			}
 			return nil
 		}
@@ -351,7 +434,15 @@ func (n *Notifier) dispatchEvent(
 				ResponseCode: outcome.responseCode,
 				Error:        outcome.errorMessage,
 			}); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "mark delivery failed failed")
+				n.observeDeliveryMetric(startedAt, false)
 				return fmt.Errorf("mark delivery attempt %d failed: %w", createdAttempt.ID, err)
+			}
+			span.SetStatus(codes.Error, outcome.errorMessage)
+			n.observeDeliveryMetric(startedAt, false)
+			if dispatchLogger != nil {
+				dispatchLogger.Warn("notify dispatch failed", "attempt_no", attemptNo, "error", outcome.errorMessage)
 			}
 			return nil
 		}
@@ -368,18 +459,33 @@ func (n *Notifier) dispatchEvent(
 			Error:        outcome.errorMessage,
 			NextRetryAt:  &nextRetryAt,
 		}); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "schedule delivery retry failed")
+			n.observeDeliveryMetric(startedAt, false)
 			return fmt.Errorf("schedule retry for delivery attempt %d: %w", createdAttempt.ID, err)
 		}
 
 		wait := nextRetryAt.Sub(n.now().UTC())
 		if wait > 0 {
 			if err := n.sleep(ctx, wait); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "sleep for retry failed")
+				n.observeDeliveryMetric(startedAt, false)
 				return err
 			}
 		}
 	}
 
+	span.SetStatus(codes.Ok, "")
+	n.observeDeliveryMetric(startedAt, true)
 	return nil
+}
+
+func (n *Notifier) observeDeliveryMetric(startedAt time.Time, success bool) {
+	if n.metrics == nil {
+		return
+	}
+	n.metrics.ObserveDelivery(time.Since(startedAt), success)
 }
 
 func (n *Notifier) deliverOnce(

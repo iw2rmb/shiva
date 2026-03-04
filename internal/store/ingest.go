@@ -30,6 +30,7 @@ type GitLabIngestInput struct {
 
 type GitLabIngestResult struct {
 	EventID   int64
+	RepoID    int64
 	Duplicate bool
 }
 
@@ -80,7 +81,7 @@ func (s *Store) PersistGitLabWebhook(ctx context.Context, input GitLabIngestInpu
 			if err := tx.Commit(ctx); err != nil {
 				return GitLabIngestResult{}, fmt.Errorf("commit duplicate ingest transaction: %w", err)
 			}
-			return GitLabIngestResult{EventID: existing.ID, Duplicate: true}, nil
+			return GitLabIngestResult{EventID: existing.ID, RepoID: existing.RepoID, Duplicate: true}, nil
 		}
 		return GitLabIngestResult{}, fmt.Errorf("create ingest event: %w", err)
 	}
@@ -89,7 +90,7 @@ func (s *Store) PersistGitLabWebhook(ctx context.Context, input GitLabIngestInpu
 		return GitLabIngestResult{}, fmt.Errorf("commit ingest transaction: %w", err)
 	}
 
-	return GitLabIngestResult{EventID: event.ID, Duplicate: false}, nil
+	return GitLabIngestResult{EventID: event.ID, RepoID: event.RepoID, Duplicate: false}, nil
 }
 
 func normalizeGitLabIngestInput(input GitLabIngestInput) (GitLabIngestInput, error) {

@@ -15,6 +15,7 @@ import (
 type IngestQueueEvent struct {
 	ID           int64
 	RepoID       int64
+	DeliveryID   string
 	Sha          string
 	Branch       string
 	ParentSha    string
@@ -98,6 +99,7 @@ func mapQueueEvent(event sqlc.IngestEvent) IngestQueueEvent {
 	mapped := IngestQueueEvent{
 		ID:           event.ID,
 		RepoID:       event.RepoID,
+		DeliveryID:   event.DeliveryID,
 		Sha:          event.Sha,
 		Branch:       event.Branch,
 		AttemptCount: event.AttemptCount,

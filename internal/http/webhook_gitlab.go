@@ -5,11 +5,16 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/iw2rmb/shiva/internal/store"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type gitlabWebhookIngestor interface {
@@ -34,45 +39,88 @@ type gitlabWebhookResponse struct {
 	Duplicate bool   `json:"duplicate"`
 }
 
-func (s *Server) handleGitLabWebhook(c *fiber.Ctx) error {
+func (s *Server) handleGitLabWebhook(c *fiber.Ctx) (handlerErr error) {
+	if s.tracer == nil {
+		s.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+	}
+
+	startedAt := time.Now()
+	statusCode := fiber.StatusInternalServerError
+	requestID := requestIDFromContext(c)
+
+	ctx := c.UserContext()
+	if ctx == nil {
+		ctx = c.Context()
+	}
+	ctx, span := s.tracer.Start(ctx, "webhook.ingest", trace.WithAttributes(
+		attribute.String("http.route", "/internal/webhooks/gitlab"),
+		attribute.String("request.id", requestID),
+	))
+	c.SetUserContext(ctx)
+	defer func() {
+		success := statusCode < 400
+		if s.metrics != nil {
+			s.metrics.ObserveIngest(time.Since(startedAt), success)
+		}
+		span.SetAttributes(attribute.Int("http.status_code", statusCode))
+		if success {
+			span.SetStatus(codes.Ok, "")
+		} else {
+			span.SetStatus(codes.Error, http.StatusText(statusCode))
+		}
+		span.End()
+	}()
+
+	logger := s.logger
+	if logger != nil {
+		logger = logger.With("request_id", requestID)
+	}
+
 	if strings.TrimSpace(s.cfg.GitLabWebhookSecret) == "" {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+		statusCode = fiber.StatusServiceUnavailable
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": "gitlab webhook secret is not configured",
 		})
 	}
 
 	headerToken := strings.TrimSpace(c.Get("X-Gitlab-Token"))
 	if headerToken == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		statusCode = fiber.StatusUnauthorized
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": "missing X-Gitlab-Token header",
 		})
 	}
 	if !secureEqual(headerToken, s.cfg.GitLabWebhookSecret) {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+		statusCode = fiber.StatusForbidden
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": "invalid X-Gitlab-Token",
 		})
 	}
 
 	body := c.Body()
 	if len(body) == 0 || !json.Valid(body) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		statusCode = fiber.StatusBadRequest
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": "request body must be valid JSON",
 		})
 	}
 
 	var payload gitLabWebhookPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		statusCode = fiber.StatusBadRequest
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": "failed to parse GitLab webhook payload",
 		})
 	}
 
 	deliveryID := extractDeliveryID(c)
 	if deliveryID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		statusCode = fiber.StatusBadRequest
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": "missing GitLab delivery id header",
 		})
 	}
+	span.SetAttributes(attribute.String("delivery.id", deliveryID))
 
 	eventType := strings.TrimSpace(c.Get("X-Gitlab-Event"))
 	if eventType == "" {
@@ -81,14 +129,17 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) error {
 
 	sha := strings.TrimSpace(payload.After)
 	if sha == "" || isZeroSHA(sha) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		statusCode = fiber.StatusBadRequest
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": "payload.after must contain a commit sha",
 		})
 	}
+	span.SetAttributes(attribute.String("revision.sha", sha))
 
 	branch, err := parseBranchRef(payload.Ref)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		statusCode = fiber.StatusBadRequest
+		return c.Status(statusCode).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
@@ -98,7 +149,7 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) error {
 		parentSha = ""
 	}
 
-	result, err := s.gitlabIngestor.PersistGitLabWebhook(c.Context(), store.GitLabIngestInput{
+	result, err := s.gitlabIngestor.PersistGitLabWebhook(ctx, store.GitLabIngestInput{
 		TenantKey:         s.cfg.TenantKey,
 		GitLabProjectID:   payload.Project.ID,
 		PathWithNamespace: payload.Project.PathWithNamespace,
@@ -111,26 +162,50 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) error {
 		PayloadJSON:       body,
 	})
 	if err != nil {
+		span.RecordError(err)
 		switch {
 		case errors.Is(err, store.ErrStoreNotConfigured):
-			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			statusCode = fiber.StatusServiceUnavailable
+			return c.Status(statusCode).JSON(fiber.Map{
 				"error": "database is not configured",
 			})
 		case errors.Is(err, store.ErrInvalidIngestInput):
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			statusCode = fiber.StatusBadRequest
+			return c.Status(statusCode).JSON(fiber.Map{
 				"error": err.Error(),
 			})
 		default:
-			s.logger.Error("failed to persist GitLab ingest event", "error", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			if logger != nil {
+				logger.Error(
+					"failed to persist GitLab ingest event",
+					"delivery_id", deliveryID,
+					"sha", sha,
+					"error", err,
+				)
+			}
+			statusCode = fiber.StatusInternalServerError
+			return c.Status(statusCode).JSON(fiber.Map{
 				"error": "failed to persist webhook event",
 			})
 		}
 	}
 
-	statusCode := fiber.StatusAccepted
+	span.SetAttributes(attribute.Int64("repo.id", result.RepoID))
+
+	statusCode = fiber.StatusAccepted
 	if result.Duplicate {
 		statusCode = fiber.StatusOK
+	}
+
+	if logger != nil {
+		logger.Info(
+			"gitlab webhook accepted",
+			"event_id", result.EventID,
+			"duplicate", result.Duplicate,
+			"delivery_id", deliveryID,
+			"repo_id", result.RepoID,
+			"sha", sha,
+		)
 	}
 
 	return c.Status(statusCode).JSON(gitlabWebhookResponse{

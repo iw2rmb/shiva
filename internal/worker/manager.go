@@ -17,6 +17,7 @@ var ErrProcessorNotConfigured = errors.New("worker processor is not configured")
 type QueueJob struct {
 	EventID      int64
 	RepoID       int64
+	DeliveryID   string
 	Sha          string
 	Branch       string
 	ParentSha    string
@@ -198,6 +199,7 @@ func (m *Manager) loop(ctx context.Context, id int) {
 				"worker_id", id,
 				"event_id", job.EventID,
 				"repo_id", job.RepoID,
+				"delivery_id", job.DeliveryID,
 				"sha", job.Sha,
 				"error", err,
 			)
@@ -219,6 +221,7 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 				"worker_id", workerID,
 				"event_id", job.EventID,
 				"repo_id", job.RepoID,
+				"delivery_id", job.DeliveryID,
 				"sha", job.Sha,
 				"error", err,
 			)
@@ -229,6 +232,7 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 			"worker_id", workerID,
 			"event_id", job.EventID,
 			"repo_id", job.RepoID,
+			"delivery_id", job.DeliveryID,
 			"sha", job.Sha,
 			"attempt_count", job.AttemptCount,
 			"error", errorMessage,
@@ -244,6 +248,7 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 			"worker_id", workerID,
 			"event_id", job.EventID,
 			"repo_id", job.RepoID,
+			"delivery_id", job.DeliveryID,
 			"sha", job.Sha,
 			"error", err,
 		)
@@ -255,6 +260,7 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 		"worker_id", workerID,
 		"event_id", job.EventID,
 		"repo_id", job.RepoID,
+		"delivery_id", job.DeliveryID,
 		"sha", job.Sha,
 		"attempt_count", job.AttemptCount,
 		"retry_after", retryAfter.String(),

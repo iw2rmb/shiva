@@ -98,7 +98,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - proper `404`/`409` handling and `ETag` support.
 
 ## Phase 6: Hardening
-11. Add observability and security controls.
+11. [x] Add observability and security controls.
 - Deliverables:
   - structured logs with correlation ids
   - metrics for ingest/build/delivery latency and failures

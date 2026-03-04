@@ -10,6 +10,11 @@
 
 ## Route
 - `POST /internal/webhooks/gitlab`
+- Ingress controls:
+  - request body size is bounded by `SHIVA_INGRESS_BODY_LIMIT_BYTES`,
+  - rate limit is applied to `/internal/webhooks/*` via:
+    - `SHIVA_INGRESS_RATE_LIMIT_MAX`
+    - `SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS`
 
 ## Authentication
 - Config source: `SHIVA_GITLAB_WEBHOOK_SECRET`
@@ -47,11 +52,14 @@
 ## Tests
 - `TestGitLabWebhookTokenVerification`
 - `TestGitLabWebhookDuplicateDeliveryIdempotency`
+- `TestGitLabWebhookIngressBodyLimit`
+- `TestGitLabWebhookIngressRateLimit`
 
 ## References
 - Runtime baseline: `docs/runtime-baseline.md`
 - GitLab client integrations: `docs/gitlab-client-integrations.md`
 - Database schema baseline: `docs/database-schema-baseline.md`
 - Worker processing queue: `docs/ingest-worker-processing.md`
+- Hardening controls: `docs/hardening-observability-security-controls.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

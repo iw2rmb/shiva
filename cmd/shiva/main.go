@@ -17,9 +17,13 @@ import (
 	"github.com/iw2rmb/shiva/internal/gitlab"
 	httpserver "github.com/iw2rmb/shiva/internal/http"
 	"github.com/iw2rmb/shiva/internal/notify"
+	"github.com/iw2rmb/shiva/internal/observability"
 	"github.com/iw2rmb/shiva/internal/openapi"
 	"github.com/iw2rmb/shiva/internal/store"
 	"github.com/iw2rmb/shiva/internal/worker"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func main() {
@@ -39,6 +43,11 @@ func run(ctx context.Context) error {
 	logger := config.NewLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
 
+	telemetry, err := observability.New(cfg, logger)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -50,6 +59,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer storeInstance.Close()
+	defer telemetry.Shutdown(context.Background())
 
 	var workerManager *worker.Manager
 	if storeInstance.IsConfigured() {
@@ -81,8 +91,13 @@ func run(ctx context.Context) error {
 				notifier: notify.New(
 					storeInstance,
 					notify.WithHTTPClient(&http.Client{Timeout: cfg.OutboundTimeout}),
+					notify.WithLogger(logger),
+					notify.WithMetrics(telemetry.Metrics()),
+					notify.WithTracer(telemetry.Tracer()),
 				),
-				logger: logger,
+				logger:  logger,
+				metrics: telemetry.Metrics(),
+				tracer:  telemetry.Tracer(),
 			}),
 		)
 		if err := workerManager.Start(ctx); err != nil {
@@ -92,7 +107,7 @@ func run(ctx context.Context) error {
 		logger.Info("worker manager disabled: database is not configured")
 	}
 
-	server := httpserver.New(cfg, logger, storeInstance)
+	server := httpserver.New(cfg, logger, storeInstance, httpserver.WithTelemetry(telemetry))
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- server.Start()
@@ -142,6 +157,7 @@ func (q storeQueueAdapter) ClaimNext(ctx context.Context) (worker.QueueJob, bool
 	return worker.QueueJob{
 		EventID:      event.ID,
 		RepoID:       event.RepoID,
+		DeliveryID:   event.DeliveryID,
 		Sha:          event.Sha,
 		Branch:       event.Branch,
 		ParentSha:    event.ParentSha,
@@ -167,6 +183,8 @@ type revisionProcessor struct {
 	openapiLoader *openapi.Resolver
 	notifier      revisionNotifier
 	logger        *slog.Logger
+	metrics       *observability.Metrics
+	tracer        trace.Tracer
 }
 
 type revisionNotifier interface {
@@ -174,114 +192,239 @@ type revisionNotifier interface {
 }
 
 func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
+	if p.tracer == nil {
+		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+	}
+
+	ctx, processSpan := p.tracer.Start(ctx, "process.revision", trace.WithAttributes(
+		attribute.Int64("event.id", job.EventID),
+		attribute.Int64("repo.id", job.RepoID),
+		attribute.String("delivery.id", job.DeliveryID),
+		attribute.String("revision.sha", job.Sha),
+	))
+	defer processSpan.End()
+
 	if p.store == nil {
+		processSpan.SetStatus(codes.Error, "store not configured")
 		return errors.New("revision processor store is not configured")
 	}
 	if p.gitlabClient == nil {
+		processSpan.SetStatus(codes.Error, "gitlab client not configured")
 		return errors.New("revision processor gitlab client is not configured")
 	}
 	if p.openapiLoader == nil {
+		processSpan.SetStatus(codes.Error, "openapi loader not configured")
 		return errors.New("revision processor openapi loader is not configured")
+	}
+
+	logger := p.logger
+	if logger != nil {
+		logger = logger.With(
+			"event_id", job.EventID,
+			"delivery_id", job.DeliveryID,
+			"repo_id", job.RepoID,
+			"sha", job.Sha,
+		)
+		logger.Debug("revision processing started")
 	}
 
 	revisionID, err := p.store.UpsertRevisionFromIngestEvent(ctx, store.IngestQueueEvent{
 		ID:           job.EventID,
 		RepoID:       job.RepoID,
+		DeliveryID:   job.DeliveryID,
 		Sha:          job.Sha,
 		Branch:       job.Branch,
 		ParentSha:    job.ParentSha,
 		AttemptCount: job.AttemptCount,
 	})
 	if err != nil {
+		processSpan.RecordError(err)
+		processSpan.SetStatus(codes.Error, "upsert revision failed")
 		return fmt.Errorf("upsert revision from ingest event %d: %w", job.EventID, err)
 	}
+
+	if logger != nil {
+		logger = logger.With("revision_id", revisionID)
+	}
+	processSpan.SetAttributes(attribute.Int64("revision.id", revisionID))
 
 	parentSHA := strings.TrimSpace(job.ParentSha)
 	if parentSHA == "" {
 		if err := p.store.MarkRevisionProcessed(ctx, revisionID, false); err != nil {
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "mark revision processed failed")
 			return fmt.Errorf("mark revision %d processed without compare baseline: %w", revisionID, err)
 		}
-		if p.logger != nil {
-			p.logger.Debug(
+		if logger != nil {
+			logger.Debug(
 				"revision processed without openapi compare baseline",
 				"revision_id", revisionID,
 				"repo_id", job.RepoID,
 				"sha", job.Sha,
 			)
 		}
+		processSpan.SetStatus(codes.Ok, "")
 		return nil
 	}
 
 	repo, err := p.store.GetRepoByID(ctx, job.RepoID)
 	if err != nil {
+		processSpan.RecordError(err)
+		processSpan.SetStatus(codes.Error, "load repo failed")
 		return fmt.Errorf("load repo %d for ingest event %d: %w", job.RepoID, job.EventID, err)
 	}
 
+	compareCtx, compareSpan := p.tracer.Start(ctx, "gitlab.compare", trace.WithAttributes(
+		attribute.Int64("repo.id", job.RepoID),
+		attribute.String("delivery.id", job.DeliveryID),
+		attribute.String("revision.sha", job.Sha),
+		attribute.String("revision.parent_sha", parentSHA),
+		attribute.Int64("gitlab.project_id", repo.GitLabProjectID),
+	))
 	resolution, err := p.openapiLoader.ResolveChangedOpenAPI(
-		ctx,
+		compareCtx,
 		p.gitlabClient,
 		repo.GitLabProjectID,
 		parentSHA,
 		job.Sha,
 	)
 	if err != nil {
+		compareSpan.RecordError(err)
+		compareSpan.SetStatus(codes.Error, "openapi compare failed")
+	} else {
+		compareSpan.SetAttributes(attribute.Bool("openapi.changed", resolution.OpenAPIChanged))
+		compareSpan.SetStatus(codes.Ok, "")
+	}
+	compareSpan.End()
+	if err != nil {
 		if isPermanentOpenAPIProcessingError(err) {
 			if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
+				processSpan.RecordError(markErr)
+				processSpan.SetStatus(codes.Error, "mark revision failed")
 				return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
 			}
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "openapi resolution permanent failure")
 			return worker.Permanent(fmt.Errorf("openapi resolution failed: %w", err))
 		}
+		processSpan.RecordError(err)
+		processSpan.SetStatus(codes.Error, "openapi resolution failed")
 		return fmt.Errorf("resolve openapi candidates for revision %d: %w", revisionID, err)
 	}
 
 	if resolution.OpenAPIChanged {
-		canonicalSpec, err := openapi.BuildCanonicalSpec(resolution)
-		if err != nil {
+		buildStartedAt := time.Now()
+		buildSuccess := false
+		recordBuildMetric := func() {
+			if p.metrics != nil {
+				p.metrics.ObserveBuild(time.Since(buildStartedAt), buildSuccess)
+			}
+		}
+
+		if err := p.runBuildStage(ctx, job, revisionID, resolution); err != nil {
+			recordBuildMetric()
 			if isPermanentOpenAPIProcessingError(err) {
 				if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
+					processSpan.RecordError(markErr)
+					processSpan.SetStatus(codes.Error, "mark revision failed")
 					return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
 				}
+				processSpan.RecordError(err)
+				processSpan.SetStatus(codes.Error, "canonical openapi permanent failure")
 				return worker.Permanent(fmt.Errorf("canonical openapi build failed: %w", err))
 			}
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "build stage failed")
 			return fmt.Errorf("build canonical openapi for revision %d: %w", revisionID, err)
 		}
 
-		endpoints := make([]store.EndpointIndexRecord, 0, len(canonicalSpec.Endpoints))
-		for _, endpoint := range canonicalSpec.Endpoints {
-			endpoints = append(endpoints, store.EndpointIndexRecord{
-				Method:      endpoint.Method,
-				Path:        endpoint.Path,
-				OperationID: endpoint.OperationID,
-				Summary:     endpoint.Summary,
-				Deprecated:  endpoint.Deprecated,
-				RawJSON:     endpoint.RawJSON,
-			})
-		}
-
-		if err := p.store.PersistCanonicalSpec(ctx, store.PersistCanonicalSpecInput{
-			RevisionID: revisionID,
-			SpecJSON:   canonicalSpec.SpecJSON,
-			SpecYAML:   canonicalSpec.SpecYAML,
-			ETag:       canonicalSpec.ETag,
-			SizeBytes:  canonicalSpec.SizeBytes,
-			Endpoints:  endpoints,
-		}); err != nil {
-			return fmt.Errorf("persist canonical openapi for revision %d: %w", revisionID, err)
-		}
-
 		if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
+			recordBuildMetric()
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "semantic diff failed")
 			return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
 		}
+		buildSuccess = true
+		recordBuildMetric()
 	}
 
 	if err := p.store.MarkRevisionProcessed(ctx, revisionID, resolution.OpenAPIChanged); err != nil {
+		processSpan.RecordError(err)
+		processSpan.SetStatus(codes.Error, "mark revision processed failed")
 		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
 	}
 	if resolution.OpenAPIChanged {
 		if err := p.emitOutboundNotifications(ctx, repo, revisionID, job); err != nil {
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "notify dispatch failed")
 			return fmt.Errorf("emit outbound notifications for revision %d: %w", revisionID, err)
 		}
 	}
+	if logger != nil {
+		logger.Info("revision processed", "openapi_changed", resolution.OpenAPIChanged)
+	}
+
+	processSpan.SetStatus(codes.Ok, "")
+	return nil
+}
+
+func (p revisionProcessor) runBuildStage(
+	ctx context.Context,
+	job worker.QueueJob,
+	revisionID int64,
+	resolution openapi.ResolutionResult,
+) error {
+	if p.tracer == nil {
+		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+	}
+
+	buildCtx, buildSpan := p.tracer.Start(ctx, "spec.build", trace.WithAttributes(
+		attribute.Int64("repo.id", job.RepoID),
+		attribute.Int64("revision.id", revisionID),
+		attribute.String("delivery.id", job.DeliveryID),
+		attribute.String("revision.sha", job.Sha),
+	))
+	success := false
+	defer func() {
+		if success {
+			buildSpan.SetStatus(codes.Ok, "")
+		}
+		buildSpan.End()
+	}()
+
+	canonicalSpec, err := openapi.BuildCanonicalSpec(resolution)
+	if err != nil {
+		buildSpan.RecordError(err)
+		buildSpan.SetStatus(codes.Error, "canonical build failed")
+		return err
+	}
+
+	endpoints := make([]store.EndpointIndexRecord, 0, len(canonicalSpec.Endpoints))
+	for _, endpoint := range canonicalSpec.Endpoints {
+		endpoints = append(endpoints, store.EndpointIndexRecord{
+			Method:      endpoint.Method,
+			Path:        endpoint.Path,
+			OperationID: endpoint.OperationID,
+			Summary:     endpoint.Summary,
+			Deprecated:  endpoint.Deprecated,
+			RawJSON:     endpoint.RawJSON,
+		})
+	}
+
+	if err := p.store.PersistCanonicalSpec(buildCtx, store.PersistCanonicalSpecInput{
+		RevisionID: revisionID,
+		SpecJSON:   canonicalSpec.SpecJSON,
+		SpecYAML:   canonicalSpec.SpecYAML,
+		ETag:       canonicalSpec.ETag,
+		SizeBytes:  canonicalSpec.SizeBytes,
+		Endpoints:  endpoints,
+	}); err != nil {
+		buildSpan.RecordError(err)
+		buildSpan.SetStatus(codes.Error, "persist canonical spec failed")
+		return fmt.Errorf("persist canonical openapi for revision %d: %w", revisionID, err)
+	}
+
+	success = true
 
 	return nil
 }
@@ -321,6 +464,17 @@ func isPermanentOpenAPIProcessingError(err error) bool {
 }
 
 func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.QueueJob, toRevisionID int64) error {
+	if p.tracer == nil {
+		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+	}
+	ctx, span := p.tracer.Start(ctx, "diff.compute", trace.WithAttributes(
+		attribute.Int64("repo.id", job.RepoID),
+		attribute.Int64("revision.id", toRevisionID),
+		attribute.String("delivery.id", job.DeliveryID),
+		attribute.String("revision.sha", job.Sha),
+	))
+	defer span.End()
+
 	previousRevision, hasPreviousRevision, err := p.store.GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 		ctx,
 		job.RepoID,
@@ -328,11 +482,15 @@ func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.Q
 		toRevisionID,
 	)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "load previous revision failed")
 		return fmt.Errorf("load previous processed openapi revision: %w", err)
 	}
 
 	currentEndpoints, err := p.store.ListEndpointIndexByRevision(ctx, toRevisionID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "load current endpoints failed")
 		return fmt.Errorf("load endpoint index for current revision %d: %w", toRevisionID, err)
 	}
 
@@ -341,6 +499,8 @@ func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.Q
 	if hasPreviousRevision {
 		previousEndpoints, err = p.store.ListEndpointIndexByRevision(ctx, previousRevision.ID)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "load previous endpoints failed")
 			return fmt.Errorf(
 				"load endpoint index for previous revision %d: %w",
 				previousRevision.ID,
@@ -356,11 +516,15 @@ func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.Q
 		endpointSnapshots(currentEndpoints),
 	)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "compute semantic diff failed")
 		return fmt.Errorf("diff endpoint snapshots: %w", err)
 	}
 
 	changeJSON, err := json.Marshal(changes)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "marshal semantic diff failed")
 		return fmt.Errorf("marshal spec change json: %w", err)
 	}
 
@@ -370,9 +534,12 @@ func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.Q
 		ToRevisionID:   toRevisionID,
 		ChangeJSON:     changeJSON,
 	}); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "persist semantic diff failed")
 		return fmt.Errorf("persist spec change row: %w", err)
 	}
 
+	span.SetStatus(codes.Ok, "")
 	return nil
 }
 
@@ -426,6 +593,7 @@ func (p revisionProcessor) emitOutboundNotifications(
 		RepoID:      repo.ID,
 		RepoPath:    repo.PathWithNamespace,
 		RevisionID:  revisionID,
+		DeliveryID:  job.DeliveryID,
 		Sha:         revision.Sha,
 		Branch:      revision.Branch,
 		ProcessedAt: processedAt,

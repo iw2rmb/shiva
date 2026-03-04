@@ -12,6 +12,7 @@
   - file: `internal/worker/manager.go`
   - runs configurable worker pool (`SHIVA_WORKER_CONCURRENCY`)
   - claims queue jobs, runs processor, marks processed/retry/failed.
+  - logs include correlation fields: `delivery_id`, `repo_id`, `sha`.
 - Queue backoff:
   - file: `internal/worker/backoff.go`
   - exponential backoff with bounded max duration.
@@ -27,6 +28,10 @@
     - computes semantic diff against previous processed OpenAPI baseline and persists `spec_changes`,
     - marks revision `processed` or `failed` with explicit error state,
     - emits outbound notification events via item-9 notifier flow.
+  - tracing spans in processor path:
+    - `gitlab.compare`
+    - `spec.build`
+    - `diff.compute`
 
 ## Queue Semantics
 - Event claim is atomic (`ClaimNextIngestEvent`) and updates status to `processing`.
@@ -62,5 +67,6 @@
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
 - Semantic diff engine: `docs/semantic-diff-engine.md`
 - Outbound notifications: `docs/outbound-webhook-notifications.md`
+- Hardening controls: `docs/hardening-observability-security-controls.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`
