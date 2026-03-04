@@ -210,13 +210,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 				t.Fatalf("expected zero bootstrap resolver calls, got %d", resolverFake.bootstrapCalls)
 			}
 
-			gotResolvePaths := append([]string(nil), resolverFake.resolveRootPaths...)
-			sort.Strings(gotResolvePaths)
-			wantResolvePaths := append([]string(nil), tc.wantRootResolvePaths...)
-			sort.Strings(wantResolvePaths)
-			if !reflect.DeepEqual(gotResolvePaths, wantResolvePaths) {
-				t.Fatalf("expected resolved root paths %v, got %v", wantResolvePaths, gotResolvePaths)
-			}
+			assertSortedStringsEqual(t, "resolved root paths", resolverFake.resolveRootPaths, tc.wantRootResolvePaths)
 
 			if len(tc.wantFallbackPaths) == 0 {
 				if len(resolverFake.discoveryCalls) != 0 {
@@ -226,20 +220,10 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 				if len(resolverFake.discoveryCalls) != 1 {
 					t.Fatalf("expected one fallback discovery call, got %d", len(resolverFake.discoveryCalls))
 				}
-				gotFallbackPaths := append([]string(nil), resolverFake.discoveryCalls[0]...)
-				sort.Strings(gotFallbackPaths)
-				wantFallbackPaths := append([]string(nil), tc.wantFallbackPaths...)
-				sort.Strings(wantFallbackPaths)
-				if !reflect.DeepEqual(gotFallbackPaths, wantFallbackPaths) {
-					t.Fatalf("expected fallback paths %v, got %v", wantFallbackPaths, gotFallbackPaths)
-				}
+				assertSortedStringsEqual(t, "fallback paths", resolverFake.discoveryCalls[0], tc.wantFallbackPaths)
 			}
 
-			gotMarkedDeletedIDs := append([]int64(nil), storeFake.markDeletedIDs...)
-			wantMarkedDeletedIDs := append([]int64(nil), tc.wantMarkedDeletedIDs...)
-			if !reflect.DeepEqual(gotMarkedDeletedIDs, wantMarkedDeletedIDs) {
-				t.Fatalf("expected marked deleted ids %v, got %v", wantMarkedDeletedIDs, gotMarkedDeletedIDs)
-			}
+			assertSortedInt64sEqual(t, "marked deleted ids", storeFake.markDeletedIDs, tc.wantMarkedDeletedIDs)
 			if len(storeFake.persistCanonicalCalls) != tc.wantPersistCanonical {
 				t.Fatalf("expected %d PersistCanonicalSpec calls, got %d", tc.wantPersistCanonical, len(storeFake.persistCanonicalCalls))
 			}
@@ -251,13 +235,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 				)
 			}
 
-			gotUpsertRoots := append([]string(nil), storeFake.upsertRoots...)
-			sort.Strings(gotUpsertRoots)
-			wantUpsertRoots := append([]string(nil), tc.wantUpsertRoots...)
-			sort.Strings(wantUpsertRoots)
-			if !reflect.DeepEqual(gotUpsertRoots, wantUpsertRoots) {
-				t.Fatalf("expected upsert roots %v, got %v", wantUpsertRoots, gotUpsertRoots)
-			}
+			assertSortedStringsEqual(t, "upsert roots", storeFake.upsertRoots, tc.wantUpsertRoots)
 
 			if storeFake.markProcessedCalls != 1 {
 				t.Fatalf("expected one MarkRevisionProcessed call, got %d", storeFake.markProcessedCalls)
@@ -341,16 +319,10 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution_PermanentFailureIs
 		t.Fatalf("Process() unexpected error: %v", err)
 	}
 
-	wantResolvePaths := []string{
+	assertSortedStringsEqual(t, "resolved root paths", resolverFake.resolveRootPaths, []string{
 		"apis/bad/openapi.yaml",
 		"apis/good/openapi.yaml",
-	}
-	gotResolvePaths := append([]string(nil), resolverFake.resolveRootPaths...)
-	sort.Strings(gotResolvePaths)
-	sort.Strings(wantResolvePaths)
-	if !reflect.DeepEqual(gotResolvePaths, wantResolvePaths) {
-		t.Fatalf("expected resolved root paths %v, got %v", wantResolvePaths, gotResolvePaths)
-	}
+	})
 
 	if len(storeFake.persistCanonicalCalls) != 1 {
 		t.Fatalf("expected one PersistCanonicalSpec call, got %d", len(storeFake.persistCanonicalCalls))
@@ -374,6 +346,28 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution_PermanentFailureIs
 	}
 	if storeFake.finalErrorByRoot["apis/bad/openapi.yaml"] == "" {
 		t.Fatalf("expected failed root to persist non-empty error")
+	}
+}
+
+func assertSortedStringsEqual(t *testing.T, label string, got, want []string) {
+	t.Helper()
+	gotCopy := append([]string(nil), got...)
+	wantCopy := append([]string(nil), want...)
+	sort.Strings(gotCopy)
+	sort.Strings(wantCopy)
+	if !reflect.DeepEqual(gotCopy, wantCopy) {
+		t.Fatalf("expected %s %v, got %v", label, wantCopy, gotCopy)
+	}
+}
+
+func assertSortedInt64sEqual(t *testing.T, label string, got, want []int64) {
+	t.Helper()
+	gotCopy := append([]int64(nil), got...)
+	wantCopy := append([]int64(nil), want...)
+	sort.Slice(gotCopy, func(i, j int) bool { return gotCopy[i] < gotCopy[j] })
+	sort.Slice(wantCopy, func(i, j int) bool { return wantCopy[i] < wantCopy[j] })
+	if !reflect.DeepEqual(gotCopy, wantCopy) {
+		t.Fatalf("expected %s %v, got %v", label, wantCopy, gotCopy)
 	}
 }
 
