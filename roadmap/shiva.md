@@ -42,7 +42,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - retries with backoff work.
 
 ## Phase 3: GitLab Retrieval and OpenAPI Build
-5. Implement GitLab client integrations.
+5. [x] Implement GitLab client integrations.
 - Deliverables:
   - compare endpoint client for changed paths
   - repository files endpoint client for content by `ref=sha`

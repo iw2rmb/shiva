@@ -29,6 +29,7 @@
 ## Notes
 - GitLab webhook ingest for item 3 is documented in `docs/gitlab-webhook-ingest.md`.
 - Ordered async ingest processing for item 4 is documented in `docs/ingest-worker-processing.md`.
-- GitLab client integration and read routes are still not implemented.
+- GitLab API retrieval client for item 5 is documented in `docs/gitlab-client-integrations.md`.
+- OpenAPI candidate detection/build, diff/notify, and read routes are still not implemented.
 - Database baseline artifacts are documented in `docs/database-schema-baseline.md`.
 - See `design/shiva.md` for the broader architecture and `roadmap/shiva.md` for remaining items.

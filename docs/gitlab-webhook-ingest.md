@@ -50,6 +50,7 @@
 
 ## References
 - Runtime baseline: `docs/runtime-baseline.md`
+- GitLab client integrations: `docs/gitlab-client-integrations.md`
 - Database schema baseline: `docs/database-schema-baseline.md`
 - Worker processing queue: `docs/ingest-worker-processing.md`
 - Design: `design/shiva.md`
