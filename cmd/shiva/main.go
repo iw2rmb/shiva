@@ -617,10 +617,13 @@ func (p revisionProcessor) processIncrementalRevision(
 			continue
 		}
 
-		if err := p.processImpactedAPI(ctx, job, revisionID, projectID, item.spec); err != nil {
+		built, err := p.processImpactedAPI(ctx, job, revisionID, projectID, item.spec)
+		if err != nil {
 			return false, err
 		}
-		rebuiltAPIs++
+		if built {
+			rebuiltAPIs++
+		}
 	}
 
 	if len(impacted) == 0 {
@@ -708,13 +711,26 @@ func (p revisionProcessor) processImpactedAPI(
 	revisionID int64,
 	projectID int64,
 	spec store.ActiveAPISpecWithLatestDependencies,
-) error {
-	root, err := p.openapiLoader.ResolveRootOpenAPIAtSHA(ctx, p.gitlabClient, projectID, job.Sha, spec.RootPath)
-	if err != nil {
-		return fmt.Errorf("resolve impacted root %q: %w", spec.RootPath, err)
-	}
-
-	return p.persistResolvedAPI(ctx, job, revisionID, spec.APISpec, root)
+) (bool, error) {
+	return p.processIncrementalAPI(
+		ctx,
+		job,
+		revisionID,
+		spec.APISpec,
+		func(callCtx context.Context) (openapi.RootResolution, error) {
+			root, err := p.openapiLoader.ResolveRootOpenAPIAtSHA(
+				callCtx,
+				p.gitlabClient,
+				projectID,
+				job.Sha,
+				spec.RootPath,
+			)
+			if err != nil {
+				return openapi.RootResolution{}, fmt.Errorf("resolve impacted root %q: %w", spec.RootPath, err)
+			}
+			return root, nil
+		},
+	)
 }
 
 func (p revisionProcessor) processFallbackDiscovery(
@@ -734,6 +750,7 @@ func (p revisionProcessor) processFallbackDiscovery(
 		return 0, fmt.Errorf("resolve fallback discovered roots: %w", err)
 	}
 
+	successfulBuilds := 0
 	for _, root := range roots {
 		apiSpec, err := p.store.UpsertAPISpec(ctx, store.UpsertAPISpecInput{
 			RepoID:   job.RepoID,
@@ -743,39 +760,61 @@ func (p revisionProcessor) processFallbackDiscovery(
 			return 0, fmt.Errorf("upsert fallback api spec for root %q: %w", root.RootPath, err)
 		}
 
-		if err := p.persistResolvedAPI(ctx, job, revisionID, apiSpec, root); err != nil {
+		built, err := p.processIncrementalAPI(
+			ctx,
+			job,
+			revisionID,
+			apiSpec,
+			func(context.Context) (openapi.RootResolution, error) {
+				return root, nil
+			},
+		)
+		if err != nil {
 			return 0, err
+		}
+		if built {
+			successfulBuilds++
 		}
 	}
 
-	return len(roots), nil
+	return successfulBuilds, nil
 }
 
-func (p revisionProcessor) persistResolvedAPI(
+func (p revisionProcessor) processIncrementalAPI(
 	ctx context.Context,
 	job worker.QueueJob,
 	revisionID int64,
 	apiSpec store.APISpec,
-	root openapi.RootResolution,
-) error {
+	resolveRoot func(context.Context) (openapi.RootResolution, error),
+) (bool, error) {
 	apiSpecRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
 		APISpecID:   apiSpec.ID,
 		RevisionID:  revisionID,
 		BuildStatus: apiSpecRevisionBuildStatusProcessing,
 	})
 	if err != nil {
-		return fmt.Errorf("create api spec revision for root %q: %w", apiSpec.RootPath, err)
+		return false, fmt.Errorf("create api spec revision for root %q: %w", apiSpec.RootPath, err)
+	}
+
+	root, err := resolveRoot(ctx)
+	if err != nil {
+		return p.handleIncrementalAPIFailure(ctx, apiSpec, revisionID, err)
 	}
 
 	if err := p.store.ReplaceAPISpecDependencies(ctx, store.ReplaceAPISpecDependenciesInput{
 		APISpecRevisionID: apiSpecRevision.ID,
 		FilePaths:         root.DependencyFiles,
 	}); err != nil {
-		return fmt.Errorf("replace api spec dependencies for root %q: %w", apiSpec.RootPath, err)
+		return false, fmt.Errorf("replace api spec dependencies for root %q: %w", apiSpec.RootPath, err)
 	}
 
 	if err := p.runBuildStage(ctx, job, revisionID, bootstrapRootToResolutionResult(root)); err != nil {
-		return fmt.Errorf("build canonical openapi for root %q: %w", apiSpec.RootPath, err)
+		return p.handleIncrementalAPIFailure(
+			ctx,
+			apiSpec,
+			revisionID,
+			fmt.Errorf("build canonical openapi for root %q: %w", apiSpec.RootPath, err),
+		)
 	}
 
 	if _, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
@@ -783,10 +822,32 @@ func (p revisionProcessor) persistResolvedAPI(
 		RevisionID:  revisionID,
 		BuildStatus: apiSpecRevisionBuildStatusProcessed,
 	}); err != nil {
-		return fmt.Errorf("mark api spec revision processed for root %q: %w", apiSpec.RootPath, err)
+		return false, fmt.Errorf("mark api spec revision processed for root %q: %w", apiSpec.RootPath, err)
 	}
 
-	return nil
+	return true, nil
+}
+
+func (p revisionProcessor) handleIncrementalAPIFailure(
+	ctx context.Context,
+	apiSpec store.APISpec,
+	revisionID int64,
+	err error,
+) (bool, error) {
+	if !isPermanentOpenAPIProcessingError(err) {
+		return false, err
+	}
+
+	if _, markErr := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+		APISpecID:   apiSpec.ID,
+		RevisionID:  revisionID,
+		BuildStatus: apiSpecRevisionBuildStatusFailed,
+		Error:       err.Error(),
+	}); markErr != nil {
+		return false, fmt.Errorf("mark api spec revision failed for root %q: %w", apiSpec.RootPath, markErr)
+	}
+
+	return false, nil
 }
 
 func incrementalImpactPaths(changedPath gitlab.ChangedPath) []string {

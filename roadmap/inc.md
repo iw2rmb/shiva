@@ -46,7 +46,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./cmd/shiva` — impact-only rebuild, unrelated changes no rebuild, deleted root deactivation, and fallback discovery from create/rename changes
 
 ## Failure Isolation And Completion Semantics
-- [ ] Isolate per-API build failures in incremental mode while preserving revision completion behavior — one API failure must not block others
+- [x] Isolate per-API build failures in incremental mode while preserving revision completion behavior — one API failure must not block others
   - Repository: `shiva`
   - Component: `cmd/shiva/main.go`, `internal/store`
   - Scope: Persist per-API revision status (`processing|processed|failed`) for incremental impacted/fallback APIs, continue processing remaining APIs on permanent root-local failures, and fail whole revision only for infrastructure failures

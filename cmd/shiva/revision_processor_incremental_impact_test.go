@@ -269,6 +269,114 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 	}
 }
 
+func TestRevisionProcessorProcess_IncrementalImpactResolution_PermanentFailureIsolatedPerAPI(t *testing.T) {
+	t.Parallel()
+
+	const (
+		repoID     = int64(77)
+		projectID  = int64(9001)
+		revisionID = int64(1234)
+	)
+
+	storeFake := newIncrementalImpactRevisionStore(
+		repoID,
+		projectID,
+		revisionID,
+		[]store.ActiveAPISpecWithLatestDependencies{
+			{
+				APISpec: store.APISpec{
+					ID:       11,
+					RepoID:   repoID,
+					RootPath: "apis/bad/openapi.yaml",
+					Status:   "active",
+				},
+				DependencyFilePaths: []string{
+					"apis/bad/openapi.yaml",
+					"apis/bad/components.yaml",
+				},
+			},
+			{
+				APISpec: store.APISpec{
+					ID:       12,
+					RepoID:   repoID,
+					RootPath: "apis/good/openapi.yaml",
+					Status:   "active",
+				},
+				DependencyFilePaths: []string{
+					"apis/good/openapi.yaml",
+					"apis/good/components.yaml",
+				},
+			},
+		},
+	)
+	resolverFake := &incrementalImpactResolver{
+		resolveRootErrByPath: map[string]error{
+			"apis/bad/openapi.yaml": openapi.ErrCanonicalRootNotFound,
+		},
+		resolvedRootByPath: map[string]openapi.RootResolution{
+			"apis/good/openapi.yaml": incrementalGoodRootResolution("apis/good/openapi.yaml", "listGood"),
+		},
+	}
+	gitlabClient := &incrementalImpactGitLabClient{
+		changedPaths: []gitlab.ChangedPath{
+			{NewPath: "apis/bad/components.yaml"},
+			{NewPath: "apis/good/components.yaml"},
+		},
+	}
+	processor := revisionProcessor{
+		store:         storeFake,
+		gitlabClient:  gitlabClient,
+		openapiLoader: resolverFake,
+	}
+	job := worker.QueueJob{
+		EventID:    55,
+		RepoID:     repoID,
+		DeliveryID: "delivery-55",
+		Sha:        "2222222222222222222222222222222222222222",
+		Branch:     "main",
+		ParentSha:  "1111111111111111111111111111111111111111",
+	}
+
+	if err := processor.Process(context.Background(), job); err != nil {
+		t.Fatalf("Process() unexpected error: %v", err)
+	}
+
+	wantResolvePaths := []string{
+		"apis/bad/openapi.yaml",
+		"apis/good/openapi.yaml",
+	}
+	gotResolvePaths := append([]string(nil), resolverFake.resolveRootPaths...)
+	sort.Strings(gotResolvePaths)
+	sort.Strings(wantResolvePaths)
+	if !reflect.DeepEqual(gotResolvePaths, wantResolvePaths) {
+		t.Fatalf("expected resolved root paths %v, got %v", wantResolvePaths, gotResolvePaths)
+	}
+
+	if len(storeFake.persistCanonicalCalls) != 1 {
+		t.Fatalf("expected one PersistCanonicalSpec call, got %d", len(storeFake.persistCanonicalCalls))
+	}
+	if storeFake.markProcessedCalls != 1 {
+		t.Fatalf("expected one MarkRevisionProcessed call, got %d", storeFake.markProcessedCalls)
+	}
+	if !storeFake.markProcessedOpenAPIChanged {
+		t.Fatalf("expected openapi_changed=true")
+	}
+	if len(storeFake.createAPISpecRevisionCalls) != 4 {
+		t.Fatalf("expected 4 CreateAPISpecRevision calls, got %d", len(storeFake.createAPISpecRevisionCalls))
+	}
+
+	wantFinalStatusByRoot := map[string]string{
+		"apis/bad/openapi.yaml":  apiSpecRevisionBuildStatusFailed,
+		"apis/good/openapi.yaml": apiSpecRevisionBuildStatusProcessed,
+	}
+	if !reflect.DeepEqual(storeFake.finalStatusByRoot, wantFinalStatusByRoot) {
+		t.Fatalf("expected final statuses %v, got %v", wantFinalStatusByRoot, storeFake.finalStatusByRoot)
+	}
+	if storeFake.finalErrorByRoot["apis/bad/openapi.yaml"] == "" {
+		t.Fatalf("expected failed root to persist non-empty error")
+	}
+}
+
 func incrementalGoodRootResolution(rootPath, operationID string) openapi.RootResolution {
 	return openapi.RootResolution{
 		RootPath: rootPath,
@@ -280,8 +388,9 @@ func incrementalGoodRootResolution(rootPath, operationID string) openapi.RootRes
 }
 
 type incrementalImpactResolver struct {
-	resolvedRootByPath map[string]openapi.RootResolution
-	discoveredRoots    []openapi.RootResolution
+	resolvedRootByPath   map[string]openapi.RootResolution
+	resolveRootErrByPath map[string]error
+	discoveredRoots      []openapi.RootResolution
 
 	resolveRootPaths []string
 	discoveryCalls   [][]string
@@ -296,6 +405,9 @@ func (r *incrementalImpactResolver) ResolveRootOpenAPIAtSHA(
 	rootPath string,
 ) (openapi.RootResolution, error) {
 	r.resolveRootPaths = append(r.resolveRootPaths, rootPath)
+	if err, exists := r.resolveRootErrByPath[rootPath]; exists {
+		return openapi.RootResolution{}, err
+	}
 	root, exists := r.resolvedRootByPath[rootPath]
 	if !exists {
 		return openapi.RootResolution{}, fmt.Errorf("unexpected ResolveRootOpenAPIAtSHA root %q", rootPath)
@@ -386,7 +498,9 @@ type incrementalImpactRevisionStore struct {
 	markProcessedCalls          int
 	markProcessedOpenAPIChanged bool
 
-	endpoints map[int64][]store.EndpointIndexRecord
+	finalStatusByRoot map[string]string
+	finalErrorByRoot  map[string]string
+	endpoints         map[int64][]store.EndpointIndexRecord
 }
 
 func newIncrementalImpactRevisionStore(
@@ -417,6 +531,8 @@ func newIncrementalImpactRevisionStore(
 		nextAPISpecID:         1000,
 		nextAPISpecRevisionID: 5000,
 		rootByAPISpecID:       rootBySpecID,
+		finalStatusByRoot:     make(map[string]string),
+		finalErrorByRoot:      make(map[string]string),
 		endpoints:             make(map[int64][]store.EndpointIndexRecord),
 	}
 }
@@ -527,6 +643,8 @@ func (s *incrementalImpactRevisionStore) CreateAPISpecRevision(
 	}
 
 	s.createAPISpecRevisionCalls = append(s.createAPISpecRevisionCalls, input)
+	s.finalStatusByRoot[rootPath] = input.BuildStatus
+	s.finalErrorByRoot[rootPath] = input.Error
 	s.nextAPISpecRevisionID++
 	return store.APISpecRevision{
 		ID:                 s.nextAPISpecRevisionID,

@@ -27,7 +27,9 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
    - Resolve impacted APIs by changed-path intersection against `{root_path + dependency_paths}`.
    - For impacted APIs:
      - if root path is deleted in compare, mark API spec status as `deleted`;
-     - otherwise, resolve that root at `sha`, rebuild it, and persist updated dependency set.
+     - otherwise, write `api_spec_revisions` `processing`, resolve/build that root at `sha`, then write terminal status:
+       - `processed` on success,
+       - `failed` on permanent root-local errors (invalid root/`$ref`/cycle/fetch-limit/not-found/GitLab 4xx), while continuing with other APIs.
    - If no impacted APIs were found and compare includes `new_file` or `renamed_file` paths, run targeted discovery on those changed paths and create/build newly valid roots.
 7. If at least one API was rebuilt:
    - build canonical JSON+YAML,
@@ -65,6 +67,9 @@ Marked permanent (revision failed, no further retries for that event):
 - fetch limit exceeded,
 - canonical root/reference errors,
 - GitLab `404` and other GitLab 4xx API errors.
+
+Incremental mode exception for impacted/fallback per-API execution:
+- the same permanent error classes are isolated to that API (`api_spec_revisions` `failed`) and do not fail the whole revision when other APIs can proceed.
 
 Other errors are retried by worker backoff policy.
 
