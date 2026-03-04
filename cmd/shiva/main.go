@@ -277,12 +277,16 @@ func bootstrapRootToResolutionResult(root openapi.RootResolution) openapi.Resolu
 	}
 }
 
-func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
-	if p.tracer == nil {
-		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+func (p revisionProcessor) effectiveTracer() trace.Tracer {
+	if p.tracer != nil {
+		return p.tracer
 	}
+	return trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+}
 
-	ctx, processSpan := p.tracer.Start(ctx, "process.revision", trace.WithAttributes(
+func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
+	tracer := p.effectiveTracer()
+	ctx, processSpan := tracer.Start(ctx, "process.revision", trace.WithAttributes(
 		attribute.Int64("event.id", job.EventID),
 		attribute.Int64("repo.id", job.RepoID),
 		attribute.String("delivery.id", job.DeliveryID),
@@ -360,7 +364,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	var bootstrapRoots []openapi.RootResolution
 	switch mode {
 	case ingestionModeBootstrap:
-		bootstrapCtx, bootstrapSpan := p.tracer.Start(ctx, "gitlab.bootstrap", trace.WithAttributes(
+		bootstrapCtx, bootstrapSpan := tracer.Start(ctx, "gitlab.bootstrap", trace.WithAttributes(
 			attribute.Int64("repo.id", job.RepoID),
 			attribute.String("delivery.id", job.DeliveryID),
 			attribute.String("revision.sha", job.Sha),
@@ -385,7 +389,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		bootstrapSpan.End()
 		err = resolveErr
 	default:
-		compareCtx, compareSpan := p.tracer.Start(ctx, "gitlab.compare", trace.WithAttributes(
+		compareCtx, compareSpan := tracer.Start(ctx, "gitlab.compare", trace.WithAttributes(
 			attribute.Int64("repo.id", job.RepoID),
 			attribute.String("delivery.id", job.DeliveryID),
 			attribute.String("revision.sha", job.Sha),
@@ -590,11 +594,7 @@ func (p revisionProcessor) runBuildStage(
 	revisionID int64,
 	resolution openapi.ResolutionResult,
 ) error {
-	if p.tracer == nil {
-		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
-	}
-
-	buildCtx, buildSpan := p.tracer.Start(ctx, "spec.build", trace.WithAttributes(
+	buildCtx, buildSpan := p.effectiveTracer().Start(ctx, "spec.build", trace.WithAttributes(
 		attribute.Int64("repo.id", job.RepoID),
 		attribute.Int64("revision.id", revisionID),
 		attribute.String("delivery.id", job.DeliveryID),
@@ -646,29 +646,19 @@ func (p revisionProcessor) runBuildStage(
 }
 
 func isPermanentOpenAPIProcessingError(err error) bool {
-	if errors.Is(err, openapi.ErrInvalidOpenAPIDocument) {
-		return true
-	}
-	if errors.Is(err, openapi.ErrReferenceCycle) {
-		return true
-	}
-	if errors.Is(err, openapi.ErrFetchLimitExceeded) {
-		return true
-	}
-	if errors.Is(err, openapi.ErrInvalidReference) {
-		return true
-	}
-	if errors.Is(err, openapi.ErrCanonicalRootNotFound) {
-		return true
-	}
-	if errors.Is(err, openapi.ErrCanonicalDocumentNotFound) {
-		return true
-	}
-	if errors.Is(err, openapi.ErrReferencePointerNotFound) {
-		return true
-	}
-	if errors.Is(err, gitlab.ErrNotFound) {
-		return true
+	for _, target := range []error{
+		openapi.ErrInvalidOpenAPIDocument,
+		openapi.ErrReferenceCycle,
+		openapi.ErrFetchLimitExceeded,
+		openapi.ErrInvalidReference,
+		openapi.ErrCanonicalRootNotFound,
+		openapi.ErrCanonicalDocumentNotFound,
+		openapi.ErrReferencePointerNotFound,
+		gitlab.ErrNotFound,
+	} {
+		if errors.Is(err, target) {
+			return true
+		}
 	}
 
 	var apiErr *gitlab.APIError
@@ -680,10 +670,7 @@ func isPermanentOpenAPIProcessingError(err error) bool {
 }
 
 func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.QueueJob, toRevisionID int64) error {
-	if p.tracer == nil {
-		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
-	}
-	ctx, span := p.tracer.Start(ctx, "diff.compute", trace.WithAttributes(
+	ctx, span := p.effectiveTracer().Start(ctx, "diff.compute", trace.WithAttributes(
 		attribute.Int64("repo.id", job.RepoID),
 		attribute.Int64("revision.id", toRevisionID),
 		attribute.String("delivery.id", job.DeliveryID),

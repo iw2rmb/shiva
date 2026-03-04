@@ -176,16 +176,8 @@ func (r *Resolver) ResolveChangedOpenAPI(
 			return ResolutionResult{}, fmt.Errorf("fetch candidate %q: %w", candidatePath, err)
 		}
 
-		isRoot, err := isOpenAPIRootDocument(content, candidatePath, true)
-		if err != nil {
+		if _, err := isOpenAPIRootDocument(content, candidatePath, true); err != nil {
 			return ResolutionResult{}, err
-		}
-		if !isRoot {
-			return ResolutionResult{}, fmt.Errorf(
-				"%w: %q is missing top-level openapi/swagger field",
-				ErrInvalidOpenAPIDocument,
-				candidatePath,
-			)
 		}
 
 		if _, exists := rootSet[candidatePath]; exists {
