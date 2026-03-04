@@ -42,18 +42,24 @@ CREATE TABLE ingest_events (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    sha TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    parent_sha TEXT,
     event_type TEXT NOT NULL,
     delivery_id TEXT NOT NULL,
     payload_json JSONB NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'processed', 'failed')),
     error TEXT NOT NULL DEFAULT '',
     UNIQUE (repo_id, delivery_id),
+    UNIQUE (repo_id, sha),
     FOREIGN KEY (tenant_id, repo_id) REFERENCES repos(tenant_id, id) ON DELETE CASCADE
 );
 
-CREATE INDEX ingest_events_status_received_idx ON ingest_events(status, received_at);
-CREATE INDEX ingest_events_repo_received_idx ON ingest_events(repo_id, received_at DESC);
+CREATE INDEX ingest_events_status_retry_idx ON ingest_events(status, next_retry_at, id);
+CREATE INDEX ingest_events_repo_id_idx ON ingest_events(repo_id, id);
 
 CREATE TABLE revisions (
     id BIGSERIAL PRIMARY KEY,

@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/iw2rmb/shiva/internal/config"
 	httpserver "github.com/iw2rmb/shiva/internal/http"
@@ -43,9 +45,19 @@ func run(ctx context.Context) error {
 	}
 	defer storeInstance.Close()
 
-	workerManager := worker.New(cfg.WorkerConcurrency, logger)
-	if err := workerManager.Start(ctx); err != nil {
-		return err
+	var workerManager *worker.Manager
+	if storeInstance.IsConfigured() {
+		workerManager = worker.New(
+			cfg.WorkerConcurrency,
+			logger,
+			worker.WithQueue(storeQueueAdapter{store: storeInstance}),
+			worker.WithProcessor(revisionProcessor{store: storeInstance}),
+		)
+		if err := workerManager.Start(ctx); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("worker manager disabled: database is not configured")
 	}
 
 	server := httpserver.New(cfg, logger, storeInstance)
@@ -74,9 +86,64 @@ func run(ctx context.Context) error {
 		logger.Warn("http shutdown returned error", "error", err)
 	}
 
-	if err := workerManager.Stop(shutdownCtx); err != nil {
-		logger.Warn("worker shutdown returned error", "error", err)
+	if workerManager != nil {
+		if err := workerManager.Stop(shutdownCtx); err != nil {
+			logger.Warn("worker shutdown returned error", "error", err)
+		}
 	}
 
+	return nil
+}
+
+type storeQueueAdapter struct {
+	store *store.Store
+}
+
+func (q storeQueueAdapter) ClaimNext(ctx context.Context) (worker.QueueJob, bool, error) {
+	event, ok, err := q.store.ClaimNextIngestEvent(ctx)
+	if err != nil {
+		return worker.QueueJob{}, false, err
+	}
+	if !ok {
+		return worker.QueueJob{}, false, nil
+	}
+	return worker.QueueJob{
+		EventID:      event.ID,
+		RepoID:       event.RepoID,
+		Sha:          event.Sha,
+		Branch:       event.Branch,
+		ParentSha:    event.ParentSha,
+		AttemptCount: event.AttemptCount,
+	}, true, nil
+}
+
+func (q storeQueueAdapter) MarkProcessed(ctx context.Context, eventID int64) error {
+	return q.store.MarkIngestEventProcessed(ctx, eventID)
+}
+
+func (q storeQueueAdapter) ScheduleRetry(ctx context.Context, eventID int64, nextRetryAt time.Time, errorMessage string) error {
+	return q.store.ScheduleIngestEventRetry(ctx, eventID, nextRetryAt, errorMessage)
+}
+
+func (q storeQueueAdapter) MarkFailed(ctx context.Context, eventID int64, errorMessage string) error {
+	return q.store.MarkIngestEventFailed(ctx, eventID, errorMessage)
+}
+
+type revisionProcessor struct {
+	store *store.Store
+}
+
+func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
+	_, err := p.store.UpsertRevisionFromIngestEvent(ctx, store.IngestQueueEvent{
+		ID:           job.EventID,
+		RepoID:       job.RepoID,
+		Sha:          job.Sha,
+		Branch:       job.Branch,
+		ParentSha:    job.ParentSha,
+		AttemptCount: job.AttemptCount,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert revision from ingest event %d: %w", job.EventID, err)
+	}
 	return nil
 }

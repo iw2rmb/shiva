@@ -18,6 +18,9 @@ type gitlabWebhookIngestor interface {
 
 type gitLabWebhookPayload struct {
 	ObjectKind string `json:"object_kind"`
+	Ref        string `json:"ref"`
+	Before     string `json:"before"`
+	After      string `json:"after"`
 	Project    struct {
 		ID                int64  `json:"id"`
 		PathWithNamespace string `json:"path_with_namespace"`
@@ -76,11 +79,33 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) error {
 		eventType = strings.TrimSpace(payload.ObjectKind)
 	}
 
+	sha := strings.TrimSpace(payload.After)
+	if sha == "" || isZeroSHA(sha) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "payload.after must contain a commit sha",
+		})
+	}
+
+	branch, err := parseBranchRef(payload.Ref)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	parentSha := strings.TrimSpace(payload.Before)
+	if isZeroSHA(parentSha) {
+		parentSha = ""
+	}
+
 	result, err := s.gitlabIngestor.PersistGitLabWebhook(c.Context(), store.GitLabIngestInput{
 		TenantKey:         s.cfg.TenantKey,
 		GitLabProjectID:   payload.Project.ID,
 		PathWithNamespace: payload.Project.PathWithNamespace,
 		DefaultBranch:     payload.Project.DefaultBranch,
+		Sha:               sha,
+		Branch:            branch,
+		ParentSha:         parentSha,
 		EventType:         eventType,
 		DeliveryID:        deliveryID,
 		PayloadJSON:       body,
@@ -134,4 +159,32 @@ func secureEqual(provided, expected string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
+}
+
+func parseBranchRef(ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	const prefix = "refs/heads/"
+	if !strings.HasPrefix(ref, prefix) || len(ref) == len(prefix) {
+		return "", errors.New("payload.ref must be a branch ref in refs/heads/* format")
+	}
+
+	branch := strings.TrimSpace(strings.TrimPrefix(ref, prefix))
+	if branch == "" {
+		return "", errors.New("payload.ref must include a branch name")
+	}
+
+	return branch, nil
+}
+
+func isZeroSHA(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char != '0' {
+			return false
+		}
+	}
+	return true
 }

@@ -35,15 +35,20 @@ type EndpointIndex struct {
 }
 
 type IngestEvent struct {
-	ID          int64              `json:"id"`
-	TenantID    int64              `json:"tenant_id"`
-	RepoID      int64              `json:"repo_id"`
-	EventType   string             `json:"event_type"`
-	DeliveryID  string             `json:"delivery_id"`
-	PayloadJson []byte             `json:"payload_json"`
-	ReceivedAt  pgtype.Timestamptz `json:"received_at"`
-	Status      string             `json:"status"`
-	Error       string             `json:"error"`
+	ID           int64              `json:"id"`
+	TenantID     int64              `json:"tenant_id"`
+	RepoID       int64              `json:"repo_id"`
+	Sha          string             `json:"sha"`
+	Branch       string             `json:"branch"`
+	ParentSha    pgtype.Text        `json:"parent_sha"`
+	EventType    string             `json:"event_type"`
+	DeliveryID   string             `json:"delivery_id"`
+	PayloadJson  []byte             `json:"payload_json"`
+	ReceivedAt   pgtype.Timestamptz `json:"received_at"`
+	AttemptCount int32              `json:"attempt_count"`
+	NextRetryAt  pgtype.Timestamptz `json:"next_retry_at"`
+	Status       string             `json:"status"`
+	Error        string             `json:"error"`
 }
 
 type Repo struct {

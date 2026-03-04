@@ -14,7 +14,13 @@ import (
 	"github.com/iw2rmb/shiva/internal/store"
 )
 
-const testGitLabPayload = `{"object_kind":"push","project":{"id":42,"path_with_namespace":"acme/platform-api","default_branch":"main"}}`
+const testGitLabPayload = `{
+  "object_kind":"push",
+  "ref":"refs/heads/main",
+  "before":"1111111111111111111111111111111111111111",
+  "after":"2222222222222222222222222222222222222222",
+  "project":{"id":42,"path_with_namespace":"acme/platform-api","default_branch":"main"}
+}`
 
 type fakeGitLabIngestor struct {
 	calls []store.GitLabIngestInput

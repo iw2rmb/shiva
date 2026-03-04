@@ -38,11 +38,14 @@
 
 ## Notes
 - Tenant-scoped relation safety is enforced with composite foreign keys where tenant and repo are both present.
-- Revision, ingest delivery, and outbound delivery keys include uniqueness constraints for idempotency.
+- Ingest idempotency keys include both `(repo_id, delivery_id)` and `(repo_id, sha)`.
+- `ingest_events` now tracks queue execution state (`attempt_count`, `next_retry_at`) for async retry scheduling.
+- Revision and outbound delivery keys include uniqueness constraints for idempotency.
 - This baseline is the source of truth for future schema changes. Per policy, changes must be applied by updating CREATE statements in this initial migration.
 
 ## References
 - Runtime baseline: `docs/runtime-baseline.md`
 - GitLab webhook ingest: `docs/gitlab-webhook-ingest.md`
+- Worker processing queue: `docs/ingest-worker-processing.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

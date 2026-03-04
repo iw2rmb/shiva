@@ -42,6 +42,10 @@ func (s *Store) Close() {
 	}
 }
 
+func (s *Store) IsConfigured() bool {
+	return s != nil && s.configured && s.pool != nil
+}
+
 func (s *Store) Health(ctx context.Context) Health {
 	if s == nil || !s.configured || s.pool == nil {
 		return Health{Status: "not_configured"}

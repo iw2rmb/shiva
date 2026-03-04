@@ -32,7 +32,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - duplicate delivery is idempotent
   - invalid signatures rejected with `401/403`.
 
-4. Implement ordered async processing by repository.
+4. [x] Implement ordered async processing by repository.
 - Deliverables:
   - queue abstraction and worker pool
   - repo-keyed ordering (`repo_id`)

@@ -9,6 +9,7 @@ import (
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var ErrStoreNotConfigured = errors.New("store is not configured")
@@ -19,6 +20,9 @@ type GitLabIngestInput struct {
 	GitLabProjectID   int64
 	PathWithNamespace string
 	DefaultBranch     string
+	Sha               string
+	Branch            string
+	ParentSha         string
 	EventType         string
 	DeliveryID        string
 	PayloadJSON       []byte
@@ -60,16 +64,16 @@ func (s *Store) PersistGitLabWebhook(ctx context.Context, input GitLabIngestInpu
 	event, err := queries.CreateIngestEvent(ctx, sqlc.CreateIngestEventParams{
 		TenantID:    tenant.ID,
 		RepoID:      repo.ID,
+		Sha:         normalized.Sha,
+		Branch:      normalized.Branch,
+		ParentSha:   nullableText(normalized.ParentSha),
 		EventType:   normalized.EventType,
 		DeliveryID:  normalized.DeliveryID,
 		PayloadJson: normalized.PayloadJSON,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
-			existing, getErr := queries.GetIngestEventByRepoDelivery(ctx, sqlc.GetIngestEventByRepoDeliveryParams{
-				RepoID:     repo.ID,
-				DeliveryID: normalized.DeliveryID,
-			})
+			existing, getErr := loadDuplicateIngestEvent(ctx, queries, repo.ID, normalized.DeliveryID, normalized.Sha)
 			if getErr != nil {
 				return GitLabIngestResult{}, fmt.Errorf("load duplicate ingest event: %w", getErr)
 			}
@@ -93,6 +97,9 @@ func normalizeGitLabIngestInput(input GitLabIngestInput) (GitLabIngestInput, err
 	normalized.TenantKey = strings.TrimSpace(input.TenantKey)
 	normalized.PathWithNamespace = strings.TrimSpace(input.PathWithNamespace)
 	normalized.DefaultBranch = strings.TrimSpace(input.DefaultBranch)
+	normalized.Sha = strings.TrimSpace(input.Sha)
+	normalized.Branch = strings.TrimSpace(input.Branch)
+	normalized.ParentSha = strings.TrimSpace(input.ParentSha)
 	normalized.EventType = strings.TrimSpace(input.EventType)
 	normalized.DeliveryID = strings.TrimSpace(input.DeliveryID)
 
@@ -105,6 +112,10 @@ func normalizeGitLabIngestInput(input GitLabIngestInput) (GitLabIngestInput, err
 		return GitLabIngestInput{}, fmt.Errorf("%w: path_with_namespace is required", ErrInvalidIngestInput)
 	case normalized.DefaultBranch == "":
 		return GitLabIngestInput{}, fmt.Errorf("%w: default branch is required", ErrInvalidIngestInput)
+	case normalized.Sha == "":
+		return GitLabIngestInput{}, fmt.Errorf("%w: sha is required", ErrInvalidIngestInput)
+	case normalized.Branch == "":
+		return GitLabIngestInput{}, fmt.Errorf("%w: branch is required", ErrInvalidIngestInput)
 	case normalized.EventType == "":
 		return GitLabIngestInput{}, fmt.Errorf("%w: event type is required", ErrInvalidIngestInput)
 	case normalized.DeliveryID == "":
@@ -198,4 +209,40 @@ func ensureRepo(ctx context.Context, queries *sqlc.Queries, tenantID int64, inpu
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func nullableText(value string) pgtype.Text {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: value, Valid: true}
+}
+
+func loadDuplicateIngestEvent(
+	ctx context.Context,
+	queries *sqlc.Queries,
+	repoID int64,
+	deliveryID string,
+	sha string,
+) (sqlc.IngestEvent, error) {
+	existing, err := queries.GetIngestEventByRepoDelivery(ctx, sqlc.GetIngestEventByRepoDeliveryParams{
+		RepoID:     repoID,
+		DeliveryID: deliveryID,
+	})
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return sqlc.IngestEvent{}, err
+	}
+
+	existing, err = queries.GetIngestEventByRepoSHA(ctx, sqlc.GetIngestEventByRepoSHAParams{
+		RepoID: repoID,
+		Sha:    sha,
+	})
+	if err != nil {
+		return sqlc.IngestEvent{}, err
+	}
+	return existing, nil
 }

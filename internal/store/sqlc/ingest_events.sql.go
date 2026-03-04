@@ -7,12 +7,65 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const claimNextIngestEvent = `-- name: ClaimNextIngestEvent :one
+WITH candidate AS (
+    SELECT id
+    FROM ingest_events AS ie
+    WHERE ie.status = 'pending'
+      AND ie.next_retry_at <= NOW()
+      AND NOT EXISTS (
+          SELECT 1
+          FROM ingest_events AS older
+          WHERE older.repo_id = ie.repo_id
+            AND older.id < ie.id
+            AND older.status IN ('pending', 'processing')
+      )
+    ORDER BY ie.id
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE ingest_events
+SET status = 'processing',
+    attempt_count = ingest_events.attempt_count + 1,
+    error = ''
+FROM candidate
+WHERE ingest_events.id = candidate.id
+RETURNING ingest_events.id, ingest_events.tenant_id, ingest_events.repo_id, ingest_events.sha, ingest_events.branch, ingest_events.parent_sha, ingest_events.event_type, ingest_events.delivery_id, ingest_events.payload_json, ingest_events.received_at, ingest_events.attempt_count, ingest_events.next_retry_at, ingest_events.status, ingest_events.error
+`
+
+func (q *Queries) ClaimNextIngestEvent(ctx context.Context) (IngestEvent, error) {
+	row := q.db.QueryRow(ctx, claimNextIngestEvent)
+	var i IngestEvent
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
 
 const createIngestEvent = `-- name: CreateIngestEvent :one
 INSERT INTO ingest_events (
     tenant_id,
     repo_id,
+    sha,
+    branch,
+    parent_sha,
     event_type,
     delivery_id,
     payload_json
@@ -22,23 +75,32 @@ VALUES (
     $2,
     $3,
     $4,
-    $5
+    $5,
+    $6,
+    $7,
+    $8
 )
-RETURNING id, tenant_id, repo_id, event_type, delivery_id, payload_json, received_at, status, error
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
 `
 
 type CreateIngestEventParams struct {
-	TenantID    int64  `json:"tenant_id"`
-	RepoID      int64  `json:"repo_id"`
-	EventType   string `json:"event_type"`
-	DeliveryID  string `json:"delivery_id"`
-	PayloadJson []byte `json:"payload_json"`
+	TenantID    int64       `json:"tenant_id"`
+	RepoID      int64       `json:"repo_id"`
+	Sha         string      `json:"sha"`
+	Branch      string      `json:"branch"`
+	ParentSha   pgtype.Text `json:"parent_sha"`
+	EventType   string      `json:"event_type"`
+	DeliveryID  string      `json:"delivery_id"`
+	PayloadJson []byte      `json:"payload_json"`
 }
 
 func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventParams) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, createIngestEvent,
 		arg.TenantID,
 		arg.RepoID,
+		arg.Sha,
+		arg.Branch,
+		arg.ParentSha,
 		arg.EventType,
 		arg.DeliveryID,
 		arg.PayloadJson,
@@ -48,10 +110,15 @@ func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventPa
 		&i.ID,
 		&i.TenantID,
 		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
 		&i.EventType,
 		&i.DeliveryID,
 		&i.PayloadJson,
 		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.Status,
 		&i.Error,
 	)
@@ -59,7 +126,7 @@ func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventPa
 }
 
 const getIngestEventByRepoDelivery = `-- name: GetIngestEventByRepoDelivery :one
-SELECT id, tenant_id, repo_id, event_type, delivery_id, payload_json, received_at, status, error
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND delivery_id = $2
@@ -77,79 +144,151 @@ func (q *Queries) GetIngestEventByRepoDelivery(ctx context.Context, arg GetInges
 		&i.ID,
 		&i.TenantID,
 		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
 		&i.EventType,
 		&i.DeliveryID,
 		&i.PayloadJson,
 		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.Status,
 		&i.Error,
 	)
 	return i, err
 }
 
-const listPendingIngestEvents = `-- name: ListPendingIngestEvents :many
-SELECT id, tenant_id, repo_id, event_type, delivery_id, payload_json, received_at, status, error
+const getIngestEventByRepoSHA = `-- name: GetIngestEventByRepoSHA :one
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
 FROM ingest_events
-WHERE status = 'pending'
-ORDER BY received_at
-LIMIT $1
+WHERE repo_id = $1
+  AND sha = $2
 `
 
-func (q *Queries) ListPendingIngestEvents(ctx context.Context, limitCount int32) ([]IngestEvent, error) {
-	rows, err := q.db.Query(ctx, listPendingIngestEvents, limitCount)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []IngestEvent{}
-	for rows.Next() {
-		var i IngestEvent
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.RepoID,
-			&i.EventType,
-			&i.DeliveryID,
-			&i.PayloadJson,
-			&i.ReceivedAt,
-			&i.Status,
-			&i.Error,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type GetIngestEventByRepoSHAParams struct {
+	RepoID int64  `json:"repo_id"`
+	Sha    string `json:"sha"`
 }
 
-const updateIngestEventStatus = `-- name: UpdateIngestEventStatus :one
-UPDATE ingest_events
-SET status = $1,
-    error = $2
-WHERE id = $3
-RETURNING id, tenant_id, repo_id, event_type, delivery_id, payload_json, received_at, status, error
-`
-
-type UpdateIngestEventStatusParams struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
-	ID     int64  `json:"id"`
-}
-
-func (q *Queries) UpdateIngestEventStatus(ctx context.Context, arg UpdateIngestEventStatusParams) (IngestEvent, error) {
-	row := q.db.QueryRow(ctx, updateIngestEventStatus, arg.Status, arg.Error, arg.ID)
+func (q *Queries) GetIngestEventByRepoSHA(ctx context.Context, arg GetIngestEventByRepoSHAParams) (IngestEvent, error) {
+	row := q.db.QueryRow(ctx, getIngestEventByRepoSHA, arg.RepoID, arg.Sha)
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
 		&i.EventType,
 		&i.DeliveryID,
 		&i.PayloadJson,
 		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
+
+const markIngestEventFailed = `-- name: MarkIngestEventFailed :one
+UPDATE ingest_events
+SET status = 'failed',
+    error = $1
+WHERE id = $2
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+`
+
+type MarkIngestEventFailedParams struct {
+	Error string `json:"error"`
+	ID    int64  `json:"id"`
+}
+
+func (q *Queries) MarkIngestEventFailed(ctx context.Context, arg MarkIngestEventFailedParams) (IngestEvent, error) {
+	row := q.db.QueryRow(ctx, markIngestEventFailed, arg.Error, arg.ID)
+	var i IngestEvent
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
+
+const markIngestEventProcessed = `-- name: MarkIngestEventProcessed :one
+UPDATE ingest_events
+SET status = 'processed',
+    error = ''
+WHERE id = $1
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+`
+
+func (q *Queries) MarkIngestEventProcessed(ctx context.Context, id int64) (IngestEvent, error) {
+	row := q.db.QueryRow(ctx, markIngestEventProcessed, id)
+	var i IngestEvent
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
+
+const scheduleIngestEventRetry = `-- name: ScheduleIngestEventRetry :one
+UPDATE ingest_events
+SET status = 'pending',
+    error = $1,
+    next_retry_at = $2
+WHERE id = $3
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+`
+
+type ScheduleIngestEventRetryParams struct {
+	Error       string             `json:"error"`
+	NextRetryAt pgtype.Timestamptz `json:"next_retry_at"`
+	ID          int64              `json:"id"`
+}
+
+func (q *Queries) ScheduleIngestEventRetry(ctx context.Context, arg ScheduleIngestEventRetryParams) (IngestEvent, error) {
+	row := q.db.QueryRow(ctx, scheduleIngestEventRetry, arg.Error, arg.NextRetryAt, arg.ID)
+	var i IngestEvent
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.Status,
 		&i.Error,
 	)
