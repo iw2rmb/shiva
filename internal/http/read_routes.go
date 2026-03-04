@@ -35,26 +35,18 @@ type endpointResponse struct {
 }
 
 func (s *Server) handleGetSpecJSON(c *fiber.Ctx) error {
-	resolved, err := s.resolveReadSelector(c, false)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-
-	artifact, err := s.readStore.GetSpecArtifactByRevisionID(c.Context(), resolved.Revision.ID)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-
-	c.Set(fiber.HeaderETag, artifact.ETag)
-	if ifNoneMatchMatches(c.Get(fiber.HeaderIfNoneMatch), artifact.ETag) {
-		return c.SendStatus(fiber.StatusNotModified)
-	}
-
-	c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
-	return c.Status(fiber.StatusOK).Send(artifact.SpecJSON)
+	return s.handleGetSpec(c, fiber.MIMEApplicationJSONCharsetUTF8, func(a store.SpecArtifact) []byte {
+		return a.SpecJSON
+	})
 }
 
 func (s *Server) handleGetSpecYAML(c *fiber.Ctx) error {
+	return s.handleGetSpec(c, "application/yaml; charset=utf-8", func(a store.SpecArtifact) []byte {
+		return []byte(a.SpecYAML)
+	})
+}
+
+func (s *Server) handleGetSpec(c *fiber.Ctx, contentType string, payload func(store.SpecArtifact) []byte) error {
 	resolved, err := s.resolveReadSelector(c, false)
 	if err != nil {
 		return s.writeReadRouteError(c, err)
@@ -70,12 +62,20 @@ func (s *Server) handleGetSpecYAML(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 
-	c.Set(fiber.HeaderContentType, "application/yaml; charset=utf-8")
-	return c.Status(fiber.StatusOK).SendString(artifact.SpecYAML)
+	c.Set(fiber.HeaderContentType, contentType)
+	return c.Status(fiber.StatusOK).Send(payload(artifact))
 }
 
 func (s *Server) handleListEndpointsBySelector(c *fiber.Ctx) error {
-	resolved, err := s.resolveReadSelector(c, false)
+	return s.handleListEndpoints(c, false)
+}
+
+func (s *Server) handleListEndpointsNoSelector(c *fiber.Ctx) error {
+	return s.handleListEndpoints(c, true)
+}
+
+func (s *Server) handleListEndpoints(c *fiber.Ctx, noSelector bool) error {
+	resolved, err := s.resolveReadSelector(c, noSelector)
 	if err != nil {
 		return s.writeReadRouteError(c, err)
 	}
@@ -124,20 +124,6 @@ func (s *Server) handleGetEndpointBySelector(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(mapEndpoint(endpoint))
-}
-
-func (s *Server) handleListEndpointsNoSelector(c *fiber.Ctx) error {
-	resolved, err := s.resolveReadSelector(c, true)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-
-	endpoints, err := s.readStore.ListEndpointIndexByRevision(c.Context(), resolved.Revision.ID)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-
-	return c.Status(fiber.StatusOK).JSON(mapEndpoints(endpoints))
 }
 
 func (s *Server) resolveReadSelector(c *fiber.Ctx, noSelector bool) (store.ResolvedReadSelector, error) {
@@ -269,11 +255,8 @@ func (s *Server) writeReadRouteError(c *fiber.Ctx, err error) error {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error": "selector points to unprocessed revision",
 		})
-	case errors.Is(err, store.ErrSelectorNotFound):
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "selector has no processed artifact",
-		})
-	case errors.Is(err, store.ErrSpecArtifactNotFound):
+	case errors.Is(err, store.ErrSelectorNotFound),
+		errors.Is(err, store.ErrSpecArtifactNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "selector has no processed artifact",
 		})
