@@ -1,0 +1,12 @@
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List pets
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: ../components/common.yaml#/components/schemas/PetList

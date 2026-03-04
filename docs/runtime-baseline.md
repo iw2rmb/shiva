@@ -47,6 +47,9 @@
 - Outbound notifications for item 9 are documented in `docs/outbound-webhook-notifications.md`.
 - Read API selector routes (item 10) are implemented; see `docs/read-api-selector-resolution.md`.
 - Hardening controls from item 11 are implemented; see `docs/hardening-observability-security-controls.md`.
-- Release-readiness test expansion (item 12) is not implemented yet.
+- Release-readiness and expanded test suite (item 12) are implemented:
+  - test and readiness scope: `docs/release-readiness-item-12.md`
+  - operational runbook: `docs/operations-runbook.md`
+  - deployment manifest: `deploy/k8s/shiva.yaml`
 - Database baseline artifacts are documented in `docs/database-schema-baseline.md`.
 - See `design/shiva.md` for the broader architecture and `roadmap/shiva.md` for remaining items.

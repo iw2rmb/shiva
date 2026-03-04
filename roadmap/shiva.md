@@ -107,7 +107,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
 - Exit criteria:
   - dashboards/queries can identify failing stage within one request path.
 
-12. Complete test suite and release readiness.
+12. [x] Complete test suite and release readiness.
 - Deliverables:
   - unit tests for selector detection/diff/openapi resolution
   - integration tests for end-to-end webhook-to-notify flow

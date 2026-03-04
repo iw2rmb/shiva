@@ -1,0 +1,11 @@
+openapi: 3.1.0
+info:
+  title: Split Fixture API
+  version: 1.0.0
+paths:
+  /pets:
+    $ref: ./paths/pets.yaml#/paths/~1pets
+components:
+  schemas:
+    Pet:
+      $ref: ./models/pet.yaml#/components/schemas/Pet

@@ -47,6 +47,14 @@ func WithTelemetry(telemetry *observability.Telemetry) Option {
 	}
 }
 
+func WithGitLabWebhookIngestor(ingestor gitlabWebhookIngestor) Option {
+	return func(s *Server) {
+		if ingestor != nil {
+			s.gitlabIngestor = ingestor
+		}
+	}
+}
+
 func New(cfg config.Config, logger *slog.Logger, store *store.Store, options ...Option) *Server {
 	cfg = normalizeServerConfig(cfg)
 

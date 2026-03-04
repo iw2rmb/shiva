@@ -183,6 +183,56 @@ func TestComputeSemanticDiff(t *testing.T) {
 			},
 			expectedError: "duplicate endpoint key",
 		},
+		{
+			name: "tracks removed endpoints in summary",
+			previous: []EndpointSnapshot{
+				{
+					Method:  "GET",
+					Path:    "/pets/{id}",
+					RawJSON: []byte(`{"responses":{"200":{"description":"ok"}}}`),
+				},
+				{
+					Method:  "POST",
+					Path:    "/pets",
+					RawJSON: []byte(`{"responses":{"201":{"description":"created"}}}`),
+				},
+			},
+			current: []EndpointSnapshot{
+				{
+					Method:  "post",
+					Path:    "/pets",
+					RawJSON: []byte(`{"responses":{"201":{"description":"created"}}}`),
+				},
+			},
+			expected: SpecChanges{
+				Version: SpecChangesVersion,
+				Endpoints: EndpointChanges{
+					Added: []EndpointRef{},
+					Removed: []EndpointRef{
+						{Method: "get", Path: "/pets/{id}"},
+					},
+					Changed: []EndpointChange{},
+				},
+				Summary: SpecChangesSummary{
+					AddedEndpoints:   0,
+					RemovedEndpoints: 1,
+					ChangedEndpoints: 0,
+					ParameterChanges: 0,
+					SchemaChanges:    0,
+				},
+			},
+		},
+		{
+			name: "rejects non-object endpoint payload",
+			current: []EndpointSnapshot{
+				{
+					Method:  "GET",
+					Path:    "/pets",
+					RawJSON: []byte(`["not-an-operation-object"]`),
+				},
+			},
+			expectedError: "raw_json must be an object",
+		},
 	}
 
 	for _, testCase := range testCases {

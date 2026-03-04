@@ -1,0 +1,6 @@
+components:
+  schemas:
+    PetList:
+      type: array
+      items:
+        $ref: ../models/pet.yaml#/components/schemas/Pet

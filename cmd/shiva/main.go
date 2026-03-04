@@ -178,9 +178,9 @@ func (q storeQueueAdapter) MarkFailed(ctx context.Context, eventID int64, errorM
 }
 
 type revisionProcessor struct {
-	store         *store.Store
-	gitlabClient  *gitlab.Client
-	openapiLoader *openapi.Resolver
+	store         revisionStore
+	gitlabClient  gitlabResolverClient
+	openapiLoader openapiResolver
 	notifier      revisionNotifier
 	logger        *slog.Logger
 	metrics       *observability.Metrics
@@ -189,6 +189,46 @@ type revisionProcessor struct {
 
 type revisionNotifier interface {
 	NotifyRevision(ctx context.Context, notification notify.RevisionNotification) error
+}
+
+type gitlabResolverClient interface {
+	CompareChangedPaths(
+		ctx context.Context,
+		projectID int64,
+		fromSHA string,
+		toSHA string,
+	) ([]gitlab.ChangedPath, error)
+	GetFileContent(ctx context.Context, projectID int64, filePath, ref string) ([]byte, error)
+}
+
+type openapiResolver interface {
+	ResolveChangedOpenAPI(
+		ctx context.Context,
+		client openapi.GitLabClient,
+		projectID int64,
+		fromSHA string,
+		toSHA string,
+	) (openapi.ResolutionResult, error)
+}
+
+type revisionStore interface {
+	UpsertRevisionFromIngestEvent(ctx context.Context, event store.IngestQueueEvent) (int64, error)
+	MarkRevisionProcessed(ctx context.Context, revisionID int64, openapiChanged bool) error
+	MarkRevisionFailed(ctx context.Context, revisionID int64, errorMessage string) error
+	GetRepoByID(ctx context.Context, repoID int64) (store.Repo, error)
+	PersistCanonicalSpec(ctx context.Context, input store.PersistCanonicalSpecInput) error
+	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+		ctx context.Context,
+		repoID int64,
+		branch string,
+		excludeRevisionID int64,
+	) (store.Revision, bool, error)
+	ListEndpointIndexByRevision(ctx context.Context, revisionID int64) ([]store.EndpointIndexRecord, error)
+	PersistSpecChange(ctx context.Context, input store.PersistSpecChangeInput) error
+	GetTenantByID(ctx context.Context, tenantID int64) (store.Tenant, error)
+	GetRevisionByID(ctx context.Context, revisionID int64) (store.Revision, error)
+	GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (store.SpecArtifact, error)
+	GetSpecChangeByToRevision(ctx context.Context, toRevisionID int64) (store.SpecChange, error)
 }
 
 func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {

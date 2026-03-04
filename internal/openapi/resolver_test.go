@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/iw2rmb/shiva/internal/gitlab"
@@ -157,5 +158,131 @@ func TestResolverResolveChangedOpenAPI_ReferenceFetchLimit(t *testing.T) {
 	}
 	if !errors.Is(err, ErrFetchLimitExceeded) {
 		t.Fatalf("expected ErrFetchLimitExceeded, got %v", err)
+	}
+}
+
+func TestResolverResolveChangedOpenAPI_NoCandidateMatches(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		IncludeGlobs: []string{"spec/**/*.yaml"},
+		MaxFetches:   16,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &fakeGitLabClient{
+		changedPaths: []gitlab.ChangedPath{
+			{NewPath: "README.md"},
+		},
+		files: map[string]string{},
+	}
+
+	result, err := resolver.ResolveChangedOpenAPI(context.Background(), client, 7, "from-sha", "to-sha")
+	if err != nil {
+		t.Fatalf("ResolveChangedOpenAPI() unexpected error: %v", err)
+	}
+	if result.OpenAPIChanged {
+		t.Fatalf("expected OpenAPIChanged=false")
+	}
+	if len(result.CandidateFiles) != 0 {
+		t.Fatalf("expected no candidates, got %#v", result.CandidateFiles)
+	}
+	if len(result.Documents) != 0 {
+		t.Fatalf("expected no resolved documents, got %#v", result.Documents)
+	}
+}
+
+func TestResolverResolveChangedOpenAPI_DeletedCandidateSignalsOpenAPIChange(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		IncludeGlobs: []string{"spec/**/*.yaml"},
+		MaxFetches:   16,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &fakeGitLabClient{
+		changedPaths: []gitlab.ChangedPath{
+			{DeletedFile: true, OldPath: "spec/openapi.yaml"},
+		},
+		files: map[string]string{},
+	}
+
+	result, err := resolver.ResolveChangedOpenAPI(context.Background(), client, 7, "from-sha", "to-sha")
+	if err != nil {
+		t.Fatalf("ResolveChangedOpenAPI() unexpected error: %v", err)
+	}
+	if !result.OpenAPIChanged {
+		t.Fatalf("expected OpenAPIChanged=true when candidate is deleted")
+	}
+	if len(result.CandidateFiles) != 0 {
+		t.Fatalf("expected no non-deleted candidates, got %#v", result.CandidateFiles)
+	}
+	if len(result.Documents) != 0 {
+		t.Fatalf("expected no resolved documents, got %#v", result.Documents)
+	}
+}
+
+func TestResolverResolveChangedOpenAPI_InvalidReferences(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		openapi  string
+		contains string
+	}{
+		{
+			name: "external reference rejected",
+			openapi: "openapi: 3.0.3\npaths:\n  /pets:\n    get:\n      responses:\n        '200':\n" +
+				"          content:\n            application/json:\n              schema:\n" +
+				"                $ref: https://example.com/spec.yaml#/components/schemas/Pet\n",
+			contains: "external reference",
+		},
+		{
+			name: "path traversal rejected",
+			openapi: "openapi: 3.0.3\npaths:\n  /pets:\n    get:\n      responses:\n        '200':\n" +
+				"          content:\n            application/json:\n              schema:\n" +
+				"                $ref: ../../shared/pet.yaml#/Pet\n",
+			contains: "escapes repository root",
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			resolver, err := NewResolver(ResolverConfig{
+				IncludeGlobs: []string{"spec/**/*.yaml"},
+				MaxFetches:   16,
+			})
+			if err != nil {
+				t.Fatalf("NewResolver() unexpected error: %v", err)
+			}
+
+			client := &fakeGitLabClient{
+				changedPaths: []gitlab.ChangedPath{
+					{NewPath: "spec/openapi.yaml"},
+				},
+				files: map[string]string{
+					"spec/openapi.yaml": testCase.openapi,
+				},
+			}
+
+			_, err = resolver.ResolveChangedOpenAPI(context.Background(), client, 7, "from-sha", "to-sha")
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if !errors.Is(err, ErrInvalidReference) {
+				t.Fatalf("expected ErrInvalidReference, got %v", err)
+			}
+			if !strings.Contains(err.Error(), testCase.contains) {
+				t.Fatalf("expected error to contain %q, got %q", testCase.contains, err.Error())
+			}
+		})
 	}
 }

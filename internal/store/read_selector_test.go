@@ -169,6 +169,24 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		expectError bool
 	}{
 		{
+			name: "tenant key is required",
+			input: ResolveReadSelectorInput{
+				TenantKey: "",
+				RepoPath:  "acme/platform-api",
+				Selector:  "main",
+			},
+			expectError: true,
+		},
+		{
+			name: "repo path is required",
+			input: ResolveReadSelectorInput{
+				TenantKey: "tenant-a",
+				RepoPath:  "   ",
+				Selector:  "main",
+			},
+			expectError: true,
+		},
+		{
 			name: "sha selector normalized to lower-case",
 			input: ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
@@ -208,12 +226,32 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 			kind: SelectorKindNoSelector,
 		},
 		{
+			name: "no selector mode rejects explicit selector",
+			input: ResolveReadSelectorInput{
+				TenantKey:  "tenant-a",
+				RepoPath:   "acme/platform-api",
+				Selector:   "main",
+				NoSelector: true,
+			},
+			expectError: true,
+		},
+		{
 			name: "selector required when no-selector is false",
 			input: ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
 			},
 			expectError: true,
+		},
+		{
+			name: "40-char non-hex selector is treated as branch",
+			input: ResolveReadSelectorInput{
+				TenantKey: "tenant-a",
+				RepoPath:  "acme/platform-api",
+				Selector:  "gggggggggggggggggggggggggggggggggggggggg",
+			},
+			kind:     SelectorKindBranch,
+			selector: "gggggggggggggggggggggggggggggggggggggggg",
 		},
 	}
 
