@@ -25,46 +25,50 @@ const (
 )
 
 type Config struct {
-	HTTPAddr             string
-	DatabaseURL          string
-	GitLabBaseURL        string
-	GitLabToken          string
-	GitLabWebhookSecret  string
-	TenantKey            string
-	WorkerConcurrency    int
-	ShutdownTimeout      time.Duration
-	OutboundTimeout      time.Duration
-	LogLevel             slog.Level
-	OpenAPIPathGlobs     []string
-	OpenAPIRefMaxFetches int
-	IngressBodyLimit     int
-	IngressRateLimitMax  int
-	IngressRateLimit     time.Duration
-	MetricsPath          string
-	TracingEnabled       bool
-	TracingStdout        bool
+	HTTPAddr                         string
+	DatabaseURL                      string
+	GitLabBaseURL                    string
+	GitLabToken                      string
+	GitLabWebhookSecret              string
+	TenantKey                        string
+	WorkerConcurrency                int
+	ShutdownTimeout                  time.Duration
+	OutboundTimeout                  time.Duration
+	LogLevel                         slog.Level
+	OpenAPIPathGlobs                 []string
+	OpenAPIRefMaxFetches             int
+	OpenAPIBootstrapFetchConcurrency int
+	OpenAPIBootstrapSniffBytes       int
+	IngressBodyLimit                 int
+	IngressRateLimitMax              int
+	IngressRateLimit                 time.Duration
+	MetricsPath                      string
+	TracingEnabled                   bool
+	TracingStdout                    bool
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:             envValue("SHIVA_HTTP_ADDR", defaultHTTPAddr),
-		DatabaseURL:          strings.TrimSpace(os.Getenv("SHIVA_DATABASE_URL")),
-		GitLabBaseURL:        strings.TrimSpace(os.Getenv("SHIVA_GITLAB_BASE_URL")),
-		GitLabToken:          strings.TrimSpace(os.Getenv("SHIVA_GITLAB_TOKEN")),
-		GitLabWebhookSecret:  strings.TrimSpace(os.Getenv("SHIVA_GITLAB_WEBHOOK_SECRET")),
-		TenantKey:            envValue("SHIVA_TENANT_KEY", "default"),
-		WorkerConcurrency:    defaultWorkerConcurrency,
-		ShutdownTimeout:      time.Duration(defaultShutdownTimeoutSecond) * time.Second,
-		OutboundTimeout:      time.Duration(defaultOutboundTimeoutSecond) * time.Second,
-		LogLevel:             slog.LevelInfo,
-		OpenAPIPathGlobs:     openapi.DefaultIncludeGlobs(),
-		OpenAPIRefMaxFetches: openapi.DefaultMaxFetches,
-		IngressBodyLimit:     defaultIngressBodyLimitBytes,
-		IngressRateLimitMax:  defaultIngressRateLimitMax,
-		IngressRateLimit:     time.Duration(defaultIngressRateLimitSec) * time.Second,
-		MetricsPath:          defaultMetricsPath,
-		TracingEnabled:       true,
-		TracingStdout:        false,
+		HTTPAddr:                         envValue("SHIVA_HTTP_ADDR", defaultHTTPAddr),
+		DatabaseURL:                      strings.TrimSpace(os.Getenv("SHIVA_DATABASE_URL")),
+		GitLabBaseURL:                    strings.TrimSpace(os.Getenv("SHIVA_GITLAB_BASE_URL")),
+		GitLabToken:                      strings.TrimSpace(os.Getenv("SHIVA_GITLAB_TOKEN")),
+		GitLabWebhookSecret:              strings.TrimSpace(os.Getenv("SHIVA_GITLAB_WEBHOOK_SECRET")),
+		TenantKey:                        envValue("SHIVA_TENANT_KEY", "default"),
+		WorkerConcurrency:                defaultWorkerConcurrency,
+		ShutdownTimeout:                  time.Duration(defaultShutdownTimeoutSecond) * time.Second,
+		OutboundTimeout:                  time.Duration(defaultOutboundTimeoutSecond) * time.Second,
+		LogLevel:                         slog.LevelInfo,
+		OpenAPIPathGlobs:                 openapi.DefaultIncludeGlobs(),
+		OpenAPIRefMaxFetches:             openapi.DefaultMaxFetches,
+		OpenAPIBootstrapFetchConcurrency: openapi.DefaultBootstrapFetchConcurrency,
+		OpenAPIBootstrapSniffBytes:       openapi.DefaultBootstrapSniffBytes,
+		IngressBodyLimit:                 defaultIngressBodyLimitBytes,
+		IngressRateLimitMax:              defaultIngressRateLimitMax,
+		IngressRateLimit:                 time.Duration(defaultIngressRateLimitSec) * time.Second,
+		MetricsPath:                      defaultMetricsPath,
+		TracingEnabled:                   true,
+		TracingStdout:                    false,
 	}
 
 	if rawLevel, ok := os.LookupEnv("SHIVA_LOG_LEVEL"); ok {
@@ -125,6 +129,28 @@ func Load() (Config, error) {
 			return Config{}, errors.New("SHIVA_OPENAPI_REF_MAX_FETCHES must be at least 1")
 		}
 		cfg.OpenAPIRefMaxFetches = maxFetches
+	}
+
+	if rawBootstrapFetchConcurrency, ok := os.LookupEnv("SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY"); ok {
+		bootstrapFetchConcurrency, err := strconv.Atoi(strings.TrimSpace(rawBootstrapFetchConcurrency))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY: %w", err)
+		}
+		if bootstrapFetchConcurrency < 1 {
+			return Config{}, errors.New("SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY must be at least 1")
+		}
+		cfg.OpenAPIBootstrapFetchConcurrency = bootstrapFetchConcurrency
+	}
+
+	if rawBootstrapSniffBytes, ok := os.LookupEnv("SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES"); ok {
+		bootstrapSniffBytes, err := strconv.Atoi(strings.TrimSpace(rawBootstrapSniffBytes))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES: %w", err)
+		}
+		if bootstrapSniffBytes < 1 {
+			return Config{}, errors.New("SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES must be at least 1")
+		}
+		cfg.OpenAPIBootstrapSniffBytes = bootstrapSniffBytes
 	}
 
 	if rawBodyLimit, ok := os.LookupEnv("SHIVA_INGRESS_BODY_LIMIT_BYTES"); ok {

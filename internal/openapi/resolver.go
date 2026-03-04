@@ -8,6 +8,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/iw2rmb/shiva/internal/gitlab"
@@ -15,6 +16,8 @@ import (
 )
 
 const DefaultMaxFetches = 128
+const DefaultBootstrapFetchConcurrency = 8
+const DefaultBootstrapSniffBytes = 4096
 
 var defaultIncludeGlobs = []string{
 	"**/openapi*.{yaml,yml,json}",
@@ -44,13 +47,17 @@ type GitLabBootstrapClient interface {
 }
 
 type ResolverConfig struct {
-	IncludeGlobs []string
-	MaxFetches   int
+	IncludeGlobs              []string
+	MaxFetches                int
+	BootstrapFetchConcurrency int
+	BootstrapSniffBytes       int
 }
 
 type Resolver struct {
-	includeGlobs []string
-	maxFetches   int
+	includeGlobs              []string
+	maxFetches                int
+	bootstrapFetchConcurrency int
+	bootstrapSniffBytes       int
 }
 
 type ResolutionResult struct {
@@ -91,9 +98,27 @@ func NewResolver(cfg ResolverConfig) (*Resolver, error) {
 		maxFetches = DefaultMaxFetches
 	}
 
+	bootstrapFetchConcurrency := cfg.BootstrapFetchConcurrency
+	if bootstrapFetchConcurrency < 0 {
+		return nil, errors.New("openapi bootstrap fetch concurrency must be at least 1")
+	}
+	if bootstrapFetchConcurrency == 0 {
+		bootstrapFetchConcurrency = DefaultBootstrapFetchConcurrency
+	}
+
+	bootstrapSniffBytes := cfg.BootstrapSniffBytes
+	if bootstrapSniffBytes < 0 {
+		return nil, errors.New("openapi bootstrap sniff bytes must be at least 1")
+	}
+	if bootstrapSniffBytes == 0 {
+		bootstrapSniffBytes = DefaultBootstrapSniffBytes
+	}
+
 	return &Resolver{
-		includeGlobs: normalizedGlobs,
-		maxFetches:   maxFetches,
+		includeGlobs:              normalizedGlobs,
+		maxFetches:                maxFetches,
+		bootstrapFetchConcurrency: bootstrapFetchConcurrency,
+		bootstrapSniffBytes:       bootstrapSniffBytes,
 	}, nil
 }
 
@@ -219,9 +244,8 @@ func (r *Resolver) ResolveRepositoryOpenAPIAtSHA(
 	}
 	effectiveIgnores := ComposeIgnoreGlobs(fileIgnores)
 
-	rootPaths := make([]string, 0)
-	rootSet := make(map[string]struct{})
-	rootDocuments := make(map[string][]byte)
+	candidatePaths := make([]string, 0, len(treeEntries))
+	candidateSet := make(map[string]struct{}, len(treeEntries))
 
 	for _, entry := range treeEntries {
 		candidatePath := normalizeRepoPath(entry.Path)
@@ -239,32 +263,24 @@ func (r *Resolver) ResolveRepositoryOpenAPIAtSHA(
 		if !hasOpenAPIExtension(candidatePath) {
 			continue
 		}
-
-		content, err := client.GetFileContent(ctx, projectID, candidatePath, normalizedSHA)
-		if err != nil {
-			return nil, fmt.Errorf("fetch candidate %q: %w", candidatePath, err)
-		}
-		if !sniffTopLevelOpenAPIOrSwagger(content, candidatePath) {
+		if _, exists := candidateSet[candidatePath]; exists {
 			continue
 		}
-
-		isRoot, err := isOpenAPIRootDocument(content, candidatePath, false)
-		if err != nil {
-			continue
-		}
-		if !isRoot {
-			continue
-		}
-
-		if _, exists := rootSet[candidatePath]; exists {
-			continue
-		}
-		rootSet[candidatePath] = struct{}{}
-		rootPaths = append(rootPaths, candidatePath)
-		rootDocuments[candidatePath] = content
+		candidateSet[candidatePath] = struct{}{}
+		candidatePaths = append(candidatePaths, candidatePath)
 	}
 
-	sort.Strings(rootPaths)
+	rootPaths, rootDocuments, err := r.resolveBootstrapRootCandidates(
+		ctx,
+		client,
+		projectID,
+		normalizedSHA,
+		candidatePaths,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	results := make([]RootResolution, 0, len(rootPaths))
 	for _, rootPath := range rootPaths {
 		documents, err := r.resolveRootSet(
@@ -287,6 +303,111 @@ func (r *Resolver) ResolveRepositoryOpenAPIAtSHA(
 	}
 
 	return results, nil
+}
+
+type bootstrapCandidateResult struct {
+	path    string
+	content []byte
+	isRoot  bool
+	err     error
+}
+
+func (r *Resolver) resolveBootstrapRootCandidates(
+	ctx context.Context,
+	client GitLabBootstrapClient,
+	projectID int64,
+	sha string,
+	candidatePaths []string,
+) ([]string, map[string][]byte, error) {
+	if len(candidatePaths) == 0 {
+		return []string{}, map[string][]byte{}, nil
+	}
+
+	workerCount := r.bootstrapFetchConcurrency
+	if workerCount > len(candidatePaths) {
+		workerCount = len(candidatePaths)
+	}
+
+	jobs := make(chan string)
+	results := make(chan bootstrapCandidateResult, len(candidatePaths))
+	var workers sync.WaitGroup
+
+	for i := 0; i < workerCount; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for candidatePath := range jobs {
+				content, err := client.GetFileContent(ctx, projectID, candidatePath, sha)
+				if err != nil {
+					results <- bootstrapCandidateResult{
+						path: candidatePath,
+						err:  fmt.Errorf("fetch candidate %q: %w", candidatePath, err),
+					}
+					continue
+				}
+				if !sniffTopLevelOpenAPIOrSwagger(content, candidatePath, r.bootstrapSniffBytes) {
+					results <- bootstrapCandidateResult{path: candidatePath}
+					continue
+				}
+
+				isRoot, err := isOpenAPIRootDocument(content, candidatePath, false)
+				if err != nil {
+					results <- bootstrapCandidateResult{path: candidatePath, err: err}
+					continue
+				}
+				if !isRoot {
+					results <- bootstrapCandidateResult{path: candidatePath}
+					continue
+				}
+
+				results <- bootstrapCandidateResult{
+					path:    candidatePath,
+					content: content,
+					isRoot:  true,
+				}
+			}
+		}()
+	}
+
+	for _, candidatePath := range candidatePaths {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			close(results)
+			return nil, nil, ctx.Err()
+		case jobs <- candidatePath:
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	close(results)
+
+	rootPaths := make([]string, 0, len(candidatePaths))
+	rootDocuments := make(map[string][]byte, len(candidatePaths))
+	failures := make([]bootstrapCandidateResult, 0)
+
+	for result := range results {
+		if result.err != nil {
+			failures = append(failures, result)
+			continue
+		}
+		if !result.isRoot {
+			continue
+		}
+		rootPaths = append(rootPaths, result.path)
+		rootDocuments[result.path] = result.content
+	}
+
+	if len(failures) > 0 {
+		sort.Slice(failures, func(i, j int) bool {
+			return failures[i].path < failures[j].path
+		})
+		return nil, nil, failures[0].err
+	}
+
+	sort.Strings(rootPaths)
+	return rootPaths, rootDocuments, nil
 }
 
 type visitState int
@@ -597,12 +718,11 @@ func hasOpenAPIExtension(filePath string) bool {
 	}
 }
 
-func sniffTopLevelOpenAPIOrSwagger(content []byte, filePath string) bool {
+func sniffTopLevelOpenAPIOrSwagger(content []byte, filePath string, maxSniffBytes int) bool {
 	if len(content) == 0 {
 		return false
 	}
 
-	const maxSniffBytes = 4096
 	prefix := content
 	if len(prefix) > maxSniffBytes {
 		prefix = prefix[:maxSniffBytes]

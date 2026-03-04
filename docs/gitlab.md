@@ -13,7 +13,8 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 5. Bootstrap mode resolver runs:
    - GitLab Repository Tree API at `ref=sha` for full repo file enumeration,
    - `.shivaignore` + built-in ignore filtering,
-   - extension and top-level sniff filtering,
+   - bounded parallel candidate file fetches,
+   - extension and top-level sniff filtering on a configurable byte prefix,
    - root validation and local `$ref` closure resolution.
    - per discovered root:
      - upsert `api_specs` by `root_path`,
@@ -49,6 +50,8 @@ Default include globs:
 Resolver config is controlled by:
 - `SHIVA_OPENAPI_PATH_GLOBS`
 - `SHIVA_OPENAPI_REF_MAX_FETCHES`
+- `SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY`
+- `SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES`
 
 ## Permanent vs Retryable Failures
 Marked permanent (revision failed, no further retries for that event):

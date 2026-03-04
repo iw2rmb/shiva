@@ -40,6 +40,8 @@ This document describes runtime setup, configuration, and startup behavior of th
 - `SHIVA_WORKER_CONCURRENCY` (default `4`).
 - `SHIVA_OPENAPI_PATH_GLOBS` (default: `**/openapi*.{yaml,yml,json},**/swagger*.{yaml,yml,json},**/api/**/*.yaml`).
 - `SHIVA_OPENAPI_REF_MAX_FETCHES` (default `128`).
+- `SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY` (default `8`, must be `>= 1`).
+- `SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES` (default `4096`, must be `>= 1`).
 
 ### Outbound Delivery
 - `SHIVA_OUTBOUND_TIMEOUT_SECONDS` (default `10`).

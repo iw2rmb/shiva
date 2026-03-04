@@ -95,7 +95,7 @@ Legend: [ ] todo, [x] done.
   - Tests: integration test: first webhook with unrelated diff still discovers/builds existing root(s); zero-root repo marks processed with `openapi_changed=false`
 
 ## Performance and Safety Constraints
-- [ ] Add bounded concurrency and prefix sniff limits for bootstrap content fetch — full-tree scans need explicit resource control
+- [x] Add bounded concurrency and prefix sniff limits for bootstrap content fetch — full-tree scans need explicit resource control
   - Repository: `shiva`
   - Component: `internal/openapi`, `internal/config`
   - Scope: Add bootstrap worker pool/concurrency cap and max sniff bytes; avoid full file loads before candidate confirmation

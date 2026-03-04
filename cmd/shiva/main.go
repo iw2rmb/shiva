@@ -73,8 +73,10 @@ func run(ctx context.Context) error {
 		}
 
 		openAPIResolver, err := openapi.NewResolver(openapi.ResolverConfig{
-			IncludeGlobs: cfg.OpenAPIPathGlobs,
-			MaxFetches:   cfg.OpenAPIRefMaxFetches,
+			IncludeGlobs:              cfg.OpenAPIPathGlobs,
+			MaxFetches:                cfg.OpenAPIRefMaxFetches,
+			BootstrapFetchConcurrency: cfg.OpenAPIBootstrapFetchConcurrency,
+			BootstrapSniffBytes:       cfg.OpenAPIBootstrapSniffBytes,
 		})
 		if err != nil {
 			return fmt.Errorf("initialize openapi resolver: %w", err)

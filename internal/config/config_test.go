@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/iw2rmb/shiva/internal/openapi"
 )
 
 func TestLoad_DefaultValues(t *testing.T) {
@@ -20,6 +22,8 @@ func TestLoad_DefaultValues(t *testing.T) {
 			"SHIVA_TENANT_KEY",
 			"SHIVA_OPENAPI_PATH_GLOBS",
 			"SHIVA_OPENAPI_REF_MAX_FETCHES",
+			"SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY",
+			"SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES",
 			"SHIVA_INGRESS_BODY_LIMIT_BYTES",
 			"SHIVA_INGRESS_RATE_LIMIT_MAX",
 			"SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS",
@@ -56,6 +60,20 @@ func TestLoad_DefaultValues(t *testing.T) {
 	}
 	if cfg.OpenAPIRefMaxFetches != 128 {
 		t.Fatalf("expected default openapi ref max fetches 128, got %d", cfg.OpenAPIRefMaxFetches)
+	}
+	if cfg.OpenAPIBootstrapFetchConcurrency != openapi.DefaultBootstrapFetchConcurrency {
+		t.Fatalf(
+			"expected default openapi bootstrap fetch concurrency %d, got %d",
+			openapi.DefaultBootstrapFetchConcurrency,
+			cfg.OpenAPIBootstrapFetchConcurrency,
+		)
+	}
+	if cfg.OpenAPIBootstrapSniffBytes != openapi.DefaultBootstrapSniffBytes {
+		t.Fatalf(
+			"expected default openapi bootstrap sniff bytes %d, got %d",
+			openapi.DefaultBootstrapSniffBytes,
+			cfg.OpenAPIBootstrapSniffBytes,
+		)
 	}
 	if cfg.IngressBodyLimit != 1024*1024 {
 		t.Fatalf("expected default ingress body limit 1048576, got %d", cfg.IngressBodyLimit)
@@ -96,6 +114,8 @@ func TestLoad_RejectsEmptyTenantKey(t *testing.T) {
 func TestLoad_OpenAPIConfig(t *testing.T) {
 	t.Setenv("SHIVA_OPENAPI_PATH_GLOBS", "specs/**/*.yaml,docs/swagger*.yml")
 	t.Setenv("SHIVA_OPENAPI_REF_MAX_FETCHES", "64")
+	t.Setenv("SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY", "6")
+	t.Setenv("SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES", "8192")
 
 	cfg, err := Load()
 	if err != nil {
@@ -113,6 +133,49 @@ func TestLoad_OpenAPIConfig(t *testing.T) {
 	}
 	if cfg.OpenAPIRefMaxFetches != 64 {
 		t.Fatalf("expected OpenAPIRefMaxFetches=64, got %d", cfg.OpenAPIRefMaxFetches)
+	}
+	if cfg.OpenAPIBootstrapFetchConcurrency != 6 {
+		t.Fatalf("expected OpenAPIBootstrapFetchConcurrency=6, got %d", cfg.OpenAPIBootstrapFetchConcurrency)
+	}
+	if cfg.OpenAPIBootstrapSniffBytes != 8192 {
+		t.Fatalf("expected OpenAPIBootstrapSniffBytes=8192, got %d", cfg.OpenAPIBootstrapSniffBytes)
+	}
+}
+
+func TestLoad_OpenAPIBootstrapConfigValidation(t *testing.T) {
+	testCases := []struct {
+		name    string
+		envKey  string
+		envVal  string
+		wantErr string
+	}{
+		{
+			name:    "fetch concurrency must be positive",
+			envKey:  "SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY",
+			envVal:  "0",
+			wantErr: "SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY must be at least 1",
+		},
+		{
+			name:    "sniff bytes must be positive",
+			envKey:  "SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES",
+			envVal:  "0",
+			wantErr: "SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES must be at least 1",
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv(testCase.envKey, testCase.envVal)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if err.Error() != testCase.wantErr {
+				t.Fatalf("expected error %q, got %q", testCase.wantErr, err.Error())
+			}
+		})
 	}
 }
 

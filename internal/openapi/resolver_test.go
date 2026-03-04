@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/iw2rmb/shiva/internal/gitlab"
 )
@@ -17,6 +19,89 @@ type fakeGitLabClient struct {
 	treeEntries  []gitlab.TreeEntry
 	compareErr   error
 	treeErr      error
+}
+
+type trackedBootstrapClient struct {
+	treeEntries []gitlab.TreeEntry
+	files       map[string]string
+	delays      map[string]time.Duration
+
+	mu              sync.Mutex
+	inFlight        int
+	maxInFlight     int
+	completionOrder []string
+}
+
+func (c *trackedBootstrapClient) CompareChangedPaths(
+	_ context.Context,
+	_ int64,
+	_ string,
+	_ string,
+) ([]gitlab.ChangedPath, error) {
+	return nil, errors.New("compare should not be called for bootstrap discovery")
+}
+
+func (c *trackedBootstrapClient) GetFileContent(_ context.Context, _ int64, filePath, _ string) ([]byte, error) {
+	trackFetch := filePath != "/.shivaignore"
+	if trackFetch {
+		c.mu.Lock()
+		c.inFlight++
+		if c.inFlight > c.maxInFlight {
+			c.maxInFlight = c.inFlight
+		}
+		delay := c.delays[filePath]
+		c.mu.Unlock()
+
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+	}
+
+	content, exists := c.files[filePath]
+	if !exists {
+		if trackFetch {
+			c.mu.Lock()
+			c.completionOrder = append(c.completionOrder, filePath)
+			c.inFlight--
+			c.mu.Unlock()
+		}
+		return nil, fmt.Errorf("%w: path=%s", gitlab.ErrNotFound, filePath)
+	}
+
+	if trackFetch {
+		c.mu.Lock()
+		c.completionOrder = append(c.completionOrder, filePath)
+		c.inFlight--
+		c.mu.Unlock()
+	}
+
+	return []byte(content), nil
+}
+
+func (c *trackedBootstrapClient) ListRepositoryTree(
+	_ context.Context,
+	_ int64,
+	_ string,
+	_ string,
+	_ bool,
+) ([]gitlab.TreeEntry, error) {
+	entries := make([]gitlab.TreeEntry, len(c.treeEntries))
+	copy(entries, c.treeEntries)
+	return entries, nil
+}
+
+func (c *trackedBootstrapClient) observedMaxInFlight() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.maxInFlight
+}
+
+func (c *trackedBootstrapClient) observedCompletionOrder() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	order := make([]string, len(c.completionOrder))
+	copy(order, c.completionOrder)
+	return order
 }
 
 func (f *fakeGitLabClient) CompareChangedPaths(_ context.Context, _ int64, _ string, _ string) ([]gitlab.ChangedPath, error) {
@@ -508,5 +593,173 @@ func TestResolverResolveRepositoryOpenAPIAtSHA_ZeroRoots(t *testing.T) {
 	}
 	if len(roots) != 0 {
 		t.Fatalf("expected zero discovered roots, got %#v", roots)
+	}
+}
+
+func TestResolverResolveRepositoryOpenAPIAtSHA_BoundedCandidateFetchConcurrency(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		MaxFetches:                16,
+		BootstrapFetchConcurrency: 2,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &trackedBootstrapClient{
+		treeEntries: []gitlab.TreeEntry{
+			{Path: "specs/a.yaml", Type: "file"},
+			{Path: "specs/b.yaml", Type: "file"},
+			{Path: "specs/c.yaml", Type: "file"},
+			{Path: "specs/d.yaml", Type: "file"},
+		},
+		files: map[string]string{
+			"specs/a.yaml": "openapi: 3.1.0\ninfo:\n  title: A\npaths: {}\n",
+			"specs/b.yaml": "openapi: 3.1.0\ninfo:\n  title: B\npaths: {}\n",
+			"specs/c.yaml": "openapi: 3.1.0\ninfo:\n  title: C\npaths: {}\n",
+			"specs/d.yaml": "openapi: 3.1.0\ninfo:\n  title: D\npaths: {}\n",
+		},
+		delays: map[string]time.Duration{
+			"specs/a.yaml": 35 * time.Millisecond,
+			"specs/b.yaml": 35 * time.Millisecond,
+			"specs/c.yaml": 35 * time.Millisecond,
+			"specs/d.yaml": 35 * time.Millisecond,
+		},
+	}
+
+	roots, err := resolver.ResolveRepositoryOpenAPIAtSHA(context.Background(), client, 42, "target-sha")
+	if err != nil {
+		t.Fatalf("ResolveRepositoryOpenAPIAtSHA() unexpected error: %v", err)
+	}
+	if len(roots) != 4 {
+		t.Fatalf("expected 4 discovered roots, got %#v", roots)
+	}
+
+	maxInFlight := client.observedMaxInFlight()
+	if maxInFlight > 2 {
+		t.Fatalf("expected at most 2 concurrent candidate fetches, got %d", maxInFlight)
+	}
+	if maxInFlight < 2 {
+		t.Fatalf("expected worker pool to execute parallel fetches, got max in-flight %d", maxInFlight)
+	}
+}
+
+func TestResolverResolveRepositoryOpenAPIAtSHA_DeterministicAcrossFetchOrder(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		MaxFetches:                16,
+		BootstrapFetchConcurrency: 3,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	newClient := func(delays map[string]time.Duration) *trackedBootstrapClient {
+		return &trackedBootstrapClient{
+			treeEntries: []gitlab.TreeEntry{
+				{Path: "specs/c.yaml", Type: "file"},
+				{Path: "specs/a.yaml", Type: "file"},
+				{Path: "specs/b.yaml", Type: "file"},
+			},
+			files: map[string]string{
+				"specs/a.yaml": "openapi: 3.1.0\ninfo:\n  title: A\npaths: {}\n",
+				"specs/b.yaml": "openapi: 3.1.0\ninfo:\n  title: B\npaths: {}\n",
+				"specs/c.yaml": "openapi: 3.1.0\ninfo:\n  title: C\npaths: {}\n",
+			},
+			delays: delays,
+		}
+	}
+
+	clientFastB := newClient(map[string]time.Duration{
+		"specs/a.yaml": 90 * time.Millisecond,
+		"specs/b.yaml": 10 * time.Millisecond,
+		"specs/c.yaml": 45 * time.Millisecond,
+	})
+	rootsFastB, err := resolver.ResolveRepositoryOpenAPIAtSHA(context.Background(), clientFastB, 42, "target-sha")
+	if err != nil {
+		t.Fatalf("ResolveRepositoryOpenAPIAtSHA() unexpected error for fast-b profile: %v", err)
+	}
+
+	clientFastA := newClient(map[string]time.Duration{
+		"specs/a.yaml": 10 * time.Millisecond,
+		"specs/b.yaml": 90 * time.Millisecond,
+		"specs/c.yaml": 45 * time.Millisecond,
+	})
+	rootsFastA, err := resolver.ResolveRepositoryOpenAPIAtSHA(context.Background(), clientFastA, 42, "target-sha")
+	if err != nil {
+		t.Fatalf("ResolveRepositoryOpenAPIAtSHA() unexpected error for fast-a profile: %v", err)
+	}
+
+	orderFastB := clientFastB.observedCompletionOrder()
+	orderFastA := clientFastA.observedCompletionOrder()
+	if reflect.DeepEqual(orderFastB, orderFastA) {
+		t.Fatalf("expected distinct fetch completion order, both were %#v", orderFastA)
+	}
+
+	rootPathsFastB := make([]string, 0, len(rootsFastB))
+	for _, root := range rootsFastB {
+		rootPathsFastB = append(rootPathsFastB, root.RootPath)
+	}
+	rootPathsFastA := make([]string, 0, len(rootsFastA))
+	for _, root := range rootsFastA {
+		rootPathsFastA = append(rootPathsFastA, root.RootPath)
+	}
+
+	expectedPaths := []string{"specs/a.yaml", "specs/b.yaml", "specs/c.yaml"}
+	if !reflect.DeepEqual(rootPathsFastB, expectedPaths) {
+		t.Fatalf("expected roots %#v for fast-b profile, got %#v", expectedPaths, rootPathsFastB)
+	}
+	if !reflect.DeepEqual(rootPathsFastA, expectedPaths) {
+		t.Fatalf("expected roots %#v for fast-a profile, got %#v", expectedPaths, rootPathsFastA)
+	}
+}
+
+func TestResolverResolveRepositoryOpenAPIAtSHA_ConfigurableSniffPrefixLimit(t *testing.T) {
+	t.Parallel()
+
+	specWithLateHeader := strings.Repeat("# padding to move header beyond tiny sniff window\n", 4) +
+		"openapi: 3.1.0\ninfo:\n  title: Demo\npaths: {}\n"
+
+	client := &fakeGitLabClient{
+		treeEntries: []gitlab.TreeEntry{
+			{Path: "spec/openapi.yaml", Type: "file"},
+		},
+		files: map[string]string{
+			"spec/openapi.yaml": specWithLateHeader,
+		},
+	}
+
+	tinySniffResolver, err := NewResolver(ResolverConfig{
+		MaxFetches:          16,
+		BootstrapSniffBytes: 8,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error for tiny sniff resolver: %v", err)
+	}
+
+	tinyRoots, err := tinySniffResolver.ResolveRepositoryOpenAPIAtSHA(context.Background(), client, 42, "target-sha")
+	if err != nil {
+		t.Fatalf("ResolveRepositoryOpenAPIAtSHA() unexpected error for tiny sniff resolver: %v", err)
+	}
+	if len(tinyRoots) != 0 {
+		t.Fatalf("expected no discovered roots with tiny sniff limit, got %#v", tinyRoots)
+	}
+
+	largeSniffResolver, err := NewResolver(ResolverConfig{
+		MaxFetches:          16,
+		BootstrapSniffBytes: 4096,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error for large sniff resolver: %v", err)
+	}
+
+	largeRoots, err := largeSniffResolver.ResolveRepositoryOpenAPIAtSHA(context.Background(), client, 42, "target-sha")
+	if err != nil {
+		t.Fatalf("ResolveRepositoryOpenAPIAtSHA() unexpected error for large sniff resolver: %v", err)
+	}
+	if len(largeRoots) != 1 {
+		t.Fatalf("expected one discovered root with large sniff limit, got %#v", largeRoots)
 	}
 }
