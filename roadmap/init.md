@@ -43,7 +43,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./internal/gitlab` — table-driven tests for multi-page aggregation, 404 mapping to `ErrNotFound`, and query params (`ref`, `recursive`, `path`)
 
 ## `.shivaignore` + Ignore Engine
-- [ ] Implement `.shivaignore` loader/parser and matcher composition — bootstrap filtering must be deterministic and repo-sha specific
+- [x] Implement `.shivaignore` loader/parser and matcher composition — bootstrap filtering must be deterministic and repo-sha specific
   - Repository: `shiva`
   - Component: `internal/openapi` (or dedicated ignore package)
   - Scope: Read optional `/.shivaignore` from target `sha`; parse comments/empty lines/doublestar patterns; reject/ignore negation (`!`) per v1 spec; merge with built-in patterns
