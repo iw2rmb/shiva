@@ -31,10 +31,8 @@ Shiva is a Go service that tracks OpenAPI changes in GitLab repositories, rebuil
 - `GET /internal/metrics` (path configurable via `SHIVA_METRICS_PATH`)
 - `GET /{tenant}/{repo}.{json|yaml}`
 - `GET /{tenant}/{repo}/{selector}.{json|yaml}`
-- `GET /{tenant}/{repo}/{method}/{path}`
-- `GET /{tenant}/{repo}/{selector}/{method}/{path}`
-- `GET /{tenant}/{repo}/{method}.{json|yaml}`
-- `GET /{tenant}/{repo}/{selector}/{method}.{json|yaml}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{selector}/{path}`
 
 `selector` is one of:
 - commit SHA
@@ -42,6 +40,8 @@ Shiva is a Go service that tracks OpenAPI changes in GitLab repositories, rebuil
 - `latest` (default branch latest processed revision)
 
 No-selector routes default to latest processed revision on `main`.
+For operation routes, the HTTP request method is the endpoint method selector.
+Operation routes default to JSON and support `.json` / `.yaml` suffix on `{path}`.
 
 ## Configuration
 Environment variables are documented in [docs/runtime-baseline.md](docs/runtime-baseline.md), including:

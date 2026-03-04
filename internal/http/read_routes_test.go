@@ -23,12 +23,14 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 	shaSelector := "1111111111111111111111111111111111111111"
 	testCases := []struct {
 		name          string
+		method        string
 		path          string
 		expectedInput store.ResolveReadSelectorInput
 	}{
 		{
-			name: "no-selector spec route",
-			path: "/tenant-a/acme%2Fplatform-api.json",
+			name:   "no-selector spec route",
+			method: http.MethodGet,
+			path:   "/tenant-a/acme%2Fplatform-api.json",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey:  "tenant-a",
 				RepoPath:   "acme/platform-api",
@@ -36,8 +38,9 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			},
 		},
 		{
-			name: "selector spec route",
-			path: "/tenant-a/acme%2Fplatform-api/latest.json",
+			name:   "selector spec route",
+			method: http.MethodGet,
+			path:   "/tenant-a/acme%2Fplatform-api/latest.json",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
@@ -45,8 +48,9 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			},
 		},
 		{
-			name: "selector spec route with sha",
-			path: fmt.Sprintf("/tenant-a/acme%%2Fplatform-api/%s.yaml", shaSelector),
+			name:   "selector spec route with sha",
+			method: http.MethodGet,
+			path:   fmt.Sprintf("/tenant-a/acme%%2Fplatform-api/%s.yaml", shaSelector),
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
@@ -54,8 +58,9 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			},
 		},
 		{
-			name: "method slice route without selector",
-			path: "/tenant-a/acme%2Fplatform-api/get.json",
+			name:   "operation slice route without selector",
+			method: http.MethodGet,
+			path:   "/tenant-a/acme%2Fplatform-api/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey:  "tenant-a",
 				RepoPath:   "acme/platform-api",
@@ -63,8 +68,9 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			},
 		},
 		{
-			name: "method slice route with selector",
-			path: "/tenant-a/acme%2Fplatform-api/release/get.json",
+			name:   "operation slice route with selector",
+			method: http.MethodGet,
+			path:   "/tenant-a/acme%2Fplatform-api/release/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
@@ -72,17 +78,9 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			},
 		},
 		{
-			name: "operation slice route without selector",
-			path: "/tenant-a/acme%2Fplatform-api/get/%2Fpets",
-			expectedInput: store.ResolveReadSelectorInput{
-				TenantKey:  "tenant-a",
-				RepoPath:   "acme/platform-api",
-				NoSelector: true,
-			},
-		},
-		{
-			name: "operation slice route with selector",
-			path: "/tenant-a/acme%2Fplatform-api/release/get/%2Fpets",
+			name:   "operation route uses request method",
+			method: http.MethodPost,
+			path:   "/tenant-a/acme%2Fplatform-api/release/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
@@ -104,13 +102,6 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 					SpecYAML:   "openapi: 3.1.0\npaths: {}\n",
 					ETag:       "\"etag-21\"",
 				},
-				list: []store.EndpointIndexRecord{
-					{
-						Method:  "get",
-						Path:    "/pets",
-						RawJSON: []byte(`{"responses":{"200":{"description":"ok"}}}`),
-					},
-				},
 				endpoint: store.EndpointIndexRecord{
 					Method:  "get",
 					Path:    "/pets",
@@ -120,7 +111,7 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			}
 			server := newReadRouteTestServer(readStore)
 
-			req := httptest.NewRequest(http.MethodGet, testCase.path, nil)
+			req := httptest.NewRequest(testCase.method, testCase.path, nil)
 			resp, err := server.App().Test(req, -1)
 			if err != nil {
 				t.Fatalf("http test request failed: %v", err)
@@ -257,27 +248,21 @@ func TestSpecRoutes_ETagSupport(t *testing.T) {
 	}
 }
 
-func TestMethodSliceFormats(t *testing.T) {
+func TestOperationRoute_UsesRequestMethodAndFormatAddon(t *testing.T) {
 	t.Parallel()
 
 	readStore := &fakeReadRouteStore{
 		resolved: store.ResolvedReadSelector{Revision: store.Revision{ID: 88}},
-		list: []store.EndpointIndexRecord{
-			{
-				Method:  "get",
-				Path:    "/pets",
-				RawJSON: []byte(`{"operationId":"listPets","responses":{"200":{"description":"ok"}}}`),
-			},
-			{
-				Method:  "post",
-				Path:    "/pets",
-				RawJSON: []byte(`{"operationId":"createPet","responses":{"201":{"description":"created"}}}`),
-			},
+		endpoint: store.EndpointIndexRecord{
+			Method:  "post",
+			Path:    "/pets",
+			RawJSON: []byte(`{"operationId":"createPet","responses":{"201":{"description":"created"}}}`),
 		},
+		endpointFound: true,
 	}
 	server := newReadRouteTestServer(readStore)
 
-	jsonReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/get.json", nil)
+	jsonReq := httptest.NewRequest(http.MethodPost, "/tenant-a/repo/%2Fpets", nil)
 	jsonResp, err := server.App().Test(jsonReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -291,22 +276,14 @@ func TestMethodSliceFormats(t *testing.T) {
 	if err := json.NewDecoder(jsonResp.Body).Decode(&jsonBody); err != nil {
 		t.Fatalf("decode json response: %v", err)
 	}
-	paths, ok := jsonBody["paths"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected paths object in method slice")
+	if readStore.lastEndpointLookup.Method != "post" || readStore.lastEndpointLookup.Path != "/pets" {
+		t.Fatalf("unexpected endpoint lookup key: %+v", readStore.lastEndpointLookup)
 	}
-	petEntry, ok := paths["/pets"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected /pets entry in paths")
-	}
-	if _, ok := petEntry["get"]; !ok {
-		t.Fatalf("expected get operation in /pets entry")
-	}
-	if _, ok := petEntry["post"]; ok {
-		t.Fatalf("did not expect post operation in get slice")
+	if _, ok := jsonBody["paths"].(map[string]any); !ok {
+		t.Fatalf("expected paths object in operation slice")
 	}
 
-	yamlReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/release/get.yaml", nil)
+	yamlReq := httptest.NewRequest(http.MethodPatch, "/tenant-a/repo/release/%2Fpets.yaml", nil)
 	yamlResp, err := server.App().Test(yamlReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -321,8 +298,8 @@ func TestMethodSliceFormats(t *testing.T) {
 	if !strings.Contains(bodyText, "paths:") {
 		t.Fatalf("expected yaml to contain paths key, got %q", bodyText)
 	}
-	if !strings.Contains(bodyText, "get:") {
-		t.Fatalf("expected yaml to contain get operation, got %q", bodyText)
+	if readStore.lastEndpointLookup.Method != "patch" || readStore.lastEndpointLookup.Path != "/pets" {
+		t.Fatalf("unexpected endpoint lookup key for patch: %+v", readStore.lastEndpointLookup)
 	}
 }
 
@@ -340,7 +317,7 @@ func TestOperationSlice_DefaultJSONAndYAMLAddon(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	jsonReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/get/%2Fpets%2F%7Bid%7D", nil)
+	jsonReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/%2Fpets%2F%7Bid%7D", nil)
 	jsonResp, err := server.App().Test(jsonReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -362,7 +339,7 @@ func TestOperationSlice_DefaultJSONAndYAMLAddon(t *testing.T) {
 		t.Fatalf("expected paths object in operation slice")
 	}
 
-	yamlReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/release/get/%2Fpets%2F%7Bid%7D.yaml", nil)
+	yamlReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/release/%2Fpets%2F%7Bid%7D.yaml", nil)
 	yamlResp, err := server.App().Test(yamlReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -381,7 +358,53 @@ func TestOperationSlice_DefaultJSONAndYAMLAddon(t *testing.T) {
 	}
 }
 
-func TestReadRoutes_InvalidMethodFallsBackToSelectorSpec(t *testing.T) {
+func TestOperationRoute_SelectorNotFoundFallsBackToNoSelector(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeReadRouteStore{
+		resolveFn: func(input store.ResolveReadSelectorInput) (store.ResolvedReadSelector, error) {
+			if input.NoSelector {
+				return store.ResolvedReadSelector{Revision: store.Revision{ID: 55}}, nil
+			}
+			if input.Selector == "v1" {
+				return store.ResolvedReadSelector{}, store.ErrSelectorNotFound
+			}
+			return store.ResolvedReadSelector{Revision: store.Revision{ID: 77}}, nil
+		},
+		endpoint: store.EndpointIndexRecord{
+			Method:  "get",
+			Path:    "/v1/pets",
+			RawJSON: []byte(`{"responses":{"200":{"description":"ok"}}}`),
+		},
+		endpointFound: true,
+	}
+	server := newReadRouteTestServer(readStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/v1/pets", nil)
+	resp, err := server.App().Test(req, -1)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if len(readStore.resolveInputs) != 2 {
+		t.Fatalf("expected two selector resolution calls, got %d", len(readStore.resolveInputs))
+	}
+	if readStore.resolveInputs[0].Selector != "v1" || readStore.resolveInputs[0].NoSelector {
+		t.Fatalf("expected first resolution to use selector v1, got %+v", readStore.resolveInputs[0])
+	}
+	if !readStore.resolveInputs[1].NoSelector {
+		t.Fatalf("expected second resolution to use no-selector fallback, got %+v", readStore.resolveInputs[1])
+	}
+	if readStore.lastEndpointLookup.Method != "get" || readStore.lastEndpointLookup.Path != "/v1/pets" {
+		t.Fatalf("unexpected endpoint lookup after fallback: %+v", readStore.lastEndpointLookup)
+	}
+}
+
+func TestReadRoutes_SelectorSpecRouteBypassesOperationRoute(t *testing.T) {
 	t.Parallel()
 
 	readStore := &fakeReadRouteStore{
@@ -424,12 +447,10 @@ type fakeReadRouteStore struct {
 	resolveInputs []store.ResolveReadSelectorInput
 	resolveErr    error
 	resolved      store.ResolvedReadSelector
+	resolveFn     func(input store.ResolveReadSelectorInput) (store.ResolvedReadSelector, error)
 
 	artifactErr error
 	artifact    store.SpecArtifact
-
-	listErr error
-	list    []store.EndpointIndexRecord
 
 	endpointErr        error
 	endpoint           store.EndpointIndexRecord
@@ -446,6 +467,9 @@ func (f *fakeReadRouteStore) ResolveReadSelector(
 	input store.ResolveReadSelectorInput,
 ) (store.ResolvedReadSelector, error) {
 	f.resolveInputs = append(f.resolveInputs, input)
+	if f.resolveFn != nil {
+		return f.resolveFn(input)
+	}
 	if f.resolveErr != nil {
 		return store.ResolvedReadSelector{}, f.resolveErr
 	}
@@ -460,13 +484,6 @@ func (f *fakeReadRouteStore) GetSpecArtifactByRevisionID(_ context.Context, revi
 		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
 	}
 	return f.artifact, nil
-}
-
-func (f *fakeReadRouteStore) ListEndpointIndexByRevision(_ context.Context, _ int64) ([]store.EndpointIndexRecord, error) {
-	if f.listErr != nil {
-		return nil, f.listErr
-	}
-	return f.list, nil
 }
 
 func (f *fakeReadRouteStore) GetEndpointIndexByMethodPath(

@@ -5,10 +5,8 @@
 - Current route contract:
   - `GET /{tenant}/{repo}.{json|yaml}`
   - `GET /{tenant}/{repo}/{selector}.{json|yaml}`
-  - `GET /{tenant}/{repo}/{method}/{path}`
-  - `GET /{tenant}/{repo}/{selector}/{method}/{path}`
-  - `GET /{tenant}/{repo}/{method}.{json|yaml}`
-  - `GET /{tenant}/{repo}/{selector}/{method}.{json|yaml}`
+  - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{path}`
+  - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{selector}/{path}`
 
 ## Components
 - HTTP routes and handlers:
@@ -38,12 +36,11 @@
 ## Path Slice Semantics
 - `/{tenant}/{repo}.{json|yaml}` and `/{tenant}/{repo}/{selector}.{json|yaml}`:
   - full canonical spec for resolved revision.
-- `/{tenant}/{repo}/{method}.{json|yaml}` and `/{tenant}/{repo}/{selector}/{method}.{json|yaml}`:
-  - method-level spec slice:
-    - shape: `{ "paths": { "<path>": { "<method>": <operation> } } }`.
-- `/{tenant}/{repo}/{method}/{path}` and `/{tenant}/{repo}/{selector}/{method}/{path}`:
+- `/{tenant}/{repo}/{path}` and `/{tenant}/{repo}/{selector}/{path}`:
   - operation-level spec slice (JSON by default).
+  - endpoint method is derived from HTTP request method.
   - supports `.json` / `.yaml` suffix on `{path}` for explicit output format.
+  - selector route is evaluated first; when selector is not found, route falls back to no-selector path resolution.
 
 ## HTTP Response Semantics
 - Artifact-backed selector misses return `404`:

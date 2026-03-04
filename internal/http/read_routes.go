@@ -17,7 +17,6 @@ import (
 type readRouteStore interface {
 	ResolveReadSelector(ctx context.Context, input store.ResolveReadSelectorInput) (store.ResolvedReadSelector, error)
 	GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (store.SpecArtifact, error)
-	ListEndpointIndexByRevision(ctx context.Context, revisionID int64) ([]store.EndpointIndexRecord, error)
 	GetEndpointIndexByMethodPath(
 		ctx context.Context,
 		revisionID int64,
@@ -32,6 +31,17 @@ const (
 	formatJSON contentFormat = "json"
 	formatYAML contentFormat = "yaml"
 )
+
+var readOperationHTTPMethods = []string{
+	fiber.MethodGet,
+	fiber.MethodPost,
+	fiber.MethodPut,
+	fiber.MethodPatch,
+	fiber.MethodDelete,
+	fiber.MethodHead,
+	fiber.MethodOptions,
+	fiber.MethodTrace,
+}
 
 var supportedHTTPMethods = map[string]struct{}{
 	"get":     {},
@@ -52,7 +62,7 @@ func (s *Server) handleGetSpecNoSelector(c *fiber.Ctx) error {
 	return s.handleGetSpec(c, true, "", format)
 }
 
-func (s *Server) handleGetSpecOrMethodSliceNoSelector(c *fiber.Ctx) error {
+func (s *Server) handleGetSpecBySelector(c *fiber.Ctx) error {
 	format, ok := parseContentFormat(c.Params("format"))
 	if !ok {
 		return c.SendStatus(fiber.StatusNotFound)
@@ -63,74 +73,65 @@ func (s *Server) handleGetSpecOrMethodSliceNoSelector(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-	}
-	method := normalizeHTTPMethod(selector)
-	if method != "" {
-		return s.handleGetMethodSlice(c, true, "", method, format)
 	}
 
 	return s.handleGetSpec(c, false, selector, format)
 }
 
-func (s *Server) handleGetMethodSliceBySelector(c *fiber.Ctx) error {
-	format, ok := parseContentFormat(c.Params("format"))
+func (s *Server) handleOperationBySelector(c *fiber.Ctx) error {
+	rawPath := strings.TrimSpace(c.Params("*"))
+	if rawPath == "" {
+		return c.Next()
+	}
+
+	selector, err := decodePathParam(c.Params("selector"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	method, ok := operationMethodFromRequest(c)
 	if !ok {
+		return c.SendStatus(fiber.StatusMethodNotAllowed)
+	}
+
+	resolved, err := s.resolveReadSelector(c, false, selector)
+	if err != nil {
+		if errors.Is(err, store.ErrSelectorNotFound) {
+			return c.Next()
+		}
+		return s.writeReadRouteError(c, err)
+	}
+
+	return s.handleOperationSlice(c, resolved.Revision.ID, method, rawPath)
+}
+
+func (s *Server) handleOperationNoSelector(c *fiber.Ctx) error {
+	rawPath := strings.TrimSpace(c.Params("*"))
+	if rawPath == "" {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
 
-	selector, err := decodePathParam(c.Params("selector"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+	method, ok := operationMethodFromRequest(c)
+	if !ok {
+		return c.SendStatus(fiber.StatusMethodNotAllowed)
 	}
 
-	method, isMethod, err := decodeHTTPMethodParam(c.Params("method"))
+	resolved, err := s.resolveReadSelector(c, true, "")
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-	if !isMethod {
-		return c.SendStatus(fiber.StatusNotFound)
+		return s.writeReadRouteError(c, err)
 	}
 
-	return s.handleGetMethodSlice(c, false, selector, method, format)
+	return s.handleOperationSlice(c, resolved.Revision.ID, method, rawPath)
 }
 
-func (s *Server) handleGetOperationNoSelector(c *fiber.Ctx) error {
-	method, isMethod, err := decodeHTTPMethodParam(c.Params("method"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+func operationMethodFromRequest(c *fiber.Ctx) (string, bool) {
+	method := normalizeHTTPMethod(c.Method())
+	if method == "" {
+		return "", false
 	}
-	if !isMethod {
-		return c.Next()
-	}
-
-	return s.handleGetOperationSlice(c, true, "", method, c.Params("*"))
-}
-
-func (s *Server) handleGetOperationBySelector(c *fiber.Ctx) error {
-	selector, err := decodePathParam(c.Params("selector"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	method, isMethod, err := decodeHTTPMethodParam(c.Params("method"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-	if !isMethod {
-		return c.Next()
-	}
-
-	return s.handleGetOperationSlice(c, false, selector, method, c.Params("*"))
+	return method, true
 }
 
 func (s *Server) handleGetSpec(c *fiber.Ctx, noSelector bool, selector string, format contentFormat) error {
@@ -161,48 +162,7 @@ func (s *Server) handleGetSpec(c *fiber.Ctx, noSelector bool, selector string, f
 	}
 }
 
-func (s *Server) handleGetMethodSlice(
-	c *fiber.Ctx,
-	noSelector bool,
-	selector string,
-	method string,
-	format contentFormat,
-) error {
-	resolved, err := s.resolveReadSelector(c, noSelector, selector)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-
-	endpoints, err := s.readStore.ListEndpointIndexByRevision(c.Context(), resolved.Revision.ID)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-
-	payload, found, err := buildMethodSlicePayload(endpoints, method)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-	if !found {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "method slice not found",
-		})
-	}
-
-	return writeSliceResponse(c, format, payload)
-}
-
-func (s *Server) handleGetOperationSlice(
-	c *fiber.Ctx,
-	noSelector bool,
-	selector string,
-	method string,
-	rawPath string,
-) error {
-	resolved, err := s.resolveReadSelector(c, noSelector, selector)
-	if err != nil {
-		return s.writeReadRouteError(c, err)
-	}
-
+func (s *Server) handleOperationSlice(c *fiber.Ctx, revisionID int64, method string, rawPath string) error {
 	endpointPath, format, err := decodeEndpointPathAndFormat(rawPath)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -212,7 +172,7 @@ func (s *Server) handleGetOperationSlice(
 
 	endpoint, found, err := s.readStore.GetEndpointIndexByMethodPath(
 		c.Context(),
-		resolved.Revision.ID,
+		revisionID,
 		method,
 		endpointPath,
 	)
@@ -270,34 +230,6 @@ func (s *Server) resolveReadSelector(
 	return s.readStore.ResolveReadSelector(c.Context(), input)
 }
 
-func buildMethodSlicePayload(
-	endpoints []store.EndpointIndexRecord,
-	method string,
-) (map[string]any, bool, error) {
-	paths := make(map[string]map[string]any)
-	for _, endpoint := range endpoints {
-		if endpoint.Method != method {
-			continue
-		}
-
-		operation, err := decodeOperationRawJSON(endpoint.RawJSON)
-		if err != nil {
-			return nil, false, err
-		}
-
-		if _, ok := paths[endpoint.Path]; !ok {
-			paths[endpoint.Path] = make(map[string]any)
-		}
-		paths[endpoint.Path][method] = operation
-	}
-
-	if len(paths) == 0 {
-		return nil, false, nil
-	}
-
-	return map[string]any{"paths": paths}, true, nil
-}
-
 func buildOperationSlicePayload(endpoint store.EndpointIndexRecord) (map[string]any, error) {
 	operation, err := decodeOperationRawJSON(endpoint.RawJSON)
 	if err != nil {
@@ -347,22 +279,6 @@ func writeSliceResponse(c *fiber.Ctx, format contentFormat, payload any) error {
 	default:
 		return c.SendStatus(fiber.StatusNotFound)
 	}
-}
-
-func decodeHTTPMethodParam(value string) (string, bool, error) {
-	decoded, err := decodePathParam(value)
-	if err != nil {
-		return "", false, err
-	}
-	if decoded == "" {
-		return "", false, nil
-	}
-
-	method := normalizeHTTPMethod(decoded)
-	if method == "" {
-		return strings.ToLower(strings.TrimSpace(decoded)), false, nil
-	}
-	return method, true, nil
 }
 
 func normalizeHTTPMethod(value string) string {

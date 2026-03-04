@@ -112,13 +112,15 @@ func (s *Server) registerRoutes() {
 	}))
 	webhookGroup.Post("/gitlab", s.handleGitLabWebhook)
 
-	// Selector-aware path slices must be registered before no-selector variants.
-	s.app.Get("/:tenant/:repo/:selector/:method/*", s.handleGetOperationBySelector)
-	s.app.Get("/:tenant/:repo/:method/*", s.handleGetOperationNoSelector)
-
-	s.app.Get("/:tenant/:repo/:selector/:method.:format", s.handleGetMethodSliceBySelector)
-	s.app.Get("/:tenant/:repo/:selector.:format", s.handleGetSpecOrMethodSliceNoSelector)
+	// Selector-aware operation routes must be registered before no-selector variants.
+	for _, method := range readOperationHTTPMethods {
+		s.app.Add(method, "/:tenant/:repo/:selector/*", s.handleOperationBySelector)
+	}
+	s.app.Get("/:tenant/:repo/:selector.:format", s.handleGetSpecBySelector)
 	s.app.Get("/:tenant/:repo.:format", s.handleGetSpecNoSelector)
+	for _, method := range readOperationHTTPMethods {
+		s.app.Add(method, "/:tenant/:repo/*", s.handleOperationNoSelector)
+	}
 }
 
 type healthResponse struct {
