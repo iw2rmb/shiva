@@ -21,17 +21,20 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
      - write `api_spec_revisions` status rows,
      - replace `api_spec_dependencies`,
      - build/persist canonical artifact + endpoint index (revision-level storage).
-6. Incremental mode resolver runs:
-   - GitLab Compare API (`from=parent_sha`, `to=sha`) to get changed paths,
-   - candidate filtering by include globs,
-   - candidate file fetch via GitLab Repository Files API at `ref=sha`,
-   - parse and validate top-level `openapi` or `swagger`,
-   - recursive local `$ref` fetch/resolve with cycle and max-fetch guards.
-7. If resolver says OpenAPI changed:
+6. Incremental mode runs:
+   - GitLab Compare API (`from=parent_sha`, `to=sha`) once to load changed paths.
+   - Load active `api_specs` with latest dependency sets.
+   - Resolve impacted APIs by changed-path intersection against `{root_path + dependency_paths}`.
+   - For impacted APIs:
+     - if root path is deleted in compare, mark API spec status as `deleted`;
+     - otherwise, resolve that root at `sha`, rebuild it, and persist updated dependency set.
+   - If no impacted APIs were found and compare includes `new_file` or `renamed_file` paths, run targeted discovery on those changed paths and create/build newly valid roots.
+7. If at least one API was rebuilt:
    - build canonical JSON+YAML,
    - extract endpoints,
    - persist `spec_artifacts` and `endpoint_index`,
    - compute and persist semantic diff.
+   - Note: deleted-root deactivation without any rebuilt API updates `api_specs` status only; revision-level canonical artifact/diff is not rebuilt in that case.
 8. Mark revision processed and emit outbound notifications.
 9. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
 

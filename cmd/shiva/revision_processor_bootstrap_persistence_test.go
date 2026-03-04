@@ -190,19 +190,34 @@ type bootstrapPersistenceResolver struct {
 	bootstrapCalls   []bootstrapCall
 }
 
-func (r *bootstrapPersistenceResolver) ResolveChangedOpenAPI(
+func (r *bootstrapPersistenceResolver) ResolveRootOpenAPIAtSHA(
 	_ context.Context,
 	_ openapi.GitLabClient,
 	projectID int64,
-	fromSHA string,
-	toSHA string,
-) (openapi.ResolutionResult, error) {
+	sha string,
+	rootPath string,
+) (openapi.RootResolution, error) {
 	r.incrementalCalls = append(r.incrementalCalls, incrementalCall{
 		projectID: projectID,
-		fromSHA:   fromSHA,
-		toSHA:     toSHA,
+		fromSHA:   sha,
+		toSHA:     rootPath,
 	})
-	return openapi.ResolutionResult{}, fmt.Errorf("unexpected ResolveChangedOpenAPI call")
+	return openapi.RootResolution{}, fmt.Errorf("unexpected ResolveRootOpenAPIAtSHA call")
+}
+
+func (r *bootstrapPersistenceResolver) ResolveDiscoveredRootsAtPaths(
+	_ context.Context,
+	_ openapi.GitLabClient,
+	projectID int64,
+	sha string,
+	paths []string,
+) ([]openapi.RootResolution, error) {
+	r.incrementalCalls = append(r.incrementalCalls, incrementalCall{
+		projectID: projectID,
+		fromSHA:   sha,
+		toSHA:     strings.Join(paths, ","),
+	})
+	return nil, fmt.Errorf("unexpected ResolveDiscoveredRootsAtPaths call")
 }
 
 func (r *bootstrapPersistenceResolver) ResolveRepositoryOpenAPIAtSHA(
@@ -368,6 +383,17 @@ func (s *bootstrapPersistenceRevisionStore) UpsertAPISpec(
 		RootPath: rootPath,
 		Status:   "active",
 	}, nil
+}
+
+func (s *bootstrapPersistenceRevisionStore) ListActiveAPISpecsWithLatestDependencies(
+	_ context.Context,
+	_ int64,
+) ([]store.ActiveAPISpecWithLatestDependencies, error) {
+	return nil, fmt.Errorf("unexpected ListActiveAPISpecsWithLatestDependencies call")
+}
+
+func (s *bootstrapPersistenceRevisionStore) MarkAPISpecDeleted(_ context.Context, _ int64) error {
+	return fmt.Errorf("unexpected MarkAPISpecDeleted call")
 }
 
 func (s *bootstrapPersistenceRevisionStore) CreateAPISpecRevision(

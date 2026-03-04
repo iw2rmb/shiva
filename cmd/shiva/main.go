@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"syscall"
 	"time"
@@ -211,13 +212,20 @@ type gitlabResolverClient interface {
 }
 
 type openapiResolver interface {
-	ResolveChangedOpenAPI(
+	ResolveRootOpenAPIAtSHA(
 		ctx context.Context,
 		client openapi.GitLabClient,
 		projectID int64,
-		fromSHA string,
-		toSHA string,
-	) (openapi.ResolutionResult, error)
+		sha string,
+		rootPath string,
+	) (openapi.RootResolution, error)
+	ResolveDiscoveredRootsAtPaths(
+		ctx context.Context,
+		client openapi.GitLabClient,
+		projectID int64,
+		sha string,
+		paths []string,
+	) ([]openapi.RootResolution, error)
 	ResolveRepositoryOpenAPIAtSHA(
 		ctx context.Context,
 		client openapi.GitLabBootstrapClient,
@@ -234,6 +242,11 @@ type revisionStore interface {
 	GetRepoBootstrapState(ctx context.Context, repoID int64) (store.RepoBootstrapState, error)
 	ClearRepoForceRescan(ctx context.Context, repoID int64) error
 	UpsertAPISpec(ctx context.Context, input store.UpsertAPISpecInput) (store.APISpec, error)
+	ListActiveAPISpecsWithLatestDependencies(
+		ctx context.Context,
+		repoID int64,
+	) ([]store.ActiveAPISpecWithLatestDependencies, error)
+	MarkAPISpecDeleted(ctx context.Context, apiSpecID int64) error
 	CreateAPISpecRevision(ctx context.Context, input store.CreateAPISpecRevisionInput) (store.APISpecRevision, error)
 	ReplaceAPISpecDependencies(ctx context.Context, input store.ReplaceAPISpecDependenciesInput) error
 	PersistCanonicalSpec(ctx context.Context, input store.PersistCanonicalSpecInput) error
@@ -360,7 +373,6 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		return fmt.Errorf("load repo %d for ingest event %d: %w", job.RepoID, job.EventID, err)
 	}
 
-	var resolution openapi.ResolutionResult
 	var bootstrapRoots []openapi.RootResolution
 	switch mode {
 	case ingestionModeBootstrap:
@@ -388,29 +400,6 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		}
 		bootstrapSpan.End()
 		err = resolveErr
-	default:
-		compareCtx, compareSpan := tracer.Start(ctx, "gitlab.compare", trace.WithAttributes(
-			attribute.Int64("repo.id", job.RepoID),
-			attribute.String("delivery.id", job.DeliveryID),
-			attribute.String("revision.sha", job.Sha),
-			attribute.String("revision.parent_sha", parentSHA),
-			attribute.Int64("gitlab.project_id", repo.GitLabProjectID),
-		))
-		resolution, err = p.openapiLoader.ResolveChangedOpenAPI(
-			compareCtx,
-			p.gitlabClient,
-			repo.GitLabProjectID,
-			parentSHA,
-			job.Sha,
-		)
-		if err != nil {
-			compareSpan.RecordError(err)
-			compareSpan.SetStatus(codes.Error, "openapi compare failed")
-		} else {
-			compareSpan.SetAttributes(attribute.Bool("openapi.changed", resolution.OpenAPIChanged))
-			compareSpan.SetStatus(codes.Ok, "")
-		}
-		compareSpan.End()
 	}
 	if err != nil {
 		if isPermanentOpenAPIProcessingError(err) {
@@ -425,7 +414,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		}
 		processSpan.RecordError(err)
 		processSpan.SetStatus(codes.Error, "openapi resolution failed")
-		return fmt.Errorf("resolve openapi candidates for revision %d: %w", revisionID, err)
+		return fmt.Errorf("resolve openapi roots for revision %d: %w", revisionID, err)
 	}
 
 	openAPIChanged := false
@@ -459,41 +448,25 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		}
 		recordBuildMetric()
 	default:
-		openAPIChanged = resolution.OpenAPIChanged
-		if openAPIChanged {
-			buildStartedAt := time.Now()
-			buildSuccess := false
-			recordBuildMetric := func() {
-				if p.metrics != nil {
-					p.metrics.ObserveBuild(time.Since(buildStartedAt), buildSuccess)
-				}
-			}
-
-			if err := p.runBuildStage(ctx, job, revisionID, resolution); err != nil {
-				recordBuildMetric()
-				if isPermanentOpenAPIProcessingError(err) {
-					if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
-						processSpan.RecordError(markErr)
-						processSpan.SetStatus(codes.Error, "mark revision failed")
-						return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
-					}
-					processSpan.RecordError(err)
-					processSpan.SetStatus(codes.Error, "canonical openapi permanent failure")
-					return worker.Permanent(fmt.Errorf("canonical openapi build failed: %w", err))
+		incrementalStartedAt := time.Now()
+		openAPIChanged, err = p.processIncrementalRevision(ctx, job, revisionID, repo.GitLabProjectID, parentSHA)
+		if err != nil {
+			if isPermanentOpenAPIProcessingError(err) {
+				if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
+					processSpan.RecordError(markErr)
+					processSpan.SetStatus(codes.Error, "mark revision failed")
+					return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
 				}
 				processSpan.RecordError(err)
-				processSpan.SetStatus(codes.Error, "build stage failed")
-				return fmt.Errorf("build canonical openapi for revision %d: %w", revisionID, err)
+				processSpan.SetStatus(codes.Error, "incremental openapi permanent failure")
+				return worker.Permanent(fmt.Errorf("incremental openapi processing failed: %w", err))
 			}
-
-			if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
-				recordBuildMetric()
-				processSpan.RecordError(err)
-				processSpan.SetStatus(codes.Error, "semantic diff failed")
-				return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
-			}
-			buildSuccess = true
-			recordBuildMetric()
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "incremental openapi processing failed")
+			return fmt.Errorf("process incremental openapi for revision %d: %w", revisionID, err)
+		}
+		if openAPIChanged && p.metrics != nil {
+			p.metrics.ObserveBuild(time.Since(incrementalStartedAt), true)
 		}
 	}
 
@@ -586,6 +559,308 @@ func (p revisionProcessor) processBootstrapRoots(
 	}
 
 	return successfulRoots, nil
+}
+
+type impactedAPISpec struct {
+	spec        store.ActiveAPISpecWithLatestDependencies
+	rootDeleted bool
+}
+
+func (p revisionProcessor) processIncrementalRevision(
+	ctx context.Context,
+	job worker.QueueJob,
+	revisionID int64,
+	projectID int64,
+	parentSHA string,
+) (bool, error) {
+	compareCtx, compareSpan := p.effectiveTracer().Start(ctx, "gitlab.compare", trace.WithAttributes(
+		attribute.Int64("repo.id", job.RepoID),
+		attribute.String("delivery.id", job.DeliveryID),
+		attribute.String("revision.sha", job.Sha),
+		attribute.String("revision.parent_sha", parentSHA),
+		attribute.Int64("gitlab.project_id", projectID),
+	))
+	changedPaths, err := p.gitlabClient.CompareChangedPaths(compareCtx, projectID, parentSHA, job.Sha)
+	if err != nil {
+		compareSpan.RecordError(err)
+		compareSpan.SetStatus(codes.Error, "load changed paths failed")
+		compareSpan.End()
+		return false, fmt.Errorf("load changed paths: %w", err)
+	}
+
+	impacted, err := p.resolveImpactedAPIs(compareCtx, job.RepoID, changedPaths)
+	if err != nil {
+		compareSpan.RecordError(err)
+		compareSpan.SetStatus(codes.Error, "resolve impacted apis failed")
+		compareSpan.End()
+		return false, fmt.Errorf("resolve impacted apis: %w", err)
+	}
+
+	compareSpan.SetAttributes(
+		attribute.Int("gitlab.compare.changed_path_count", len(changedPaths)),
+		attribute.Int("openapi.incremental.impacted_api_count", len(impacted)),
+	)
+	compareSpan.SetStatus(codes.Ok, "")
+	compareSpan.End()
+
+	rebuiltAPIs := 0
+	for _, item := range impacted {
+		if item.rootDeleted {
+			if err := p.store.MarkAPISpecDeleted(ctx, item.spec.ID); err != nil {
+				return false, fmt.Errorf(
+					"mark api spec %d deleted for root %q: %w",
+					item.spec.ID,
+					item.spec.RootPath,
+					err,
+				)
+			}
+			continue
+		}
+
+		if err := p.processImpactedAPI(ctx, job, revisionID, projectID, item.spec); err != nil {
+			return false, err
+		}
+		rebuiltAPIs++
+	}
+
+	if len(impacted) == 0 {
+		fallbackBuilt, err := p.processFallbackDiscovery(ctx, job, revisionID, projectID, changedPaths)
+		if err != nil {
+			return false, err
+		}
+		rebuiltAPIs += fallbackBuilt
+	}
+
+	if rebuiltAPIs == 0 {
+		return false, nil
+	}
+
+	if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
+		return false, fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
+	}
+
+	return true, nil
+}
+
+func (p revisionProcessor) resolveImpactedAPIs(
+	ctx context.Context,
+	repoID int64,
+	changedPaths []gitlab.ChangedPath,
+) ([]impactedAPISpec, error) {
+	activeSpecs, err := p.store.ListActiveAPISpecsWithLatestDependencies(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list active api specs with dependencies for repo %d: %w", repoID, err)
+	}
+
+	changedPathSet := make(map[string]struct{}, len(changedPaths)*2)
+	deletedRoots := make(map[string]struct{}, len(changedPaths))
+	for _, changedPath := range changedPaths {
+		for _, impactPath := range incrementalImpactPaths(changedPath) {
+			changedPathSet[impactPath] = struct{}{}
+		}
+		deletedPath := incrementalDeletedPath(changedPath)
+		if deletedPath != "" {
+			deletedRoots[deletedPath] = struct{}{}
+		}
+	}
+
+	impacted := make([]impactedAPISpec, 0, len(activeSpecs))
+	for _, spec := range activeSpecs {
+		rootPath := normalizeIncrementalRepoPath(spec.RootPath)
+		if rootPath == "" {
+			continue
+		}
+
+		isImpacted := false
+		if _, exists := changedPathSet[rootPath]; exists {
+			isImpacted = true
+		}
+		if !isImpacted {
+			for _, dependencyPath := range spec.DependencyFilePaths {
+				normalizedDependencyPath := normalizeIncrementalRepoPath(dependencyPath)
+				if normalizedDependencyPath == "" {
+					continue
+				}
+				if _, exists := changedPathSet[normalizedDependencyPath]; exists {
+					isImpacted = true
+					break
+				}
+			}
+		}
+
+		if !isImpacted {
+			continue
+		}
+
+		_, rootDeleted := deletedRoots[rootPath]
+		impacted = append(impacted, impactedAPISpec{
+			spec:        spec,
+			rootDeleted: rootDeleted,
+		})
+	}
+
+	return impacted, nil
+}
+
+func (p revisionProcessor) processImpactedAPI(
+	ctx context.Context,
+	job worker.QueueJob,
+	revisionID int64,
+	projectID int64,
+	spec store.ActiveAPISpecWithLatestDependencies,
+) error {
+	root, err := p.openapiLoader.ResolveRootOpenAPIAtSHA(ctx, p.gitlabClient, projectID, job.Sha, spec.RootPath)
+	if err != nil {
+		return fmt.Errorf("resolve impacted root %q: %w", spec.RootPath, err)
+	}
+
+	return p.persistResolvedAPI(ctx, job, revisionID, spec.APISpec, root)
+}
+
+func (p revisionProcessor) processFallbackDiscovery(
+	ctx context.Context,
+	job worker.QueueJob,
+	revisionID int64,
+	projectID int64,
+	changedPaths []gitlab.ChangedPath,
+) (int, error) {
+	candidatePaths := fallbackDiscoveryCandidatePaths(changedPaths)
+	if len(candidatePaths) == 0 {
+		return 0, nil
+	}
+
+	roots, err := p.openapiLoader.ResolveDiscoveredRootsAtPaths(ctx, p.gitlabClient, projectID, job.Sha, candidatePaths)
+	if err != nil {
+		return 0, fmt.Errorf("resolve fallback discovered roots: %w", err)
+	}
+
+	for _, root := range roots {
+		apiSpec, err := p.store.UpsertAPISpec(ctx, store.UpsertAPISpecInput{
+			RepoID:   job.RepoID,
+			RootPath: root.RootPath,
+		})
+		if err != nil {
+			return 0, fmt.Errorf("upsert fallback api spec for root %q: %w", root.RootPath, err)
+		}
+
+		if err := p.persistResolvedAPI(ctx, job, revisionID, apiSpec, root); err != nil {
+			return 0, err
+		}
+	}
+
+	return len(roots), nil
+}
+
+func (p revisionProcessor) persistResolvedAPI(
+	ctx context.Context,
+	job worker.QueueJob,
+	revisionID int64,
+	apiSpec store.APISpec,
+	root openapi.RootResolution,
+) error {
+	apiSpecRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+		APISpecID:   apiSpec.ID,
+		RevisionID:  revisionID,
+		BuildStatus: apiSpecRevisionBuildStatusProcessing,
+	})
+	if err != nil {
+		return fmt.Errorf("create api spec revision for root %q: %w", apiSpec.RootPath, err)
+	}
+
+	if err := p.store.ReplaceAPISpecDependencies(ctx, store.ReplaceAPISpecDependenciesInput{
+		APISpecRevisionID: apiSpecRevision.ID,
+		FilePaths:         root.DependencyFiles,
+	}); err != nil {
+		return fmt.Errorf("replace api spec dependencies for root %q: %w", apiSpec.RootPath, err)
+	}
+
+	if err := p.runBuildStage(ctx, job, revisionID, bootstrapRootToResolutionResult(root)); err != nil {
+		return fmt.Errorf("build canonical openapi for root %q: %w", apiSpec.RootPath, err)
+	}
+
+	if _, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+		APISpecID:   apiSpec.ID,
+		RevisionID:  revisionID,
+		BuildStatus: apiSpecRevisionBuildStatusProcessed,
+	}); err != nil {
+		return fmt.Errorf("mark api spec revision processed for root %q: %w", apiSpec.RootPath, err)
+	}
+
+	return nil
+}
+
+func incrementalImpactPaths(changedPath gitlab.ChangedPath) []string {
+	paths := make([]string, 0, 2)
+	addPath := func(raw string) {
+		normalized := normalizeIncrementalRepoPath(raw)
+		if normalized == "" {
+			return
+		}
+		for _, existing := range paths {
+			if existing == normalized {
+				return
+			}
+		}
+		paths = append(paths, normalized)
+	}
+
+	// For rename/update we track both old and new paths so dependency/root
+	// intersections are evaluated against either side of the change.
+	addPath(changedPath.NewPath)
+	addPath(changedPath.OldPath)
+	return paths
+}
+
+func incrementalDeletedPath(changedPath gitlab.ChangedPath) string {
+	if !changedPath.DeletedFile {
+		return ""
+	}
+
+	pathCandidate := strings.TrimSpace(changedPath.OldPath)
+	if pathCandidate == "" {
+		pathCandidate = strings.TrimSpace(changedPath.NewPath)
+	}
+	return normalizeIncrementalRepoPath(pathCandidate)
+}
+
+func fallbackDiscoveryCandidatePaths(changedPaths []gitlab.ChangedPath) []string {
+	candidates := make([]string, 0, len(changedPaths))
+	seen := make(map[string]struct{}, len(changedPaths))
+
+	for _, changedPath := range changedPaths {
+		if !changedPath.NewFile && !changedPath.RenamedFile {
+			continue
+		}
+
+		pathCandidate := normalizeIncrementalRepoPath(changedPath.NewPath)
+		if pathCandidate == "" {
+			pathCandidate = normalizeIncrementalRepoPath(changedPath.OldPath)
+		}
+		if pathCandidate == "" {
+			continue
+		}
+
+		if _, exists := seen[pathCandidate]; exists {
+			continue
+		}
+		seen[pathCandidate] = struct{}{}
+		candidates = append(candidates, pathCandidate)
+	}
+
+	return candidates
+}
+
+func normalizeIncrementalRepoPath(raw string) string {
+	trimmed := strings.TrimSpace(strings.TrimPrefix(raw, "/"))
+	if trimmed == "" {
+		return ""
+	}
+
+	cleaned := path.Clean(trimmed)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return ""
+	}
+	return cleaned
 }
 
 func (p revisionProcessor) runBuildStage(

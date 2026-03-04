@@ -38,6 +38,8 @@ Current baseline: full suite passes.
 - End-to-end ingest-to-notify flow in `cmd/shiva/webhook_to_notify_integration_test.go`.
 - Bootstrap ingest regression guard in `cmd/shiva/webhook_to_notify_integration_test.go`:
   compare has no OpenAPI paths, repository-tree bootstrap still persists artifact/index, and zero-root bootstrap emits no notifications.
+- Incremental impact orchestration in `cmd/shiva/revision_processor_incremental_impact_test.go`:
+  dependency-intersection impact-only rebuild, unrelated change no rebuild, deleted-root deactivation, and fallback discovery for create/rename changes.
 
 ## DB/Query Change Validation
 When SQL schema/query files change:

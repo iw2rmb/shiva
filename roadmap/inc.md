@@ -33,7 +33,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./internal/openapi` — impacted-root dependency closure success/failure and targeted discovery acceptance/rejection cases
 
 ## Revision Processor Incremental Orchestration
-- [ ] Replace delta-only incremental path with dependency-intersection impact resolution — implement core behavior from `design/inc.md`
+- [x] Replace delta-only incremental path with dependency-intersection impact resolution — implement core behavior from `design/inc.md`
   - Repository: `shiva`
   - Component: `cmd/shiva/main.go`
   - Scope: For incremental mode:

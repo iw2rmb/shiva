@@ -101,10 +101,11 @@ func TestRevisionProcessorProcess_ModeSelectionMatrix(t *testing.T) {
 				revisionID: revisionID,
 			}
 			resolverFake := &modeSelectionResolver{}
+			gitlabClient := &modeSelectionGitLabClient{}
 
 			processor := revisionProcessor{
 				store:         storeFake,
-				gitlabClient:  modeSelectionGitLabClient{},
+				gitlabClient:  gitlabClient,
 				openapiLoader: resolverFake,
 			}
 			job := worker.QueueJob{
@@ -136,8 +137,8 @@ func TestRevisionProcessorProcess_ModeSelectionMatrix(t *testing.T) {
 				if len(resolverFake.bootstrapCalls) != 1 {
 					t.Fatalf("expected one bootstrap resolver call, got %d", len(resolverFake.bootstrapCalls))
 				}
-				if len(resolverFake.incrementalCalls) != 0 {
-					t.Fatalf("expected zero incremental resolver calls, got %d", len(resolverFake.incrementalCalls))
+				if len(gitlabClient.compareCalls) != 0 {
+					t.Fatalf("expected zero compare calls, got %d", len(gitlabClient.compareCalls))
 				}
 				call := resolverFake.bootstrapCalls[0]
 				if call.projectID != projectID {
@@ -147,13 +148,13 @@ func TestRevisionProcessorProcess_ModeSelectionMatrix(t *testing.T) {
 					t.Fatalf("expected bootstrap sha=%q, got %q", job.Sha, call.sha)
 				}
 			case ingestionModeIncremental:
-				if len(resolverFake.incrementalCalls) != 1 {
-					t.Fatalf("expected one incremental resolver call, got %d", len(resolverFake.incrementalCalls))
+				if len(gitlabClient.compareCalls) != 1 {
+					t.Fatalf("expected one compare call, got %d", len(gitlabClient.compareCalls))
 				}
 				if len(resolverFake.bootstrapCalls) != 0 {
 					t.Fatalf("expected zero bootstrap resolver calls, got %d", len(resolverFake.bootstrapCalls))
 				}
-				call := resolverFake.incrementalCalls[0]
+				call := gitlabClient.compareCalls[0]
 				if call.projectID != projectID {
 					t.Fatalf("expected incremental project id %d, got %d", projectID, call.projectID)
 				}
@@ -182,27 +183,7 @@ type bootstrapCall struct {
 }
 
 type modeSelectionResolver struct {
-	incrementalCalls []incrementalCall
-	bootstrapCalls   []bootstrapCall
-}
-
-func (r *modeSelectionResolver) ResolveChangedOpenAPI(
-	_ context.Context,
-	_ openapi.GitLabClient,
-	projectID int64,
-	fromSHA string,
-	toSHA string,
-) (openapi.ResolutionResult, error) {
-	r.incrementalCalls = append(r.incrementalCalls, incrementalCall{
-		projectID: projectID,
-		fromSHA:   fromSHA,
-		toSHA:     toSHA,
-	})
-	return openapi.ResolutionResult{
-		OpenAPIChanged: false,
-		CandidateFiles: []string{},
-		Documents:      map[string][]byte{},
-	}, nil
+	bootstrapCalls []bootstrapCall
 }
 
 func (r *modeSelectionResolver) ResolveRepositoryOpenAPIAtSHA(
@@ -218,18 +199,45 @@ func (r *modeSelectionResolver) ResolveRepositoryOpenAPIAtSHA(
 	return []openapi.RootResolution{}, nil
 }
 
-type modeSelectionGitLabClient struct{}
-
-func (modeSelectionGitLabClient) CompareChangedPaths(
+func (modeSelectionResolver) ResolveRootOpenAPIAtSHA(
 	_ context.Context,
+	_ openapi.GitLabClient,
 	_ int64,
 	_ string,
 	_ string,
+) (openapi.RootResolution, error) {
+	return openapi.RootResolution{}, errors.New("unexpected ResolveRootOpenAPIAtSHA call")
+}
+
+func (modeSelectionResolver) ResolveDiscoveredRootsAtPaths(
+	_ context.Context,
+	_ openapi.GitLabClient,
+	_ int64,
+	_ string,
+	_ []string,
+) ([]openapi.RootResolution, error) {
+	return nil, errors.New("unexpected ResolveDiscoveredRootsAtPaths call")
+}
+
+type modeSelectionGitLabClient struct {
+	compareCalls []incrementalCall
+}
+
+func (c *modeSelectionGitLabClient) CompareChangedPaths(
+	_ context.Context,
+	projectID int64,
+	fromSHA string,
+	toSHA string,
 ) ([]gitlab.ChangedPath, error) {
+	c.compareCalls = append(c.compareCalls, incrementalCall{
+		projectID: projectID,
+		fromSHA:   fromSHA,
+		toSHA:     toSHA,
+	})
 	return []gitlab.ChangedPath{}, nil
 }
 
-func (modeSelectionGitLabClient) GetFileContent(
+func (*modeSelectionGitLabClient) GetFileContent(
 	_ context.Context,
 	_ int64,
 	_ string,
@@ -238,7 +246,7 @@ func (modeSelectionGitLabClient) GetFileContent(
 	return nil, nil
 }
 
-func (modeSelectionGitLabClient) ListRepositoryTree(
+func (*modeSelectionGitLabClient) ListRepositoryTree(
 	_ context.Context,
 	_ int64,
 	_ string,
@@ -306,6 +314,17 @@ func (s *modeSelectionRevisionStore) ClearRepoForceRescan(_ context.Context, rep
 
 func (s *modeSelectionRevisionStore) UpsertAPISpec(_ context.Context, _ store.UpsertAPISpecInput) (store.APISpec, error) {
 	return store.APISpec{}, errors.New("unexpected UpsertAPISpec call")
+}
+
+func (s *modeSelectionRevisionStore) ListActiveAPISpecsWithLatestDependencies(
+	_ context.Context,
+	_ int64,
+) ([]store.ActiveAPISpecWithLatestDependencies, error) {
+	return []store.ActiveAPISpecWithLatestDependencies{}, nil
+}
+
+func (s *modeSelectionRevisionStore) MarkAPISpecDeleted(_ context.Context, _ int64) error {
+	return errors.New("unexpected MarkAPISpecDeleted call")
 }
 
 func (s *modeSelectionRevisionStore) CreateAPISpecRevision(

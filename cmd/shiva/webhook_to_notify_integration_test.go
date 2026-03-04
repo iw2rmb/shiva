@@ -704,7 +704,7 @@ type integrationRevisionStore struct {
 }
 
 func newIntegrationRevisionStore() *integrationRevisionStore {
-	return &integrationRevisionStore{
+	s := &integrationRevisionStore{
 		tenant: store.Tenant{ID: 5, Key: "tenant-a"},
 		repo: store.Repo{
 			ID:                44,
@@ -730,6 +730,24 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 		apiSpecRevs:    make(map[int64]store.APISpecRevision),
 		dependencies:   make(map[int64][]string),
 	}
+
+	s.apiSpecs[400] = store.APISpec{
+		ID:       400,
+		RepoID:   s.repo.ID,
+		RootPath: "api/openapi.yaml",
+		Status:   "active",
+	}
+	s.apiSpecByRoot["api/openapi.yaml"] = 400
+	s.apiSpecRevs[700] = store.APISpecRevision{
+		ID:                 700,
+		APISpecID:          400,
+		RevisionID:         999,
+		RootPathAtRevision: "api/openapi.yaml",
+		BuildStatus:        apiSpecRevisionBuildStatusProcessed,
+	}
+	s.dependencies[700] = []string{"api/components.yaml", "api/openapi.yaml"}
+
+	return s
 }
 
 func (s *integrationRevisionStore) UpsertRevisionFromIngestEvent(
@@ -815,7 +833,10 @@ func (s *integrationRevisionStore) UpsertAPISpec(_ context.Context, input store.
 
 	specID, exists := s.apiSpecByRoot[input.RootPath]
 	if exists {
-		return s.apiSpecs[specID], nil
+		spec := s.apiSpecs[specID]
+		spec.Status = "active"
+		s.apiSpecs[specID] = spec
+		return spec, nil
 	}
 
 	s.nextAPISpecID++
@@ -828,6 +849,58 @@ func (s *integrationRevisionStore) UpsertAPISpec(_ context.Context, input store.
 	s.apiSpecs[spec.ID] = spec
 	s.apiSpecByRoot[input.RootPath] = spec.ID
 	return spec, nil
+}
+
+func (s *integrationRevisionStore) ListActiveAPISpecsWithLatestDependencies(
+	_ context.Context,
+	repoID int64,
+) ([]store.ActiveAPISpecWithLatestDependencies, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rows := make([]store.ActiveAPISpecWithLatestDependencies, 0, len(s.apiSpecs))
+	for _, spec := range s.apiSpecs {
+		if spec.RepoID != repoID || spec.Status != "active" {
+			continue
+		}
+
+		var latestProcessedRevisionID int64
+		var latestSpecRevisionID int64
+		for _, specRevision := range s.apiSpecRevs {
+			if specRevision.APISpecID != spec.ID || specRevision.BuildStatus != apiSpecRevisionBuildStatusProcessed {
+				continue
+			}
+			if specRevision.RevisionID > latestProcessedRevisionID {
+				latestProcessedRevisionID = specRevision.RevisionID
+				latestSpecRevisionID = specRevision.ID
+			}
+		}
+
+		dependencies := make([]string, 0)
+		if latestSpecRevisionID > 0 {
+			dependencies = append(dependencies, s.dependencies[latestSpecRevisionID]...)
+		}
+
+		rows = append(rows, store.ActiveAPISpecWithLatestDependencies{
+			APISpec:             spec,
+			DependencyFilePaths: dependencies,
+		})
+	}
+
+	return rows, nil
+}
+
+func (s *integrationRevisionStore) MarkAPISpecDeleted(_ context.Context, apiSpecID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	spec, exists := s.apiSpecs[apiSpecID]
+	if !exists {
+		return fmt.Errorf("api spec %d not found", apiSpecID)
+	}
+	spec.Status = "deleted"
+	s.apiSpecs[apiSpecID] = spec
+	return nil
 }
 
 func (s *integrationRevisionStore) CreateAPISpecRevision(
