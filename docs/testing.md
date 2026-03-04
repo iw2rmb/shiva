@@ -35,6 +35,8 @@ Current baseline: full suite passes.
 - Read route selector resolution and endpoint slice responses.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shiva/webhook_to_notify_integration_test.go`.
+- Bootstrap ingest regression guard in `cmd/shiva/webhook_to_notify_integration_test.go`:
+  compare has no OpenAPI paths, repository-tree bootstrap still persists artifact/index, and zero-root bootstrap emits no notifications.
 
 ## DB/Query Change Validation
 When SQL schema/query files change:

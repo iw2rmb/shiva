@@ -103,7 +103,7 @@ Legend: [ ] todo, [x] done.
   - Tests: resolver benchmark/focused tests for bounded parallel fetch behavior; ensure deterministic results regardless of fetch order
 
 ## Verification and Documentation
-- [ ] Add end-to-end coverage for initial bootstrap path and regression guards — prevents fallback to delta-only behavior
+- [x] Add end-to-end coverage for initial bootstrap path and regression guards — prevents fallback to delta-only behavior
   - Repository: `shiva`
   - Component: `cmd/shiva`, `internal/openapi`, `internal/gitlab`
   - Scope: Add integration test case where compare diff has no OpenAPI files but repo tree does; assert artifact/index persisted and notifications sent only when `openapi_changed=true`

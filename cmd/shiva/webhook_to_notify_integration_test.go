@@ -195,6 +195,319 @@ func TestIntegrationWebhookToNotifyFlow(t *testing.T) {
 	}
 }
 
+func TestIntegrationWebhookToNotifyFlow_BootstrapRegressionGuards(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		treeEntries        []gitlab.TreeEntry
+		files              map[string]string
+		wantOpenAPIChanged bool
+		wantOutboundCount  int
+		wantEndpointCount  int
+		wantCompareCalls   int
+		wantTreeCalls      int
+	}{
+		{
+			name: "bootstrap builds from repository tree when compare has no openapi files",
+			treeEntries: []gitlab.TreeEntry{
+				{Path: "api/openapi.yaml", Type: "blob"},
+				{Path: "api/components.yaml", Type: "blob"},
+				{Path: "README.md", Type: "blob"},
+			},
+			files: map[string]string{
+				"api/openapi.yaml":    "openapi: 3.1.0\ninfo:\n  title: Bootstrap Flow API\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPetsBootstrap\n      summary: List pets from bootstrap\n      responses:\n        '200':\n          description: ok\n          content:\n            application/json:\n              schema:\n                $ref: ./components.yaml#/components/schemas/Pet\n",
+				"api/components.yaml": "components:\n  schemas:\n    Pet:\n      type: object\n      properties:\n        id:\n          type: string\n",
+				"README.md":           "# bootstrap regression fixture\n",
+			},
+			wantOpenAPIChanged: true,
+			wantOutboundCount:  2,
+			wantEndpointCount:  1,
+			wantCompareCalls:   0,
+			wantTreeCalls:      1,
+		},
+		{
+			name: "bootstrap zero roots marks unchanged and sends no notifications",
+			treeEntries: []gitlab.TreeEntry{
+				{Path: "README.md", Type: "blob"},
+				{Path: "docs/changelog.txt", Type: "blob"},
+			},
+			files: map[string]string{
+				"README.md":          "# no openapi roots here\n",
+				"docs/changelog.txt": "release notes\n",
+			},
+			wantOpenAPIChanged: false,
+			wantOutboundCount:  0,
+			wantEndpointCount:  0,
+			wantCompareCalls:   0,
+			wantTreeCalls:      1,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := runWebhookToNotifyIntegrationCase(t, integrationWebhookToNotifyCase{
+				parentSHA:      "1111111111111111111111111111111111111111",
+				targetSHA:      "3333333333333333333333333333333333333333",
+				bootstrapState: store.RepoBootstrapState{ActiveAPICount: 0, ForceRescan: false},
+				changedPaths: []gitlab.ChangedPath{
+					{NewPath: "README.md"},
+					{NewPath: "docs/changelog.txt"},
+				},
+				treeEntries:  tc.treeEntries,
+				files:        tc.files,
+				waitOutbound: tc.wantOutboundCount,
+			})
+
+			revision := result.revision
+			if revision.Status != "processed" {
+				t.Fatalf("expected processed revision status, got %q", revision.Status)
+			}
+			if revision.OpenAPIChanged == nil {
+				t.Fatalf("expected non-nil openapi_changed")
+			}
+			if *revision.OpenAPIChanged != tc.wantOpenAPIChanged {
+				t.Fatalf("expected openapi_changed=%t, got %t", tc.wantOpenAPIChanged, *revision.OpenAPIChanged)
+			}
+
+			endpoints, err := result.revisionStore.ListEndpointIndexByRevision(context.Background(), revision.ID)
+			if err != nil {
+				t.Fatalf("ListEndpointIndexByRevision() unexpected error: %v", err)
+			}
+			if len(endpoints) != tc.wantEndpointCount {
+				t.Fatalf("expected %d endpoint rows, got %d", tc.wantEndpointCount, len(endpoints))
+			}
+
+			if tc.wantOpenAPIChanged {
+				artifact, err := result.revisionStore.GetSpecArtifactByRevisionID(context.Background(), revision.ID)
+				if err != nil {
+					t.Fatalf("GetSpecArtifactByRevisionID() unexpected error: %v", err)
+				}
+				if len(artifact.SpecJSON) == 0 || artifact.SpecYAML == "" {
+					t.Fatalf("expected canonical artifact payloads")
+				}
+
+				specChange, err := result.revisionStore.GetSpecChangeByToRevision(context.Background(), revision.ID)
+				if err != nil {
+					t.Fatalf("GetSpecChangeByToRevision() unexpected error: %v", err)
+				}
+				if len(specChange.ChangeJSON) == 0 {
+					t.Fatalf("expected spec change payload")
+				}
+			} else {
+				if _, err := result.revisionStore.GetSpecArtifactByRevisionID(context.Background(), revision.ID); err == nil {
+					t.Fatalf("expected no canonical artifact for openapi_changed=false")
+				}
+				if _, err := result.revisionStore.GetSpecChangeByToRevision(context.Background(), revision.ID); err == nil {
+					t.Fatalf("expected no spec change for openapi_changed=false")
+				}
+			}
+
+			outboundCount := result.outboundCapture.count()
+			if outboundCount != tc.wantOutboundCount {
+				t.Fatalf("expected %d outbound notifications, got %d", tc.wantOutboundCount, outboundCount)
+			}
+			if tc.wantOutboundCount > 0 {
+				eventTypes := result.outboundCapture.eventTypes(t)
+				expectedTypes := []string{store.DeliveryEventTypeSpecUpdatedDiff, store.DeliveryEventTypeSpecUpdatedFull}
+				for _, expectedType := range expectedTypes {
+					if !containsString(eventTypes, expectedType) {
+						t.Fatalf("expected outbound event type %q, got %v", expectedType, eventTypes)
+					}
+				}
+				for _, request := range result.outboundCapture.snapshot() {
+					if strings.TrimSpace(request.signature) == "" {
+						t.Fatalf("expected signature header on outbound request")
+					}
+					if strings.TrimSpace(request.timestamp) == "" {
+						t.Fatalf("expected timestamp header on outbound request")
+					}
+				}
+			}
+
+			if got := result.gitlabClient.compareCallCount(); got != tc.wantCompareCalls {
+				t.Fatalf("expected %d compare calls, got %d", tc.wantCompareCalls, got)
+			}
+			if got := result.gitlabClient.treeCallCount(); got != tc.wantTreeCalls {
+				t.Fatalf("expected %d repository-tree calls, got %d", tc.wantTreeCalls, got)
+			}
+		})
+	}
+}
+
+type integrationWebhookToNotifyCase struct {
+	parentSHA      string
+	targetSHA      string
+	bootstrapState store.RepoBootstrapState
+	changedPaths   []gitlab.ChangedPath
+	treeEntries    []gitlab.TreeEntry
+	files          map[string]string
+	waitOutbound   int
+}
+
+type integrationWebhookToNotifyResult struct {
+	revision        store.Revision
+	revisionStore   *integrationRevisionStore
+	outboundCapture *capturedOutboundRequests
+	gitlabClient    *integrationGitLabClient
+}
+
+func runWebhookToNotifyIntegrationCase(
+	t *testing.T,
+	tc integrationWebhookToNotifyCase,
+) integrationWebhookToNotifyResult {
+	t.Helper()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	outboundCapture := &capturedOutboundRequests{}
+	outboundReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer r.Body.Close()
+
+		outboundCapture.record(capturedOutboundRequest{
+			body:      body,
+			signature: r.Header.Get(notify.HeaderSignature),
+			timestamp: r.Header.Get(notify.HeaderTimestamp),
+		})
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer outboundReceiver.Close()
+
+	revisionStore := newIntegrationRevisionStore()
+	revisionStore.bootstrapState = tc.bootstrapState
+
+	notifierStore := newIntegrationNotifierStore(store.Subscription{
+		ID:                    71,
+		TenantID:              revisionStore.tenant.ID,
+		RepoID:                revisionStore.repo.ID,
+		TargetURL:             outboundReceiver.URL,
+		Secret:                "notify-secret",
+		Enabled:               true,
+		MaxAttempts:           3,
+		BackoffInitialSeconds: 1,
+		BackoffMaxSeconds:     4,
+	})
+	notifier := notify.New(
+		notifierStore,
+		notify.WithHTTPClient(outboundReceiver.Client()),
+		notify.WithSleep(func(_ context.Context, _ time.Duration) error { return nil }),
+	)
+
+	resolver, err := openapi.NewResolver(openapi.ResolverConfig{
+		IncludeGlobs: []string{"api/**/*.yaml"},
+		MaxFetches:   32,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	gitlabClient := &integrationGitLabClient{
+		changedPaths: tc.changedPaths,
+		treeEntries:  tc.treeEntries,
+		files:        tc.files,
+	}
+
+	queue := newIntegrationQueue()
+	processor := revisionProcessor{
+		store:         revisionStore,
+		gitlabClient:  gitlabClient,
+		openapiLoader: resolver,
+		notifier:      notifier,
+		logger:        logger,
+	}
+
+	workerManager := worker.New(
+		1,
+		logger,
+		worker.WithQueue(queue),
+		worker.WithProcessor(processor),
+		worker.WithPollDelay(1*time.Millisecond),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := workerManager.Start(ctx); err != nil {
+		t.Fatalf("worker.Start() unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		if err := workerManager.Stop(stopCtx); err != nil {
+			t.Fatalf("worker.Stop() unexpected error: %v", err)
+		}
+	})
+
+	ingestor := &integrationWebhookIngestor{
+		repoID: revisionStore.repo.ID,
+		queue:  queue,
+	}
+	httpServer := httpserver.New(
+		config.Config{
+			HTTPAddr:            ":8080",
+			GitLabWebhookSecret: "secret-token",
+			TenantKey:           revisionStore.tenant.Key,
+		},
+		logger,
+		&store.Store{},
+		httpserver.WithGitLabWebhookIngestor(ingestor),
+	)
+
+	requestPayload := fmt.Sprintf(`{
+	  "object_kind":"push",
+	  "ref":"refs/heads/main",
+	  "before":"%s",
+	  "after":"%s",
+	  "project":{"id":42,"path_with_namespace":"acme/platform-api","default_branch":"main"}
+	}`, tc.parentSHA, tc.targetSHA)
+	request := httptest.NewRequest(http.MethodPost, "/internal/webhooks/gitlab", strings.NewReader(requestPayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Gitlab-Token", "secret-token")
+	request.Header.Set("X-Gitlab-Delivery", "delivery-2001")
+	request.Header.Set("X-Gitlab-Event", "Push Hook")
+
+	response, err := httpServer.App().Test(request, -1)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected webhook status 202, got %d", response.StatusCode)
+	}
+
+	if tc.waitOutbound > 0 {
+		if !waitUntil(3*time.Second, func() bool {
+			return queue.processedCount() == 1 && outboundCapture.count() >= tc.waitOutbound
+		}) {
+			t.Fatalf("timed out waiting for webhook->worker->notify flow")
+		}
+	} else {
+		if !waitUntil(3*time.Second, func() bool {
+			return queue.processedCount() == 1
+		}) {
+			t.Fatalf("timed out waiting for webhook->worker flow")
+		}
+	}
+
+	revision, err := revisionStore.latestRevisionBySHA(tc.targetSHA)
+	if err != nil {
+		t.Fatalf("latestRevisionBySHA() unexpected error: %v", err)
+	}
+
+	return integrationWebhookToNotifyResult{
+		revision:        revision,
+		revisionStore:   revisionStore,
+		outboundCapture: outboundCapture,
+		gitlabClient:    gitlabClient,
+	}
+}
+
 type integrationWebhookIngestor struct {
 	mu          sync.Mutex
 	nextEventID int64
@@ -307,9 +620,12 @@ func (q *integrationQueue) processedCount() int {
 }
 
 type integrationGitLabClient struct {
+	mu           sync.Mutex
 	changedPaths []gitlab.ChangedPath
 	treeEntries  []gitlab.TreeEntry
 	files        map[string]string
+	compareCalls int
+	treeCalls    int
 }
 
 func (c *integrationGitLabClient) CompareChangedPaths(
@@ -318,7 +634,13 @@ func (c *integrationGitLabClient) CompareChangedPaths(
 	_ string,
 	_ string,
 ) ([]gitlab.ChangedPath, error) {
-	return c.changedPaths, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.compareCalls++
+	changed := make([]gitlab.ChangedPath, len(c.changedPaths))
+	copy(changed, c.changedPaths)
+	return changed, nil
 }
 
 func (c *integrationGitLabClient) GetFileContent(
@@ -341,7 +663,25 @@ func (c *integrationGitLabClient) ListRepositoryTree(
 	_ string,
 	_ bool,
 ) ([]gitlab.TreeEntry, error) {
-	return c.treeEntries, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.treeCalls++
+	tree := make([]gitlab.TreeEntry, len(c.treeEntries))
+	copy(tree, c.treeEntries)
+	return tree, nil
+}
+
+func (c *integrationGitLabClient) compareCallCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.compareCalls
+}
+
+func (c *integrationGitLabClient) treeCallCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.treeCalls
 }
 
 type integrationRevisionStore struct {
@@ -350,11 +690,17 @@ type integrationRevisionStore struct {
 	repo           store.Repo
 	bootstrapState store.RepoBootstrapState
 	nextRevisionID int64
+	nextAPISpecID  int64
+	nextSpecRevID  int64
 	revisions      map[int64]store.Revision
 	revisionBySHA  map[string]int64
 	artifacts      map[int64]store.SpecArtifact
 	endpoints      map[int64][]store.EndpointIndexRecord
 	specChanges    map[int64]store.SpecChange
+	apiSpecs       map[int64]store.APISpec
+	apiSpecByRoot  map[string]int64
+	apiSpecRevs    map[int64]store.APISpecRevision
+	dependencies   map[int64][]string
 }
 
 func newIntegrationRevisionStore() *integrationRevisionStore {
@@ -372,11 +718,17 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 			ForceRescan:    false,
 		},
 		nextRevisionID: 1000,
+		nextAPISpecID:  400,
+		nextSpecRevID:  700,
 		revisions:      make(map[int64]store.Revision),
 		revisionBySHA:  make(map[string]int64),
 		artifacts:      make(map[int64]store.SpecArtifact),
 		endpoints:      make(map[int64][]store.EndpointIndexRecord),
 		specChanges:    make(map[int64]store.SpecChange),
+		apiSpecs:       make(map[int64]store.APISpec),
+		apiSpecByRoot:  make(map[string]int64),
+		apiSpecRevs:    make(map[int64]store.APISpecRevision),
+		dependencies:   make(map[int64][]string),
 	}
 }
 
@@ -457,22 +809,67 @@ func (s *integrationRevisionStore) ClearRepoForceRescan(_ context.Context, repoI
 	return nil
 }
 
-func (s *integrationRevisionStore) UpsertAPISpec(_ context.Context, _ store.UpsertAPISpecInput) (store.APISpec, error) {
-	return store.APISpec{}, fmt.Errorf("unexpected UpsertAPISpec call")
+func (s *integrationRevisionStore) UpsertAPISpec(_ context.Context, input store.UpsertAPISpecInput) (store.APISpec, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	specID, exists := s.apiSpecByRoot[input.RootPath]
+	if exists {
+		return s.apiSpecs[specID], nil
+	}
+
+	s.nextAPISpecID++
+	spec := store.APISpec{
+		ID:       s.nextAPISpecID,
+		RepoID:   input.RepoID,
+		RootPath: input.RootPath,
+		Status:   "active",
+	}
+	s.apiSpecs[spec.ID] = spec
+	s.apiSpecByRoot[input.RootPath] = spec.ID
+	return spec, nil
 }
 
 func (s *integrationRevisionStore) CreateAPISpecRevision(
 	_ context.Context,
-	_ store.CreateAPISpecRevisionInput,
+	input store.CreateAPISpecRevisionInput,
 ) (store.APISpecRevision, error) {
-	return store.APISpecRevision{}, fmt.Errorf("unexpected CreateAPISpecRevision call")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	spec, exists := s.apiSpecs[input.APISpecID]
+	if !exists {
+		return store.APISpecRevision{}, fmt.Errorf("api spec %d not found", input.APISpecID)
+	}
+
+	s.nextSpecRevID++
+	revision := store.APISpecRevision{
+		ID:                 s.nextSpecRevID,
+		APISpecID:          input.APISpecID,
+		RevisionID:         input.RevisionID,
+		RootPathAtRevision: spec.RootPath,
+		BuildStatus:        input.BuildStatus,
+		Error:              input.Error,
+	}
+	s.apiSpecRevs[revision.ID] = revision
+	return revision, nil
 }
 
 func (s *integrationRevisionStore) ReplaceAPISpecDependencies(
 	_ context.Context,
-	_ store.ReplaceAPISpecDependenciesInput,
+	input store.ReplaceAPISpecDependenciesInput,
 ) error {
-	return fmt.Errorf("unexpected ReplaceAPISpecDependencies call")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.apiSpecRevs[input.APISpecRevisionID]; !exists {
+		return fmt.Errorf("api spec revision %d not found", input.APISpecRevisionID)
+	}
+
+	rows := make([]string, len(input.FilePaths))
+	copy(rows, input.FilePaths)
+	s.dependencies[input.APISpecRevisionID] = rows
+	return nil
 }
 
 func (s *integrationRevisionStore) PersistCanonicalSpec(_ context.Context, input store.PersistCanonicalSpecInput) error {
