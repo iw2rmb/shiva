@@ -60,7 +60,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - multi-file spec resolves correctly
   - invalid/cyclic refs fail with explicit error.
 
-7. Implement canonical spec build and persistence.
+7. [x] Implement canonical spec build and persistence.
 - Deliverables:
   - canonical JSON + YAML outputs
   - `spec_artifacts` storage

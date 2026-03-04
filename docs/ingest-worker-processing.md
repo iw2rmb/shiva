@@ -19,10 +19,11 @@
   - file: `internal/store/worker_queue.go`
   - uses sqlc queries from `sql/query/ingest_events.sql`.
 - Revision state transitions:
-  - files: `cmd/shiva/main.go`, `internal/store/revisions.go`
+  - files: `cmd/shiva/main.go`, `internal/store/revisions.go`, `internal/store/spec_artifacts.go`
   - worker processor now:
     - upserts revision from queue event,
     - runs OpenAPI candidate detection + local `$ref` resolution,
+    - when OpenAPI changed, builds canonical spec and persists `spec_artifacts` + `endpoint_index`,
     - marks revision `processed` or `failed` with explicit error state.
 
 ## Queue Semantics
@@ -56,5 +57,6 @@
 - Webhook ingest: `docs/gitlab-webhook-ingest.md`
 - Database schema: `docs/database-schema-baseline.md`
 - OpenAPI resolution flow: `docs/openapi-candidate-resolution.md`
+- Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

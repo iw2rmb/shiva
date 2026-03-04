@@ -222,6 +222,42 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		return fmt.Errorf("resolve openapi candidates for revision %d: %w", revisionID, err)
 	}
 
+	if resolution.OpenAPIChanged {
+		canonicalSpec, err := openapi.BuildCanonicalSpec(resolution)
+		if err != nil {
+			if isPermanentOpenAPIProcessingError(err) {
+				if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
+					return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
+				}
+				return worker.Permanent(fmt.Errorf("canonical openapi build failed: %w", err))
+			}
+			return fmt.Errorf("build canonical openapi for revision %d: %w", revisionID, err)
+		}
+
+		endpoints := make([]store.EndpointIndexRecord, 0, len(canonicalSpec.Endpoints))
+		for _, endpoint := range canonicalSpec.Endpoints {
+			endpoints = append(endpoints, store.EndpointIndexRecord{
+				Method:      endpoint.Method,
+				Path:        endpoint.Path,
+				OperationID: endpoint.OperationID,
+				Summary:     endpoint.Summary,
+				Deprecated:  endpoint.Deprecated,
+				RawJSON:     endpoint.RawJSON,
+			})
+		}
+
+		if err := p.store.PersistCanonicalSpec(ctx, store.PersistCanonicalSpecInput{
+			RevisionID: revisionID,
+			SpecJSON:   canonicalSpec.SpecJSON,
+			SpecYAML:   canonicalSpec.SpecYAML,
+			ETag:       canonicalSpec.ETag,
+			SizeBytes:  canonicalSpec.SizeBytes,
+			Endpoints:  endpoints,
+		}); err != nil {
+			return fmt.Errorf("persist canonical openapi for revision %d: %w", revisionID, err)
+		}
+	}
+
 	if err := p.store.MarkRevisionProcessed(ctx, revisionID, resolution.OpenAPIChanged); err != nil {
 		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
 	}
@@ -240,6 +276,15 @@ func isPermanentOpenAPIProcessingError(err error) bool {
 		return true
 	}
 	if errors.Is(err, openapi.ErrInvalidReference) {
+		return true
+	}
+	if errors.Is(err, openapi.ErrCanonicalRootNotFound) {
+		return true
+	}
+	if errors.Is(err, openapi.ErrCanonicalDocumentNotFound) {
+		return true
+	}
+	if errors.Is(err, openapi.ErrReferencePointerNotFound) {
 		return true
 	}
 	if errors.Is(err, gitlab.ErrNotFound) {
