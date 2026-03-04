@@ -23,7 +23,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - sqlc code compiles.
 
 ## Phase 2: Ingestion and Processing Backbone
-3. Implement GitLab webhook ingest endpoint.
+3. [x] Implement GitLab webhook ingest endpoint.
 - Deliverables:
   - `POST /internal/webhooks/gitlab`
   - secret/token verification

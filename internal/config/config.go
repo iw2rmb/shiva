@@ -18,20 +18,24 @@ const (
 )
 
 type Config struct {
-	HTTPAddr          string
-	DatabaseURL       string
-	WorkerConcurrency int
-	ShutdownTimeout   time.Duration
-	LogLevel          slog.Level
+	HTTPAddr            string
+	DatabaseURL         string
+	GitLabWebhookSecret string
+	TenantKey           string
+	WorkerConcurrency   int
+	ShutdownTimeout     time.Duration
+	LogLevel            slog.Level
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:          envValue("SHIVA_HTTP_ADDR", defaultHTTPAddr),
-		DatabaseURL:       strings.TrimSpace(os.Getenv("SHIVA_DATABASE_URL")),
-		WorkerConcurrency: defaultWorkerConcurrency,
-		ShutdownTimeout:   time.Duration(defaultShutdownTimeoutSecond) * time.Second,
-		LogLevel:          slog.LevelInfo,
+		HTTPAddr:            envValue("SHIVA_HTTP_ADDR", defaultHTTPAddr),
+		DatabaseURL:         strings.TrimSpace(os.Getenv("SHIVA_DATABASE_URL")),
+		GitLabWebhookSecret: strings.TrimSpace(os.Getenv("SHIVA_GITLAB_WEBHOOK_SECRET")),
+		TenantKey:           envValue("SHIVA_TENANT_KEY", "default"),
+		WorkerConcurrency:   defaultWorkerConcurrency,
+		ShutdownTimeout:     time.Duration(defaultShutdownTimeoutSecond) * time.Second,
+		LogLevel:            slog.LevelInfo,
 	}
 
 	if rawLevel, ok := os.LookupEnv("SHIVA_LOG_LEVEL"); ok {
@@ -66,6 +70,9 @@ func Load() (Config, error) {
 
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = defaultHTTPAddr
+	}
+	if cfg.TenantKey == "" {
+		return Config{}, errors.New("SHIVA_TENANT_KEY must not be empty")
 	}
 
 	if strings.TrimSpace(cfg.DatabaseURL) != "" && !strings.HasPrefix(strings.ToLower(cfg.DatabaseURL), "postgres://") {

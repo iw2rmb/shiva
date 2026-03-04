@@ -12,10 +12,11 @@ import (
 )
 
 type Server struct {
-	app    *fiber.App
-	cfg    config.Config
-	logger *slog.Logger
-	store  *store.Store
+	app            *fiber.App
+	cfg            config.Config
+	logger         *slog.Logger
+	store          *store.Store
+	gitlabIngestor gitlabWebhookIngestor
 }
 
 func New(cfg config.Config, logger *slog.Logger, store *store.Store) *Server {
@@ -23,10 +24,11 @@ func New(cfg config.Config, logger *slog.Logger, store *store.Store) *Server {
 	app.Use(recover.New())
 
 	srv := &Server{
-		app:    app,
-		cfg:    cfg,
-		logger: logger,
-		store:  store,
+		app:            app,
+		cfg:            cfg,
+		logger:         logger,
+		store:          store,
+		gitlabIngestor: store,
 	}
 	srv.registerRoutes()
 	return srv
@@ -42,6 +44,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) registerRoutes() {
 	s.app.Get("/healthz", s.healthz)
+	s.app.Post("/internal/webhooks/gitlab", s.handleGitLabWebhook)
 }
 
 type healthResponse struct {

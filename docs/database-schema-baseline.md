@@ -43,5 +43,6 @@
 
 ## References
 - Runtime baseline: `docs/runtime-baseline.md`
+- GitLab webhook ingest: `docs/gitlab-webhook-ingest.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`
