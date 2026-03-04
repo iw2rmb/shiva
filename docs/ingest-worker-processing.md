@@ -25,7 +25,8 @@
     - runs OpenAPI candidate detection + local `$ref` resolution,
     - when OpenAPI changed, builds canonical spec and persists `spec_artifacts` + `endpoint_index`,
     - computes semantic diff against previous processed OpenAPI baseline and persists `spec_changes`,
-    - marks revision `processed` or `failed` with explicit error state.
+    - marks revision `processed` or `failed` with explicit error state,
+    - emits outbound notification events via item-9 notifier flow.
 
 ## Queue Semantics
 - Event claim is atomic (`ClaimNextIngestEvent`) and updates status to `processing`.
@@ -60,5 +61,6 @@
 - OpenAPI resolution flow: `docs/openapi-candidate-resolution.md`
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
 - Semantic diff engine: `docs/semantic-diff-engine.md`
+- Outbound notifications: `docs/outbound-webhook-notifications.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

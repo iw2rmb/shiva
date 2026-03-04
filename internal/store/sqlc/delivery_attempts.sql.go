@@ -66,6 +66,41 @@ func (q *Queries) CreateDeliveryAttempt(ctx context.Context, arg CreateDeliveryA
 	return i, err
 }
 
+const getLatestDeliveryAttemptByKey = `-- name: GetLatestDeliveryAttemptByKey :one
+SELECT id, subscription_id, revision_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
+FROM delivery_attempts
+WHERE subscription_id = $1
+  AND revision_id = $2
+  AND event_type = $3
+ORDER BY attempt_no DESC
+LIMIT 1
+`
+
+type GetLatestDeliveryAttemptByKeyParams struct {
+	SubscriptionID int64  `json:"subscription_id"`
+	RevisionID     int64  `json:"revision_id"`
+	EventType      string `json:"event_type"`
+}
+
+func (q *Queries) GetLatestDeliveryAttemptByKey(ctx context.Context, arg GetLatestDeliveryAttemptByKeyParams) (DeliveryAttempt, error) {
+	row := q.db.QueryRow(ctx, getLatestDeliveryAttemptByKey, arg.SubscriptionID, arg.RevisionID, arg.EventType)
+	var i DeliveryAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.SubscriptionID,
+		&i.RevisionID,
+		&i.EventType,
+		&i.AttemptNo,
+		&i.Status,
+		&i.ResponseCode,
+		&i.Error,
+		&i.NextRetryAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listDueDeliveryAttempts = `-- name: ListDueDeliveryAttempts :many
 SELECT id, subscription_id, revision_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
 FROM delivery_attempts

@@ -49,5 +49,6 @@
 - Worker processing queue: `docs/ingest-worker-processing.md`
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
 - Semantic diff engine: `docs/semantic-diff-engine.md`
+- Outbound notifications: `docs/outbound-webhook-notifications.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

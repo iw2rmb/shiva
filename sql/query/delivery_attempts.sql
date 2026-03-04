@@ -34,3 +34,12 @@ WHERE status IN ('pending', 'retry_scheduled')
   AND (next_retry_at IS NULL OR next_retry_at <= NOW())
 ORDER BY created_at
 LIMIT sqlc.arg(limit_count);
+
+-- name: GetLatestDeliveryAttemptByKey :one
+SELECT id, subscription_id, revision_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
+FROM delivery_attempts
+WHERE subscription_id = sqlc.arg(subscription_id)
+  AND revision_id = sqlc.arg(revision_id)
+  AND event_type = sqlc.arg(event_type)
+ORDER BY attempt_no DESC
+LIMIT 1;

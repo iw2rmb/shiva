@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
@@ -14,18 +15,20 @@ import (
 var ErrRepoNotFound = errors.New("repo not found")
 
 type Repo struct {
-	ID              int64
-	TenantID        int64
-	GitLabProjectID int64
-	DefaultBranch   string
+	ID                int64
+	TenantID          int64
+	GitLabProjectID   int64
+	PathWithNamespace string
+	DefaultBranch     string
 }
 
 type Revision struct {
-	ID        int64
-	RepoID    int64
-	Sha       string
-	Branch    string
-	ParentSHA string
+	ID          int64
+	RepoID      int64
+	Sha         string
+	Branch      string
+	ParentSHA   string
+	ProcessedAt *time.Time
 }
 
 func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
@@ -45,11 +48,31 @@ func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
 	}
 
 	return Repo{
-		ID:              repo.ID,
-		TenantID:        repo.TenantID,
-		GitLabProjectID: repo.GitlabProjectID,
-		DefaultBranch:   repo.DefaultBranch,
+		ID:                repo.ID,
+		TenantID:          repo.TenantID,
+		GitLabProjectID:   repo.GitlabProjectID,
+		PathWithNamespace: repo.PathWithNamespace,
+		DefaultBranch:     repo.DefaultBranch,
 	}, nil
+}
+
+func (s *Store) GetRevisionByID(ctx context.Context, revisionID int64) (Revision, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return Revision{}, ErrStoreNotConfigured
+	}
+	if revisionID < 1 {
+		return Revision{}, errors.New("revision id must be positive")
+	}
+
+	revision, err := sqlc.New(s.pool).GetRevisionByID(ctx, revisionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Revision{}, fmt.Errorf("revision not found: id=%d", revisionID)
+		}
+		return Revision{}, fmt.Errorf("get revision by id %d: %w", revisionID, err)
+	}
+
+	return mapRevision(revision), nil
 }
 
 func (s *Store) MarkRevisionProcessed(ctx context.Context, revisionID int64, openapiChanged bool) error {
@@ -139,6 +162,10 @@ func mapRevision(revision sqlc.Revision) Revision {
 	}
 	if revision.ParentSha.Valid {
 		mapped.ParentSHA = revision.ParentSha.String
+	}
+	if revision.ProcessedAt.Valid {
+		processedAt := revision.ProcessedAt.Time.UTC()
+		mapped.ProcessedAt = &processedAt
 	}
 	return mapped
 }

@@ -79,6 +79,7 @@
 - Worker processing: `docs/ingest-worker-processing.md`
 - OpenAPI candidate resolution: `docs/openapi-candidate-resolution.md`
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
+- Outbound notifications: `docs/outbound-webhook-notifications.md`
 - Database schema baseline: `docs/database-schema-baseline.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

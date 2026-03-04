@@ -129,6 +129,30 @@ func (q *Queries) GetLatestProcessedRevisionByBranch(ctx context.Context, arg Ge
 	return i, err
 }
 
+const getRevisionByID = `-- name: GetRevisionByID :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
+FROM revisions
+WHERE id = $1
+`
+
+func (q *Queries) GetRevisionByID(ctx context.Context, id int64) (Revision, error) {
+	row := q.db.QueryRow(ctx, getRevisionByID, id)
+	var i Revision
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
+		&i.Status,
+		&i.Error,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getRevisionByRepoSHA = `-- name: GetRevisionByRepoSHA :one
 SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
 FROM revisions

@@ -16,6 +16,7 @@ const (
 	defaultHTTPAddr              = ":8080"
 	defaultWorkerConcurrency     = 4
 	defaultShutdownTimeoutSecond = 15
+	defaultOutboundTimeoutSecond = 10
 	defaultLogLevel              = "info"
 )
 
@@ -28,6 +29,7 @@ type Config struct {
 	TenantKey            string
 	WorkerConcurrency    int
 	ShutdownTimeout      time.Duration
+	OutboundTimeout      time.Duration
 	LogLevel             slog.Level
 	OpenAPIPathGlobs     []string
 	OpenAPIRefMaxFetches int
@@ -43,6 +45,7 @@ func Load() (Config, error) {
 		TenantKey:            envValue("SHIVA_TENANT_KEY", "default"),
 		WorkerConcurrency:    defaultWorkerConcurrency,
 		ShutdownTimeout:      time.Duration(defaultShutdownTimeoutSecond) * time.Second,
+		OutboundTimeout:      time.Duration(defaultOutboundTimeoutSecond) * time.Second,
 		LogLevel:             slog.LevelInfo,
 		OpenAPIPathGlobs:     openapi.DefaultIncludeGlobs(),
 		OpenAPIRefMaxFetches: openapi.DefaultMaxFetches,
@@ -76,6 +79,17 @@ func Load() (Config, error) {
 			return Config{}, errors.New("SHIVA_SHUTDOWN_TIMEOUT_SECONDS must be at least 1")
 		}
 		cfg.ShutdownTimeout = time.Duration(timeoutSeconds) * time.Second
+	}
+
+	if rawTimeout, ok := os.LookupEnv("SHIVA_OUTBOUND_TIMEOUT_SECONDS"); ok {
+		timeoutSeconds, err := strconv.ParseInt(strings.TrimSpace(rawTimeout), 10, 64)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_OUTBOUND_TIMEOUT_SECONDS: %w", err)
+		}
+		if timeoutSeconds < 1 {
+			return Config{}, errors.New("SHIVA_OUTBOUND_TIMEOUT_SECONDS must be at least 1")
+		}
+		cfg.OutboundTimeout = time.Duration(timeoutSeconds) * time.Second
 	}
 
 	if rawGlobs, ok := os.LookupEnv("SHIVA_OPENAPI_PATH_GLOBS"); ok {

@@ -21,6 +21,14 @@ type EndpointIndexRecord struct {
 	RawJSON     []byte
 }
 
+type SpecArtifact struct {
+	RevisionID int64
+	SpecJSON   []byte
+	SpecYAML   string
+	ETag       string
+	SizeBytes  int64
+}
+
 type PersistCanonicalSpecInput struct {
 	RevisionID int64
 	SpecJSON   []byte
@@ -37,6 +45,31 @@ type normalizedPersistCanonicalSpecInput struct {
 	ETag       string
 	SizeBytes  int64
 	Endpoints  []EndpointIndexRecord
+}
+
+func (s *Store) GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (SpecArtifact, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return SpecArtifact{}, ErrStoreNotConfigured
+	}
+	if revisionID < 1 {
+		return SpecArtifact{}, errors.New("revision id must be positive")
+	}
+
+	artifact, err := sqlc.New(s.pool).GetSpecArtifactByRevisionID(ctx, revisionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return SpecArtifact{}, fmt.Errorf("spec artifact not found for revision %d", revisionID)
+		}
+		return SpecArtifact{}, fmt.Errorf("get spec artifact by revision %d: %w", revisionID, err)
+	}
+
+	return SpecArtifact{
+		RevisionID: artifact.RevisionID,
+		SpecJSON:   bytesCopy(artifact.SpecJson),
+		SpecYAML:   artifact.SpecYaml,
+		ETag:       artifact.Etag,
+		SizeBytes:  artifact.SizeBytes,
+	}, nil
 }
 
 func (s *Store) PersistCanonicalSpec(ctx context.Context, input PersistCanonicalSpecInput) error {

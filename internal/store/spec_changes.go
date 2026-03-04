@@ -7,8 +7,16 @@ import (
 	"fmt"
 
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type SpecChange struct {
+	RepoID         int64
+	FromRevisionID *int64
+	ToRevisionID   int64
+	ChangeJSON     []byte
+}
 
 type PersistSpecChangeInput struct {
 	RepoID         int64
@@ -22,6 +30,36 @@ type normalizedPersistSpecChangeInput struct {
 	FromRevisionID pgtype.Int8
 	ToRevisionID   int64
 	ChangeJSON     []byte
+}
+
+func (s *Store) GetSpecChangeByToRevision(ctx context.Context, toRevisionID int64) (SpecChange, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return SpecChange{}, ErrStoreNotConfigured
+	}
+	if toRevisionID < 1 {
+		return SpecChange{}, errors.New("to revision id must be positive")
+	}
+
+	row, err := sqlc.New(s.pool).GetSpecChangeByToRevision(ctx, toRevisionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return SpecChange{}, fmt.Errorf("spec change not found for revision %d", toRevisionID)
+		}
+		return SpecChange{}, fmt.Errorf("get spec change for revision %d: %w", toRevisionID, err)
+	}
+
+	var fromRevisionID *int64
+	if row.FromRevisionID.Valid {
+		value := row.FromRevisionID.Int64
+		fromRevisionID = &value
+	}
+
+	return SpecChange{
+		RepoID:         row.RepoID,
+		FromRevisionID: fromRevisionID,
+		ToRevisionID:   row.ToRevisionID,
+		ChangeJSON:     bytesCopy(row.ChangeJson),
+	}, nil
 }
 
 func (s *Store) PersistSpecChange(ctx context.Context, input PersistSpecChangeInput) error {

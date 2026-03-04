@@ -81,5 +81,6 @@
 - OpenAPI candidate resolution: `docs/openapi-candidate-resolution.md`
 - Database baseline: `docs/database-schema-baseline.md`
 - Semantic diff engine: `docs/semantic-diff-engine.md`
+- Outbound notifications: `docs/outbound-webhook-notifications.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

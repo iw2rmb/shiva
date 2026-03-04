@@ -13,6 +13,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 			"SHIVA_LOG_LEVEL",
 			"SHIVA_WORKER_CONCURRENCY",
 			"SHIVA_SHUTDOWN_TIMEOUT_SECONDS",
+			"SHIVA_OUTBOUND_TIMEOUT_SECONDS",
 			"SHIVA_GITLAB_BASE_URL",
 			"SHIVA_GITLAB_TOKEN",
 			"SHIVA_GITLAB_WEBHOOK_SECRET",
@@ -37,6 +38,9 @@ func TestLoad_DefaultValues(t *testing.T) {
 	}
 	if cfg.ShutdownTimeout != 15*time.Second {
 		t.Fatalf("expected default shutdown timeout 15s, got %s", cfg.ShutdownTimeout)
+	}
+	if cfg.OutboundTimeout != 10*time.Second {
+		t.Fatalf("expected default outbound timeout 10s, got %s", cfg.OutboundTimeout)
 	}
 	if cfg.TenantKey != "default" {
 		t.Fatalf("expected default tenant key \"default\", got %q", cfg.TenantKey)
@@ -85,5 +89,18 @@ func TestLoad_OpenAPIConfig(t *testing.T) {
 	}
 	if cfg.OpenAPIRefMaxFetches != 64 {
 		t.Fatalf("expected OpenAPIRefMaxFetches=64, got %d", cfg.OpenAPIRefMaxFetches)
+	}
+}
+
+func TestLoad_OutboundTimeout(t *testing.T) {
+	t.Setenv("SHIVA_OUTBOUND_TIMEOUT_SECONDS", "42")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	if cfg.OutboundTimeout != 42*time.Second {
+		t.Fatalf("expected OutboundTimeout=42s, got %s", cfg.OutboundTimeout)
 	}
 }

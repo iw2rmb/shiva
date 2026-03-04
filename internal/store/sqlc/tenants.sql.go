@@ -27,6 +27,24 @@ func (q *Queries) CreateTenant(ctx context.Context, key string) (Tenant, error) 
 	return i, err
 }
 
+const getTenantByID = `-- name: GetTenantByID :one
+SELECT id, key, created_at, updated_at
+FROM tenants
+WHERE id = $1
+`
+
+func (q *Queries) GetTenantByID(ctx context.Context, id int64) (Tenant, error) {
+	row := q.db.QueryRow(ctx, getTenantByID, id)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getTenantByKey = `-- name: GetTenantByKey :one
 SELECT id, key, created_at, updated_at
 FROM tenants

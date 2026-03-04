@@ -77,7 +77,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
 - Exit criteria:
   - detects added/removed/changed endpoints and parameter/schema changes.
 
-9. Implement outbound webhook notifications.
+9. [x] Implement outbound webhook notifications.
 - Deliverables:
   - events `spec.updated.full`, `spec.updated.diff`
   - HMAC signing + timestamp headers

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/iw2rmb/shiva/internal/config"
 	"github.com/iw2rmb/shiva/internal/gitlab"
 	httpserver "github.com/iw2rmb/shiva/internal/http"
+	"github.com/iw2rmb/shiva/internal/notify"
 	"github.com/iw2rmb/shiva/internal/openapi"
 	"github.com/iw2rmb/shiva/internal/store"
 	"github.com/iw2rmb/shiva/internal/worker"
@@ -76,7 +78,11 @@ func run(ctx context.Context) error {
 				store:         storeInstance,
 				gitlabClient:  gitLabClient,
 				openapiLoader: openAPIResolver,
-				logger:        logger,
+				notifier: notify.New(
+					storeInstance,
+					notify.WithHTTPClient(&http.Client{Timeout: cfg.OutboundTimeout}),
+				),
+				logger: logger,
 			}),
 		)
 		if err := workerManager.Start(ctx); err != nil {
@@ -159,7 +165,12 @@ type revisionProcessor struct {
 	store         *store.Store
 	gitlabClient  *gitlab.Client
 	openapiLoader *openapi.Resolver
+	notifier      revisionNotifier
 	logger        *slog.Logger
+}
+
+type revisionNotifier interface {
+	NotifyRevision(ctx context.Context, notification notify.RevisionNotification) error
 }
 
 func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
@@ -266,6 +277,11 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	if err := p.store.MarkRevisionProcessed(ctx, revisionID, resolution.OpenAPIChanged); err != nil {
 		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
 	}
+	if resolution.OpenAPIChanged {
+		if err := p.emitOutboundNotifications(ctx, repo, revisionID, job); err != nil {
+			return fmt.Errorf("emit outbound notifications for revision %d: %w", revisionID, err)
+		}
+	}
 
 	return nil
 }
@@ -355,6 +371,69 @@ func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.Q
 		ChangeJSON:     changeJSON,
 	}); err != nil {
 		return fmt.Errorf("persist spec change row: %w", err)
+	}
+
+	return nil
+}
+
+func (p revisionProcessor) emitOutboundNotifications(
+	ctx context.Context,
+	repo store.Repo,
+	revisionID int64,
+	job worker.QueueJob,
+) error {
+	if p.notifier == nil {
+		return nil
+	}
+
+	tenant, err := p.store.GetTenantByID(ctx, repo.TenantID)
+	if err != nil {
+		return fmt.Errorf("load tenant %d: %w", repo.TenantID, err)
+	}
+
+	revision, err := p.store.GetRevisionByID(ctx, revisionID)
+	if err != nil {
+		return fmt.Errorf("load revision %d: %w", revisionID, err)
+	}
+
+	artifact, err := p.store.GetSpecArtifactByRevisionID(ctx, revisionID)
+	if err != nil {
+		return fmt.Errorf("load spec artifact for revision %d: %w", revisionID, err)
+	}
+
+	specChange, err := p.store.GetSpecChangeByToRevision(ctx, revisionID)
+	if err != nil {
+		return fmt.Errorf("load spec change for revision %d: %w", revisionID, err)
+	}
+
+	var fromSHA string
+	if specChange.FromRevisionID != nil {
+		fromRevision, err := p.store.GetRevisionByID(ctx, *specChange.FromRevisionID)
+		if err != nil {
+			return fmt.Errorf("load from revision %d for spec change: %w", *specChange.FromRevisionID, err)
+		}
+		fromSHA = fromRevision.Sha
+	}
+
+	processedAt := time.Now().UTC()
+	if revision.ProcessedAt != nil {
+		processedAt = revision.ProcessedAt.UTC()
+	}
+
+	if err := p.notifier.NotifyRevision(ctx, notify.RevisionNotification{
+		TenantID:    tenant.ID,
+		TenantKey:   tenant.Key,
+		RepoID:      repo.ID,
+		RepoPath:    repo.PathWithNamespace,
+		RevisionID:  revisionID,
+		Sha:         revision.Sha,
+		Branch:      revision.Branch,
+		ProcessedAt: processedAt,
+		Artifact:    artifact,
+		SpecChange:  specChange,
+		FromSHA:     fromSHA,
+	}); err != nil {
+		return err
 	}
 
 	return nil

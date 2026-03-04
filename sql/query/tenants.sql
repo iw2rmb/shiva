@@ -8,6 +8,11 @@ SELECT id, key, created_at, updated_at
 FROM tenants
 WHERE key = sqlc.arg(key);
 
+-- name: GetTenantByID :one
+SELECT id, key, created_at, updated_at
+FROM tenants
+WHERE id = sqlc.arg(id);
+
 -- name: ListTenants :many
 SELECT id, key, created_at, updated_at
 FROM tenants
