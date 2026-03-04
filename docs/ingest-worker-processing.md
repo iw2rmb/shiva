@@ -18,6 +18,12 @@
 - DB-backed queue methods:
   - file: `internal/store/worker_queue.go`
   - uses sqlc queries from `sql/query/ingest_events.sql`.
+- Revision state transitions:
+  - files: `cmd/shiva/main.go`, `internal/store/revisions.go`
+  - worker processor now:
+    - upserts revision from queue event,
+    - runs OpenAPI candidate detection + local `$ref` resolution,
+    - marks revision `processed` or `failed` with explicit error state.
 
 ## Queue Semantics
 - Event claim is atomic (`ClaimNextIngestEvent`) and updates status to `processing`.
@@ -38,6 +44,7 @@
   - `(repo_id, sha)` for duplicate commit processing requests.
 - Processor-level idempotency:
   - `revisions` upsert keeps `(repo_id, sha)` unique.
+  - repeated jobs for same `(repo_id, sha)` re-evaluate candidate detection on the same SHA and converge on the same revision row.
 
 ## Tests
 - `internal/worker/manager_test.go`
@@ -48,5 +55,6 @@
 - Runtime wiring: `docs/runtime-baseline.md`
 - Webhook ingest: `docs/gitlab-webhook-ingest.md`
 - Database schema: `docs/database-schema-baseline.md`
+- OpenAPI resolution flow: `docs/openapi-candidate-resolution.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

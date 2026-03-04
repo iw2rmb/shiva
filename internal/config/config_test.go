@@ -13,8 +13,12 @@ func TestLoad_DefaultValues(t *testing.T) {
 			"SHIVA_LOG_LEVEL",
 			"SHIVA_WORKER_CONCURRENCY",
 			"SHIVA_SHUTDOWN_TIMEOUT_SECONDS",
+			"SHIVA_GITLAB_BASE_URL",
+			"SHIVA_GITLAB_TOKEN",
 			"SHIVA_GITLAB_WEBHOOK_SECRET",
 			"SHIVA_TENANT_KEY",
+			"SHIVA_OPENAPI_PATH_GLOBS",
+			"SHIVA_OPENAPI_REF_MAX_FETCHES",
 		} {
 			os.Unsetenv(name)
 		}
@@ -37,6 +41,12 @@ func TestLoad_DefaultValues(t *testing.T) {
 	if cfg.TenantKey != "default" {
 		t.Fatalf("expected default tenant key \"default\", got %q", cfg.TenantKey)
 	}
+	if len(cfg.OpenAPIPathGlobs) == 0 {
+		t.Fatalf("expected default openapi path globs to be configured")
+	}
+	if cfg.OpenAPIRefMaxFetches != 128 {
+		t.Fatalf("expected default openapi ref max fetches 128, got %d", cfg.OpenAPIRefMaxFetches)
+	}
 }
 
 func TestLoad_InvalidWorkerConcurrency(t *testing.T) {
@@ -52,5 +62,28 @@ func TestLoad_RejectsEmptyTenantKey(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatalf("expected error for empty tenant key")
+	}
+}
+
+func TestLoad_OpenAPIConfig(t *testing.T) {
+	t.Setenv("SHIVA_OPENAPI_PATH_GLOBS", "specs/**/*.yaml,docs/swagger*.yml")
+	t.Setenv("SHIVA_OPENAPI_REF_MAX_FETCHES", "64")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	expectedGlobs := []string{"specs/**/*.yaml", "docs/swagger*.yml"}
+	if len(cfg.OpenAPIPathGlobs) != len(expectedGlobs) {
+		t.Fatalf("expected %d globs, got %d", len(expectedGlobs), len(cfg.OpenAPIPathGlobs))
+	}
+	for i := range expectedGlobs {
+		if cfg.OpenAPIPathGlobs[i] != expectedGlobs[i] {
+			t.Fatalf("expected glob %d to be %q, got %q", i, expectedGlobs[i], cfg.OpenAPIPathGlobs[i])
+		}
+	}
+	if cfg.OpenAPIRefMaxFetches != 64 {
+		t.Fatalf("expected OpenAPIRefMaxFetches=64, got %d", cfg.OpenAPIRefMaxFetches)
 	}
 }

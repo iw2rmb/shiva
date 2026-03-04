@@ -52,6 +52,27 @@ func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Repo, e
 	return i, err
 }
 
+const getRepoByID = `-- name: GetRepoByID :one
+SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
+FROM repos
+WHERE id = $1
+`
+
+func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repo, error) {
+	row := q.db.QueryRow(ctx, getRepoByID, id)
+	var i Repo
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.GitlabProjectID,
+		&i.PathWithNamespace,
+		&i.DefaultBranch,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getRepoByTenantAndPath = `-- name: GetRepoByTenantAndPath :one
 SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
 FROM repos

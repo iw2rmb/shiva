@@ -50,7 +50,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - no archive/clone usage
   - changed file list and file fetch are both covered by tests.
 
-6. Implement OpenAPI candidate detection and `$ref` resolution.
+6. [x] Implement OpenAPI candidate detection and `$ref` resolution.
 - Deliverables:
   - configurable include globs
   - top-level `openapi`/`swagger` validation

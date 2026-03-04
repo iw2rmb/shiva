@@ -15,9 +15,13 @@
 ## Configuration
 - `SHIVA_HTTP_ADDR` (default `:8080`)
 - `SHIVA_DATABASE_URL` (optional for this baseline; empty means unconfigured store)
+- `SHIVA_GITLAB_BASE_URL` (required when DB-backed worker is enabled)
+- `SHIVA_GITLAB_TOKEN` (optional GitLab API token)
 - `SHIVA_WORKER_CONCURRENCY` (default `4`)
 - `SHIVA_SHUTDOWN_TIMEOUT_SECONDS` (default `15`)
 - `SHIVA_LOG_LEVEL` (default `info`, values: `debug`, `info`, `warn`, `error`)
+- `SHIVA_OPENAPI_PATH_GLOBS` (optional comma-separated include globs)
+- `SHIVA_OPENAPI_REF_MAX_FETCHES` (default `128`)
 
 ## Health endpoint
 - `GET /healthz` returns `200` and JSON payload.
@@ -30,6 +34,7 @@
 - GitLab webhook ingest for item 3 is documented in `docs/gitlab-webhook-ingest.md`.
 - Ordered async ingest processing for item 4 is documented in `docs/ingest-worker-processing.md`.
 - GitLab API retrieval client for item 5 is documented in `docs/gitlab-client-integrations.md`.
-- OpenAPI candidate detection/build, diff/notify, and read routes are still not implemented.
+- OpenAPI candidate detection and `$ref` resolution for item 6 are documented in `docs/openapi-candidate-resolution.md`.
+- Canonical artifact build/persistence, diff/notify, and read routes are still not implemented.
 - Database baseline artifacts are documented in `docs/database-schema-baseline.md`.
 - See `design/shiva.md` for the broader architecture and `roadmap/shiva.md` for remaining items.

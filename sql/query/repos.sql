@@ -25,6 +25,11 @@ FROM repos
 WHERE tenant_id = sqlc.arg(tenant_id)
   AND gitlab_project_id = sqlc.arg(gitlab_project_id);
 
+-- name: GetRepoByID :one
+SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
+FROM repos
+WHERE id = sqlc.arg(id);
+
 -- name: UpdateRepoDefaultBranch :one
 UPDATE repos
 SET default_branch = sqlc.arg(default_branch),

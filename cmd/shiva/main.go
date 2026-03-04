@@ -7,11 +7,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/iw2rmb/shiva/internal/config"
+	"github.com/iw2rmb/shiva/internal/gitlab"
 	httpserver "github.com/iw2rmb/shiva/internal/http"
+	"github.com/iw2rmb/shiva/internal/openapi"
 	"github.com/iw2rmb/shiva/internal/store"
 	"github.com/iw2rmb/shiva/internal/worker"
 )
@@ -47,11 +50,33 @@ func run(ctx context.Context) error {
 
 	var workerManager *worker.Manager
 	if storeInstance.IsConfigured() {
+		if strings.TrimSpace(cfg.GitLabBaseURL) == "" {
+			return errors.New("SHIVA_GITLAB_BASE_URL must be configured when database worker is enabled")
+		}
+
+		gitLabClient, err := gitlab.NewClient(cfg.GitLabBaseURL, cfg.GitLabToken)
+		if err != nil {
+			return fmt.Errorf("initialize gitlab client: %w", err)
+		}
+
+		openAPIResolver, err := openapi.NewResolver(openapi.ResolverConfig{
+			IncludeGlobs: cfg.OpenAPIPathGlobs,
+			MaxFetches:   cfg.OpenAPIRefMaxFetches,
+		})
+		if err != nil {
+			return fmt.Errorf("initialize openapi resolver: %w", err)
+		}
+
 		workerManager = worker.New(
 			cfg.WorkerConcurrency,
 			logger,
 			worker.WithQueue(storeQueueAdapter{store: storeInstance}),
-			worker.WithProcessor(revisionProcessor{store: storeInstance}),
+			worker.WithProcessor(revisionProcessor{
+				store:         storeInstance,
+				gitlabClient:  gitLabClient,
+				openapiLoader: openAPIResolver,
+				logger:        logger,
+			}),
 		)
 		if err := workerManager.Start(ctx); err != nil {
 			return err
@@ -130,11 +155,24 @@ func (q storeQueueAdapter) MarkFailed(ctx context.Context, eventID int64, errorM
 }
 
 type revisionProcessor struct {
-	store *store.Store
+	store         *store.Store
+	gitlabClient  *gitlab.Client
+	openapiLoader *openapi.Resolver
+	logger        *slog.Logger
 }
 
 func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
-	_, err := p.store.UpsertRevisionFromIngestEvent(ctx, store.IngestQueueEvent{
+	if p.store == nil {
+		return errors.New("revision processor store is not configured")
+	}
+	if p.gitlabClient == nil {
+		return errors.New("revision processor gitlab client is not configured")
+	}
+	if p.openapiLoader == nil {
+		return errors.New("revision processor openapi loader is not configured")
+	}
+
+	revisionID, err := p.store.UpsertRevisionFromIngestEvent(ctx, store.IngestQueueEvent{
 		ID:           job.EventID,
 		RepoID:       job.RepoID,
 		Sha:          job.Sha,
@@ -145,5 +183,73 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	if err != nil {
 		return fmt.Errorf("upsert revision from ingest event %d: %w", job.EventID, err)
 	}
+
+	parentSHA := strings.TrimSpace(job.ParentSha)
+	if parentSHA == "" {
+		if err := p.store.MarkRevisionProcessed(ctx, revisionID, false); err != nil {
+			return fmt.Errorf("mark revision %d processed without compare baseline: %w", revisionID, err)
+		}
+		if p.logger != nil {
+			p.logger.Debug(
+				"revision processed without openapi compare baseline",
+				"revision_id", revisionID,
+				"repo_id", job.RepoID,
+				"sha", job.Sha,
+			)
+		}
+		return nil
+	}
+
+	repo, err := p.store.GetRepoByID(ctx, job.RepoID)
+	if err != nil {
+		return fmt.Errorf("load repo %d for ingest event %d: %w", job.RepoID, job.EventID, err)
+	}
+
+	resolution, err := p.openapiLoader.ResolveChangedOpenAPI(
+		ctx,
+		p.gitlabClient,
+		repo.GitLabProjectID,
+		parentSHA,
+		job.Sha,
+	)
+	if err != nil {
+		if isPermanentOpenAPIProcessingError(err) {
+			if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
+				return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
+			}
+			return worker.Permanent(fmt.Errorf("openapi resolution failed: %w", err))
+		}
+		return fmt.Errorf("resolve openapi candidates for revision %d: %w", revisionID, err)
+	}
+
+	if err := p.store.MarkRevisionProcessed(ctx, revisionID, resolution.OpenAPIChanged); err != nil {
+		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
+	}
+
 	return nil
+}
+
+func isPermanentOpenAPIProcessingError(err error) bool {
+	if errors.Is(err, openapi.ErrInvalidOpenAPIDocument) {
+		return true
+	}
+	if errors.Is(err, openapi.ErrReferenceCycle) {
+		return true
+	}
+	if errors.Is(err, openapi.ErrFetchLimitExceeded) {
+		return true
+	}
+	if errors.Is(err, openapi.ErrInvalidReference) {
+		return true
+	}
+	if errors.Is(err, gitlab.ErrNotFound) {
+		return true
+	}
+
+	var apiErr *gitlab.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
+		return true
+	}
+
+	return false
 }

@@ -6,6 +6,8 @@
   - Compare endpoint client for changed paths.
   - Repository files endpoint client for file content at target revision SHA.
   - No archive download or repository clone usage.
+- Current usage:
+  - item 6 OpenAPI candidate detection and recursive `$ref` resolution uses this client surface directly.
 
 ## Package
 - `internal/gitlab/client.go`
@@ -36,5 +38,6 @@
 - Runtime baseline: `docs/runtime-baseline.md`
 - Webhook ingest: `docs/gitlab-webhook-ingest.md`
 - Worker processing: `docs/ingest-worker-processing.md`
+- OpenAPI resolution flow: `docs/openapi-candidate-resolution.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`
