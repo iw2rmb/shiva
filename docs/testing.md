@@ -28,6 +28,7 @@ Current baseline: full suite passes.
 - Worker retry and permanent-failure handling.
 - OpenAPI resolver:
   - incremental path (`compare`, candidate filtering, strict top-level validation, duplicate candidate collapse),
+  - incremental entrypoints for known-root rebuild (`ResolveRootOpenAPIAtSHA`) and explicit-path targeted discovery (`ResolveDiscoveredRootsAtPaths`),
   - bootstrap path (`repository/tree` discovery, `.shivaignore` filtering, bounded candidate fetch concurrency, deterministic root ordering, per-root dependency closure),
   - `$ref` recursion/cycle/fetch limit guards.
 - Canonical spec build and endpoint extraction.

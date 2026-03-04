@@ -208,21 +208,122 @@ func (r *Resolver) ResolveChangedOpenAPI(
 	}, nil
 }
 
+func (r *Resolver) ResolveRootOpenAPIAtSHA(
+	ctx context.Context,
+	client GitLabClient,
+	projectID int64,
+	sha string,
+	rootPath string,
+) (RootResolution, error) {
+	normalizedSHA, err := validateResolveAtSHAInputs(client, projectID, sha)
+	if err != nil {
+		return RootResolution{}, err
+	}
+
+	normalizedRootPath := normalizeRepoPath(rootPath)
+	if normalizedRootPath == "" {
+		return RootResolution{}, errors.New("root path must not be empty")
+	}
+
+	rootDocument, err := client.GetFileContent(ctx, projectID, normalizedRootPath, normalizedSHA)
+	if err != nil {
+		return RootResolution{}, fmt.Errorf("fetch root %q: %w", normalizedRootPath, err)
+	}
+
+	if _, err := isOpenAPIRootDocument(rootDocument, normalizedRootPath, true); err != nil {
+		return RootResolution{}, err
+	}
+
+	documents, err := r.resolveRootSet(
+		ctx,
+		client,
+		projectID,
+		normalizedSHA,
+		[]string{normalizedRootPath},
+		map[string][]byte{normalizedRootPath: rootDocument},
+	)
+	if err != nil {
+		return RootResolution{}, err
+	}
+
+	return RootResolution{
+		RootPath:        normalizedRootPath,
+		Documents:       documents,
+		DependencyFiles: listDependencyFiles(normalizedRootPath, documents),
+	}, nil
+}
+
+func (r *Resolver) ResolveDiscoveredRootsAtPaths(
+	ctx context.Context,
+	client GitLabClient,
+	projectID int64,
+	sha string,
+	paths []string,
+) ([]RootResolution, error) {
+	normalizedSHA, err := validateResolveAtSHAInputs(client, projectID, sha)
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return []RootResolution{}, nil
+	}
+
+	fileIgnores, err := LoadShivaIgnoreAtSHA(ctx, client, projectID, normalizedSHA)
+	if err != nil {
+		return nil, err
+	}
+	effectiveIgnores := ComposeIgnoreGlobs(fileIgnores)
+
+	candidatePaths := make([]string, 0, len(paths))
+	candidateSet := make(map[string]struct{}, len(paths))
+
+	for _, filePath := range paths {
+		candidatePath := normalizeRepoPath(filePath)
+		if candidatePath == "" {
+			continue
+		}
+
+		ignored, err := ShouldIgnorePath(candidatePath, effectiveIgnores)
+		if err != nil {
+			return nil, fmt.Errorf("evaluate ignore rules for %q: %w", candidatePath, err)
+		}
+		if ignored {
+			continue
+		}
+		if !hasOpenAPIExtension(candidatePath) {
+			continue
+		}
+		if _, exists := candidateSet[candidatePath]; exists {
+			continue
+		}
+
+		candidateSet[candidatePath] = struct{}{}
+		candidatePaths = append(candidatePaths, candidatePath)
+	}
+
+	rootPaths, rootDocuments, err := r.resolveBootstrapRootCandidates(
+		ctx,
+		client,
+		projectID,
+		normalizedSHA,
+		candidatePaths,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.resolveRootResolutions(ctx, client, projectID, normalizedSHA, rootPaths, rootDocuments)
+}
+
 func (r *Resolver) ResolveRepositoryOpenAPIAtSHA(
 	ctx context.Context,
 	client GitLabBootstrapClient,
 	projectID int64,
 	sha string,
 ) ([]RootResolution, error) {
-	if client == nil {
-		return nil, errors.New("gitlab client is required")
-	}
-	if projectID < 1 {
-		return nil, errors.New("project id must be positive")
-	}
-	normalizedSHA := strings.TrimSpace(sha)
-	if normalizedSHA == "" {
-		return nil, errors.New("sha must not be empty")
+	normalizedSHA, err := validateResolveAtSHAInputs(client, projectID, sha)
+	if err != nil {
+		return nil, err
 	}
 
 	treeEntries, err := client.ListRepositoryTree(ctx, projectID, normalizedSHA, "", true)
@@ -273,28 +374,7 @@ func (r *Resolver) ResolveRepositoryOpenAPIAtSHA(
 		return nil, err
 	}
 
-	results := make([]RootResolution, 0, len(rootPaths))
-	for _, rootPath := range rootPaths {
-		documents, err := r.resolveRootSet(
-			ctx,
-			client,
-			projectID,
-			normalizedSHA,
-			[]string{rootPath},
-			map[string][]byte{rootPath: rootDocuments[rootPath]},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		results = append(results, RootResolution{
-			RootPath:        rootPath,
-			Documents:       documents,
-			DependencyFiles: listDependencyFiles(rootPath, documents),
-		})
-	}
-
-	return results, nil
+	return r.resolveRootResolutions(ctx, client, projectID, normalizedSHA, rootPaths, rootDocuments)
 }
 
 type bootstrapCandidateResult struct {
@@ -306,7 +386,7 @@ type bootstrapCandidateResult struct {
 
 func (r *Resolver) resolveBootstrapRootCandidates(
 	ctx context.Context,
-	client GitLabBootstrapClient,
+	client GitLabClient,
 	projectID int64,
 	sha string,
 	candidatePaths []string,
@@ -400,6 +480,37 @@ func (r *Resolver) resolveBootstrapRootCandidates(
 
 	sort.Strings(rootPaths)
 	return rootPaths, rootDocuments, nil
+}
+
+func (r *Resolver) resolveRootResolutions(
+	ctx context.Context,
+	client GitLabClient,
+	projectID int64,
+	sha string,
+	rootPaths []string,
+	rootDocuments map[string][]byte,
+) ([]RootResolution, error) {
+	results := make([]RootResolution, 0, len(rootPaths))
+	for _, rootPath := range rootPaths {
+		documents, err := r.resolveRootSet(
+			ctx,
+			client,
+			projectID,
+			sha,
+			[]string{rootPath},
+			map[string][]byte{rootPath: rootDocuments[rootPath]},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, RootResolution{
+			RootPath:        rootPath,
+			Documents:       documents,
+			DependencyFiles: listDependencyFiles(rootPath, documents),
+		})
+	}
+	return results, nil
 }
 
 type visitState int
@@ -498,6 +609,22 @@ func detectCandidatePath(changedPath gitlab.ChangedPath) string {
 		pathCandidate = strings.TrimSpace(changedPath.OldPath)
 	}
 	return normalizeRepoPath(pathCandidate)
+}
+
+func validateResolveAtSHAInputs(client GitLabClient, projectID int64, sha string) (string, error) {
+	if client == nil {
+		return "", errors.New("gitlab client is required")
+	}
+	if projectID < 1 {
+		return "", errors.New("project id must be positive")
+	}
+
+	normalizedSHA := strings.TrimSpace(sha)
+	if normalizedSHA == "" {
+		return "", errors.New("sha must not be empty")
+	}
+
+	return normalizedSHA, nil
 }
 
 func normalizeRepoPath(raw string) string {

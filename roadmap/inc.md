@@ -23,7 +23,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./internal/store` — table-driven cases for dependency selection from latest processed rows and status transitions
 
 ## Resolver Entrypoints For Incremental Phase
-- [ ] Add resolver entrypoints for impacted-root rebuild and targeted changed-file discovery — incremental mode needs root-by-root resolution and fallback root creation
+- [x] Add resolver entrypoints for impacted-root rebuild and targeted changed-file discovery — incremental mode needs root-by-root resolution and fallback root creation
   - Repository: `shiva`
   - Component: `internal/openapi`
   - Scope: Introduce resolver methods that:

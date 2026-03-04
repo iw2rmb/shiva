@@ -483,6 +483,170 @@ func TestResolverResolveChangedOpenAPI_InvalidReferences(t *testing.T) {
 	}
 }
 
+func TestResolverResolveRootOpenAPIAtSHA_DependencyClosure(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		IncludeGlobs: []string{"api/**/*.yaml"},
+		MaxFetches:   16,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &fakeGitLabClient{
+		files: map[string]string{
+			"api/openapi.yaml":    "openapi: 3.1.0\ninfo:\n  title: Demo\npaths:\n  /pets:\n    get:\n      responses:\n        '200':\n          description: ok\n          content:\n            application/json:\n              schema:\n                $ref: ./components.yaml#/components/schemas/Pet\n",
+			"api/components.yaml": "components:\n  schemas:\n    Pet:\n      $ref: ./models/pet.yaml#/Pet\n",
+			"api/models/pet.yaml": "Pet:\n  type: object\n  properties:\n    id:\n      type: string\n",
+		},
+	}
+
+	root, err := resolver.ResolveRootOpenAPIAtSHA(context.Background(), client, 42, "target-sha", "/api/openapi.yaml")
+	if err != nil {
+		t.Fatalf("ResolveRootOpenAPIAtSHA() unexpected error: %v", err)
+	}
+
+	if root.RootPath != "api/openapi.yaml" {
+		t.Fatalf("expected root path api/openapi.yaml, got %q", root.RootPath)
+	}
+	for _, expected := range []string{
+		"api/openapi.yaml",
+		"api/components.yaml",
+		"api/models/pet.yaml",
+	} {
+		if _, ok := root.Documents[expected]; !ok {
+			t.Fatalf("expected documents to include %q", expected)
+		}
+	}
+
+	wantDependencies := []string{
+		"api/components.yaml",
+		"api/models/pet.yaml",
+	}
+	if !reflect.DeepEqual(root.DependencyFiles, wantDependencies) {
+		t.Fatalf("expected dependency files %#v, got %#v", wantDependencies, root.DependencyFiles)
+	}
+}
+
+func TestResolverResolveRootOpenAPIAtSHA_InvalidRootDocument(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		MaxFetches: 16,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &fakeGitLabClient{
+		files: map[string]string{
+			"spec/openapi.yaml": "info:\n  title: Missing Header\n",
+		},
+	}
+
+	_, err = resolver.ResolveRootOpenAPIAtSHA(context.Background(), client, 42, "target-sha", "spec/openapi.yaml")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !errors.Is(err, ErrInvalidOpenAPIDocument) {
+		t.Fatalf("expected ErrInvalidOpenAPIDocument, got %v", err)
+	}
+}
+
+func TestResolverResolveDiscoveredRootsAtPaths_TargetedDiscoveryPipeline(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		MaxFetches: 16,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &fakeGitLabClient{
+		files: map[string]string{
+			"/.shivaignore":         "ignored/**\n",
+			"ignored/openapi.yaml":  "openapi: 3.1.0\ninfo:\n  title: Ignored\npaths: {}\n",
+			"spec/not-openapi.yaml": "info:\n  title: Not Root\n",
+			"spec/bad-openapi.yaml": "openapi: [\n",
+			"spec/openapi.yaml":     "openapi: 3.1.0\ninfo:\n  title: Demo\npaths:\n  /pets:\n    get:\n      responses:\n        '200':\n          description: ok\n          content:\n            application/json:\n              schema:\n                $ref: ./components.yaml#/components/schemas/Pet\n",
+			"spec/components.yaml":  "components:\n  schemas:\n    Pet:\n      type: object\n",
+		},
+	}
+
+	roots, err := resolver.ResolveDiscoveredRootsAtPaths(
+		context.Background(),
+		client,
+		42,
+		"target-sha",
+		[]string{
+			"/ignored/openapi.yaml",
+			"docs/README.md",
+			"spec/not-openapi.yaml",
+			"spec/bad-openapi.yaml",
+			"/spec/openapi.yaml",
+			"spec/openapi.yaml",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ResolveDiscoveredRootsAtPaths() unexpected error: %v", err)
+	}
+
+	if len(roots) != 1 {
+		t.Fatalf("expected one discovered root, got %#v", roots)
+	}
+	if roots[0].RootPath != "spec/openapi.yaml" {
+		t.Fatalf("expected root spec/openapi.yaml, got %q", roots[0].RootPath)
+	}
+
+	if _, ok := roots[0].Documents["spec/openapi.yaml"]; !ok {
+		t.Fatalf("expected documents to include spec/openapi.yaml")
+	}
+	if _, ok := roots[0].Documents["spec/components.yaml"]; !ok {
+		t.Fatalf("expected documents to include spec/components.yaml")
+	}
+
+	wantDependencies := []string{"spec/components.yaml"}
+	if !reflect.DeepEqual(roots[0].DependencyFiles, wantDependencies) {
+		t.Fatalf("expected dependency files %#v, got %#v", wantDependencies, roots[0].DependencyFiles)
+	}
+}
+
+func TestResolverResolveDiscoveredRootsAtPaths_NoDiscoverableRoots(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		MaxFetches: 16,
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &fakeGitLabClient{
+		files: map[string]string{
+			"spec/not-openapi.yaml": "info:\n  title: Not Root\n",
+		},
+	}
+
+	roots, err := resolver.ResolveDiscoveredRootsAtPaths(
+		context.Background(),
+		client,
+		42,
+		"target-sha",
+		[]string{
+			"docs/README.md",
+			"spec/not-openapi.yaml",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ResolveDiscoveredRootsAtPaths() unexpected error: %v", err)
+	}
+	if len(roots) != 0 {
+		t.Fatalf("expected zero discovered roots, got %#v", roots)
+	}
+}
+
 func TestResolverResolveRepositoryOpenAPIAtSHA_FullTreeDiscoveryWithoutChangedSignal(t *testing.T) {
 	t.Parallel()
 
