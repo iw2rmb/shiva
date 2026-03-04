@@ -10,7 +10,7 @@ This document describes current schema layout and SQL code generation workflow.
 
 ## Core Tables
 - `tenants`: tenant identity.
-- `repos`: repo identity per tenant (`gitlab_project_id`, `path_with_namespace`, `default_branch`).
+- `repos`: repo identity per tenant (`gitlab_project_id`, `path_with_namespace`, `default_branch`, `openapi_force_rescan`).
 - `subscriptions`: outbound webhook subscribers and retry policy.
 - `ingest_events`: inbound queue records and retry state.
 - `revisions`: per-repo revision processing state.
@@ -27,6 +27,7 @@ This document describes current schema layout and SQL code generation workflow.
 - `revisions.status`: `pending | processed | failed | skipped`
 - `api_specs.status`: `active | deleted`
 - `delivery_attempts.status`: `pending | retry_scheduled | succeeded | failed`
+- `repos.openapi_force_rescan`: `true` when next bootstrap decision should force full repository scan.
 
 ## Generation
 sqlc config:

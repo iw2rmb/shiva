@@ -9,6 +9,18 @@ import (
 	"context"
 )
 
+const clearRepoForceRescan = `-- name: ClearRepoForceRescan :exec
+UPDATE repos
+SET openapi_force_rescan = FALSE,
+    updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) ClearRepoForceRescan(ctx context.Context, repoID int64) error {
+	_, err := q.db.Exec(ctx, clearRepoForceRescan, repoID)
+	return err
+}
+
 const createRepo = `-- name: CreateRepo :one
 INSERT INTO repos (
     tenant_id,
@@ -22,7 +34,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
+RETURNING id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
 `
 
 type CreateRepoParams struct {
@@ -46,14 +58,40 @@ func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Repo, e
 		&i.GitlabProjectID,
 		&i.PathWithNamespace,
 		&i.DefaultBranch,
+		&i.OpenapiForceRescan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const getRepoBootstrapState = `-- name: GetRepoBootstrapState :one
+SELECT
+    (
+        SELECT COUNT(*)::BIGINT
+        FROM api_specs
+        WHERE repo_id = $1
+          AND status = 'active'
+    ) AS active_api_count,
+    openapi_force_rescan AS force_rescan
+FROM repos
+WHERE id = $1
+`
+
+type GetRepoBootstrapStateRow struct {
+	ActiveApiCount int64 `json:"active_api_count"`
+	ForceRescan    bool  `json:"force_rescan"`
+}
+
+func (q *Queries) GetRepoBootstrapState(ctx context.Context, repoID int64) (GetRepoBootstrapStateRow, error) {
+	row := q.db.QueryRow(ctx, getRepoBootstrapState, repoID)
+	var i GetRepoBootstrapStateRow
+	err := row.Scan(&i.ActiveApiCount, &i.ForceRescan)
+	return i, err
+}
+
 const getRepoByID = `-- name: GetRepoByID :one
-SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
+SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
 WHERE id = $1
 `
@@ -67,6 +105,7 @@ func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repo, error) {
 		&i.GitlabProjectID,
 		&i.PathWithNamespace,
 		&i.DefaultBranch,
+		&i.OpenapiForceRescan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -74,7 +113,7 @@ func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repo, error) {
 }
 
 const getRepoByTenantAndPath = `-- name: GetRepoByTenantAndPath :one
-SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
+SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
 WHERE tenant_id = $1
   AND path_with_namespace = $2
@@ -94,6 +133,7 @@ func (q *Queries) GetRepoByTenantAndPath(ctx context.Context, arg GetRepoByTenan
 		&i.GitlabProjectID,
 		&i.PathWithNamespace,
 		&i.DefaultBranch,
+		&i.OpenapiForceRescan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -101,7 +141,7 @@ func (q *Queries) GetRepoByTenantAndPath(ctx context.Context, arg GetRepoByTenan
 }
 
 const getRepoByTenantAndProjectID = `-- name: GetRepoByTenantAndProjectID :one
-SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
+SELECT id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
 WHERE tenant_id = $1
   AND gitlab_project_id = $2
@@ -121,6 +161,7 @@ func (q *Queries) GetRepoByTenantAndProjectID(ctx context.Context, arg GetRepoBy
 		&i.GitlabProjectID,
 		&i.PathWithNamespace,
 		&i.DefaultBranch,
+		&i.OpenapiForceRescan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -132,7 +173,7 @@ UPDATE repos
 SET default_branch = $1,
     updated_at = NOW()
 WHERE id = $2
-RETURNING id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, created_at, updated_at
+RETURNING id, tenant_id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
 `
 
 type UpdateRepoDefaultBranchParams struct {
@@ -149,6 +190,7 @@ func (q *Queries) UpdateRepoDefaultBranch(ctx context.Context, arg UpdateRepoDef
 		&i.GitlabProjectID,
 		&i.PathWithNamespace,
 		&i.DefaultBranch,
+		&i.OpenapiForceRescan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

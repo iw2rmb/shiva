@@ -27,7 +27,7 @@ Legend: [ ] todo, [x] done.
   - Snippets: `CountActiveAPISpecsByRepo(repo_id)`, `UpsertAPISpec(repo_id, root_path)`, `CreateAPISpecRevision(api_spec_id, revision_id, build_status, error)`, `ReplaceAPISpecDependencies(api_spec_revision_id, file_paths[])`
   - Tests: `go test ./internal/store` — assert uniqueness `(repo_id, root_path)`, dependency replacement behavior, and count semantics for active/deleted statuses
 
-- [ ] Add repo-level force-rescan state used by bootstrap trigger — init design requires explicit forced rescan path
+- [x] Add repo-level force-rescan state used by bootstrap trigger — init design requires explicit forced rescan path
   - Repository: `shiva`
   - Component: `sql/schema`, `sql/query`, `internal/store`
   - Scope: Add `repos.openapi_force_rescan` boolean (default `false`) and store methods to read/clear this flag during successful bootstrap completion

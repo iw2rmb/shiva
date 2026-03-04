@@ -78,13 +78,14 @@ type IngestEvent struct {
 }
 
 type Repo struct {
-	ID                int64              `json:"id"`
-	TenantID          int64              `json:"tenant_id"`
-	GitlabProjectID   int64              `json:"gitlab_project_id"`
-	PathWithNamespace string             `json:"path_with_namespace"`
-	DefaultBranch     string             `json:"default_branch"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID                 int64              `json:"id"`
+	TenantID           int64              `json:"tenant_id"`
+	GitlabProjectID    int64              `json:"gitlab_project_id"`
+	PathWithNamespace  string             `json:"path_with_namespace"`
+	DefaultBranch      string             `json:"default_branch"`
+	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Revision struct {
