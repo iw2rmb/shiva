@@ -20,7 +20,7 @@ Legend: [ ] todo, [x] done.
   - Tests: Existing resolver tests in `internal/openapi/resolver_test.go` cover changed-path flow only — no full-tree bootstrap coverage
 
 ## Data Foundation (Required for Init Trigger/Persistence)
-- [ ] Add API instance persistence primitives required by init flow — bootstrap trigger and per-root writes depend on durable API identities
+- [x] Add API instance persistence primitives required by init flow — bootstrap trigger and per-root writes depend on durable API identities
   - Repository: `shiva`
   - Component: `sql/schema`, `sql/query`, `internal/store/sqlc`, `internal/store`
   - Scope: Update `sql/schema/000001_initial.sql` with `api_specs`, `api_spec_revisions`, `api_spec_dependencies`; add store methods to count active API specs by repo and upsert per-root bootstrap revision/dependencies

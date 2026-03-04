@@ -78,6 +78,39 @@ CREATE TABLE revisions (
 CREATE INDEX revisions_repo_branch_processed_idx ON revisions(repo_id, branch, processed_at DESC);
 CREATE INDEX revisions_repo_created_idx ON revisions(repo_id, created_at DESC);
 
+CREATE TABLE api_specs (
+    id BIGSERIAL PRIMARY KEY,
+    repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    root_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
+    display_name TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (repo_id, root_path)
+);
+
+CREATE INDEX api_specs_repo_status_idx ON api_specs(repo_id, status);
+
+CREATE TABLE api_spec_revisions (
+    id BIGSERIAL PRIMARY KEY,
+    api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
+    revision_id BIGINT NOT NULL REFERENCES revisions(id) ON DELETE CASCADE,
+    root_path_at_revision TEXT NOT NULL,
+    build_status TEXT NOT NULL,
+    error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (api_spec_id, revision_id)
+);
+
+CREATE INDEX api_spec_revisions_revision_id_idx ON api_spec_revisions(revision_id);
+
+CREATE TABLE api_spec_dependencies (
+    api_spec_revision_id BIGINT NOT NULL REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    UNIQUE (api_spec_revision_id, file_path)
+);
+
 CREATE TABLE spec_artifacts (
     id BIGSERIAL PRIMARY KEY,
     revision_id BIGINT NOT NULL UNIQUE REFERENCES revisions(id) ON DELETE CASCADE,

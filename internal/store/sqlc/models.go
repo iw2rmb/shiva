@@ -8,6 +8,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ApiSpec struct {
+	ID          int64              `json:"id"`
+	RepoID      int64              `json:"repo_id"`
+	RootPath    string             `json:"root_path"`
+	Status      string             `json:"status"`
+	DisplayName pgtype.Text        `json:"display_name"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ApiSpecDependency struct {
+	ApiSpecRevisionID int64  `json:"api_spec_revision_id"`
+	FilePath          string `json:"file_path"`
+}
+
+type ApiSpecRevision struct {
+	ID                 int64              `json:"id"`
+	ApiSpecID          int64              `json:"api_spec_id"`
+	RevisionID         int64              `json:"revision_id"`
+	RootPathAtRevision string             `json:"root_path_at_revision"`
+	BuildStatus        string             `json:"build_status"`
+	Error              string             `json:"error"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type DeliveryAttempt struct {
 	ID             int64              `json:"id"`
 	SubscriptionID int64              `json:"subscription_id"`
