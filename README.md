@@ -2,39 +2,33 @@
 
 Shiva is a Go service that tracks OpenAPI changes in GitLab repositories, rebuilds canonical specs, and distributes updates to subscribers. It also serves tenant-scoped, versioned routes for full specs and endpoint-level views.
 
-## Executive Summary
-- Input: GitLab push webhooks.
-- Core action: detect OpenAPI changes, rebuild full spec at target SHA, compute diff vs previous revision.
-- Output: notify registered webhooks and expose read APIs for `sha`, `branch`, and `latest`.
-- Stack: Fiber (HTTP), PostgreSQL with sqlc + pgx (storage), worker pipeline (async processing).
+## Current State
+- Roadmap status: fully implemented (`roadmap/shiva.md` items 1-12 are complete).
+- Stack: Go, Fiber, PostgreSQL (sqlc + pgx), async worker pipeline.
+- CI/test baseline: full test suite runs with `go test ./...`.
 
-## Key Takeaways
-- Architecture prioritizes correctness over partial patching by always rebuilding canonical artifacts when OpenAPI inputs change.
-- Retrieval is targeted: GitLab Repository Files API fetches only changed/required OpenAPI files, not whole-repo snapshots.
-- Per-repo ordered processing and idempotency keys prevent duplicate or out-of-order state.
-- Tenant isolation is enforced in both write and read paths.
-- Outbound webhooks are signed and retried with backoff to provide reliable downstream integration.
-- Read APIs are selector-based (`sha|branch|latest`) for stable integration contracts.
+## Implemented Capabilities
+- GitLab webhook ingest with token verification and idempotent delivery handling.
+- Repo-ordered async processing with retries/backoff.
+- GitLab Compare + Repository Files API retrieval (no clone/archive flow).
+- OpenAPI candidate detection and recursive local `$ref` resolution with cycle/fetch limits.
+- Canonical spec build (`json` + `yaml`) and endpoint index persistence.
+- Semantic diff persistence (`spec_changes`) with structured endpoint/parameter/schema changes.
+- Outbound notifications:
+  - event types: `spec.updated.full`, `spec.updated.diff`
+  - HMAC signing (`X-Shiva-Signature`) + timestamp header (`X-Shiva-Timestamp`)
+  - retry/backoff and terminal failure state in `delivery_attempts`
+- Selector-based read API with `404/409` semantics and `ETag`/`If-None-Match` handling.
+- Hardening controls:
+  - correlation IDs in structured logs
+  - ingest/build/delivery metrics at configurable metrics path
+  - tracing spans across ingest/process/build/diff/notify
+  - ingress body-size and rate limiting
 
-## Primary Use Cases
-- Keep consumers synchronized with API contract changes in near real time.
-- Serve immutable historical specs by commit SHA.
-- Serve branch-latest and repo-latest specs for environments that track moving targets.
-- Provide endpoint-level lookup for gateway/tooling automation.
-
-## Core Flows
-1. Receive GitLab webhook and validate authenticity.
-2. Resolve changed files in commit range.
-3. If OpenAPI changed:
-   - fetch changed and `$ref`-required OpenAPI files via GitLab Repository Files API at revision SHA,
-   - build canonical JSON/YAML specs,
-   - index endpoints,
-   - compute semantic diff.
-4. Notify subscribers with full and/or diff payload.
-5. Serve artifacts and endpoint views via public routes.
-
-## Planned Routes
+## HTTP Routes
 - `POST /internal/webhooks/gitlab`
+- `GET /healthz`
+- `GET /internal/metrics` (path configurable via `SHIVA_METRICS_PATH`)
 - `GET /{tenant}/{repo}/{selector}/spec.json`
 - `GET /{tenant}/{repo}/{selector}/spec.yaml`
 - `GET /{tenant}/{repo}/{selector}/endpoints`
@@ -46,10 +40,28 @@ Shiva is a Go service that tracks OpenAPI changes in GitLab repositories, rebuil
 - branch name
 - `latest` (default branch latest processed revision)
 
-## Repository Status
-This repository currently contains architecture/design artifacts:
-- [Design Doc](design/shiva.md)
-- `.gitignore`
-- `README.md`
+## Configuration
+Environment variables are documented in [docs/runtime-baseline.md](docs/runtime-baseline.md), including:
+- runtime and worker settings
+- GitLab integration settings
+- outbound timeout
+- ingress rate/body limits
+- metrics/tracing controls
 
-Implementation code and migrations can be added next following the design milestones in `design/shiva.md`.
+## Documentation Map
+- Architecture/design: [design/shiva.md](design/shiva.md)
+- Implementation roadmap: [roadmap/shiva.md](roadmap/shiva.md)
+- Runtime/config baseline: [docs/runtime-baseline.md](docs/runtime-baseline.md)
+- Webhook ingest: [docs/gitlab-webhook-ingest.md](docs/gitlab-webhook-ingest.md)
+- Worker processing: [docs/ingest-worker-processing.md](docs/ingest-worker-processing.md)
+- OpenAPI resolution: [docs/openapi-candidate-resolution.md](docs/openapi-candidate-resolution.md)
+- Canonical artifacts/index: [docs/canonical-spec-build-persistence.md](docs/canonical-spec-build-persistence.md)
+- Semantic diff: [docs/semantic-diff-engine.md](docs/semantic-diff-engine.md)
+- Outbound notifications: [docs/outbound-webhook-notifications.md](docs/outbound-webhook-notifications.md)
+- Read API selectors/routes: [docs/read-api-selector-resolution.md](docs/read-api-selector-resolution.md)
+- Hardening/observability/security: [docs/hardening-observability-security-controls.md](docs/hardening-observability-security-controls.md)
+- Release readiness: [docs/release-readiness-item-12.md](docs/release-readiness-item-12.md)
+- Operations runbook: [docs/operations-runbook.md](docs/operations-runbook.md)
+
+## Deployment
+- Minimal Kubernetes manifest: [deploy/k8s/shiva.yaml](deploy/k8s/shiva.yaml)
