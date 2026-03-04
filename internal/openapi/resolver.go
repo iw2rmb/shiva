@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -31,6 +32,17 @@ type GitLabClient interface {
 	GetFileContent(ctx context.Context, projectID int64, filePath, ref string) ([]byte, error)
 }
 
+type GitLabBootstrapClient interface {
+	GitLabClient
+	ListRepositoryTree(
+		ctx context.Context,
+		projectID int64,
+		sha string,
+		path string,
+		recursive bool,
+	) ([]gitlab.TreeEntry, error)
+}
+
 type ResolverConfig struct {
 	IncludeGlobs []string
 	MaxFetches   int
@@ -45,6 +57,12 @@ type ResolutionResult struct {
 	OpenAPIChanged bool
 	CandidateFiles []string
 	Documents      map[string][]byte
+}
+
+type RootResolution struct {
+	RootPath        string            `json:"root_path"`
+	Documents       map[string][]byte `json:"documents"`
+	DependencyFiles []string          `json:"dependency_files"`
 }
 
 func DefaultIncludeGlobs() []string {
@@ -180,6 +198,104 @@ func (r *Resolver) ResolveChangedOpenAPI(
 	}, nil
 }
 
+func (r *Resolver) ResolveRepositoryOpenAPIAtSHA(
+	ctx context.Context,
+	client GitLabBootstrapClient,
+	projectID int64,
+	sha string,
+) ([]RootResolution, error) {
+	if client == nil {
+		return nil, errors.New("gitlab client is required")
+	}
+	if projectID < 1 {
+		return nil, errors.New("project id must be positive")
+	}
+	normalizedSHA := strings.TrimSpace(sha)
+	if normalizedSHA == "" {
+		return nil, errors.New("sha must not be empty")
+	}
+
+	treeEntries, err := client.ListRepositoryTree(ctx, projectID, normalizedSHA, "", true)
+	if err != nil {
+		return nil, fmt.Errorf("list repository tree: %w", err)
+	}
+
+	fileIgnores, err := LoadShivaIgnoreAtSHA(ctx, client, projectID, normalizedSHA)
+	if err != nil {
+		return nil, err
+	}
+	effectiveIgnores := ComposeIgnoreGlobs(fileIgnores)
+
+	rootPaths := make([]string, 0)
+	rootSet := make(map[string]struct{})
+	rootDocuments := make(map[string][]byte)
+
+	for _, entry := range treeEntries {
+		candidatePath := normalizeRepoPath(entry.Path)
+		if candidatePath == "" {
+			continue
+		}
+
+		ignored, err := ShouldIgnorePath(candidatePath, effectiveIgnores)
+		if err != nil {
+			return nil, fmt.Errorf("evaluate ignore rules for %q: %w", candidatePath, err)
+		}
+		if ignored {
+			continue
+		}
+		if !hasOpenAPIExtension(candidatePath) {
+			continue
+		}
+
+		content, err := client.GetFileContent(ctx, projectID, candidatePath, normalizedSHA)
+		if err != nil {
+			return nil, fmt.Errorf("fetch candidate %q: %w", candidatePath, err)
+		}
+		if !sniffTopLevelOpenAPIOrSwagger(content, candidatePath) {
+			continue
+		}
+
+		isRoot, err := isOpenAPIRootDocument(content, candidatePath, false)
+		if err != nil {
+			continue
+		}
+		if !isRoot {
+			continue
+		}
+
+		if _, exists := rootSet[candidatePath]; exists {
+			continue
+		}
+		rootSet[candidatePath] = struct{}{}
+		rootPaths = append(rootPaths, candidatePath)
+		rootDocuments[candidatePath] = content
+	}
+
+	sort.Strings(rootPaths)
+	results := make([]RootResolution, 0, len(rootPaths))
+	for _, rootPath := range rootPaths {
+		documents, err := r.resolveRootSet(
+			ctx,
+			client,
+			projectID,
+			normalizedSHA,
+			[]string{rootPath},
+			map[string][]byte{rootPath: rootDocuments[rootPath]},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, RootResolution{
+			RootPath:        rootPath,
+			Documents:       documents,
+			DependencyFiles: listDependencyFiles(rootPath, documents),
+		})
+	}
+
+	return results, nil
+}
+
 type visitState int
 
 const (
@@ -187,6 +303,29 @@ const (
 	visitStateVisiting
 	visitStateDone
 )
+
+func (r *Resolver) resolveRootSet(
+	ctx context.Context,
+	client GitLabClient,
+	projectID int64,
+	sha string,
+	roots []string,
+	rootDocuments map[string][]byte,
+) (map[string][]byte, error) {
+	documents := make(map[string][]byte, len(rootDocuments))
+	for filePath, content := range rootDocuments {
+		documents[filePath] = content
+	}
+	visitState := make(map[string]visitState, len(roots))
+
+	for _, rootPath := range roots {
+		if err := r.resolveRecursive(ctx, client, projectID, sha, rootPath, documents, visitState, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	return documents, nil
+}
 
 func (r *Resolver) resolveRecursive(
 	ctx context.Context,
@@ -329,6 +468,29 @@ func hasTopLevelOpenAPIOrSwagger(document any) bool {
 	return false
 }
 
+func isOpenAPIRootDocument(content []byte, filePath string, strict bool) (bool, error) {
+	parsed, err := parseDocument(content)
+	if err != nil {
+		if !strict {
+			return false, nil
+		}
+		return false, fmt.Errorf("%w: parse %q: %v", ErrInvalidOpenAPIDocument, filePath, err)
+	}
+
+	if hasTopLevelOpenAPIOrSwagger(parsed) {
+		return true, nil
+	}
+
+	if !strict {
+		return false, nil
+	}
+	return false, fmt.Errorf(
+		"%w: %q is missing top-level openapi/swagger field",
+		ErrInvalidOpenAPIDocument,
+		filePath,
+	)
+}
+
 func collectLocalRefTargets(document any, sourcePath string) ([]string, error) {
 	rawRefs := make([]string, 0)
 	collectRefs(document, &rawRefs)
@@ -431,4 +593,65 @@ func appendCyclePath(stack []string, node string) []string {
 	cycle := append([]string{}, stack[index:]...)
 	cycle = append(cycle, node)
 	return cycle
+}
+
+func hasOpenAPIExtension(filePath string) bool {
+	switch strings.ToLower(path.Ext(filePath)) {
+	case ".yaml", ".yml", ".json":
+		return true
+	default:
+		return false
+	}
+}
+
+func sniffTopLevelOpenAPIOrSwagger(content []byte, filePath string) bool {
+	if len(content) == 0 {
+		return false
+	}
+
+	const maxSniffBytes = 4096
+	prefix := content
+	if len(prefix) > maxSniffBytes {
+		prefix = prefix[:maxSniffBytes]
+	}
+	snippet := string(prefix)
+
+	switch strings.ToLower(path.Ext(filePath)) {
+	case ".json":
+		return strings.Contains(snippet, `"openapi"`) || strings.Contains(snippet, `"swagger"`)
+	case ".yaml", ".yml":
+		lines := strings.Split(snippet, "\n")
+		for _, rawLine := range lines {
+			trimmed := strings.TrimSpace(rawLine)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			if rawLine != strings.TrimLeft(rawLine, " \t") {
+				continue
+			}
+			if strings.HasPrefix(trimmed, "openapi:") || strings.HasPrefix(trimmed, "swagger:") {
+				return true
+			}
+			if strings.HasPrefix(trimmed, "\"openapi\":") || strings.HasPrefix(trimmed, "\"swagger\":") {
+				return true
+			}
+			if strings.HasPrefix(trimmed, "'openapi':") || strings.HasPrefix(trimmed, "'swagger':") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func listDependencyFiles(rootPath string, documents map[string][]byte) []string {
+	dependencies := make([]string, 0, len(documents))
+	for filePath := range documents {
+		if filePath == rootPath {
+			continue
+		}
+		dependencies = append(dependencies, filePath)
+	}
+	sort.Strings(dependencies)
+	return dependencies
 }

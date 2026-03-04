@@ -51,7 +51,7 @@ Legend: [ ] todo, [x] done.
   - Tests: Table-driven parser tests for comments, anchored `/` patterns, malformed line handling, unsupported negation behavior
 
 ## Bootstrap Resolver Mode
-- [ ] Add resolver entrypoint for full-tree discovery and root validation — init mode must discover roots even with unrelated webhook diff
+- [x] Add resolver entrypoint for full-tree discovery and root validation — init mode must discover roots even with unrelated webhook diff
   - Repository: `shiva`
   - Component: `internal/openapi/resolver.go`
   - Scope: Introduce bootstrap method (for example `ResolveRepositoryOpenAPIAtSHA`) that:

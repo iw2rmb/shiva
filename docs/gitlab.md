@@ -24,6 +24,7 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 ## GitLab APIs Used
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`
 - `GET /projects/:id/repository/files/:path?ref=<sha>`
+- `GET /projects/:id/repository/tree?ref=<sha>&recursive=true` (resolver bootstrap entrypoint, not yet wired into worker orchestration)
 
 No clone/archive strategy is used.
 
@@ -50,6 +51,14 @@ Other errors are retried by worker backoff policy.
 
 ## Current Limitation
 Current ingestion is delta-based from `compare(parent_sha, sha)`. Shiva does not perform initial full-tree bootstrap discovery yet.
+
+Resolver now also provides a bootstrap discovery entrypoint (`ResolveRepositoryOpenAPIAtSHA`) that:
+- lists repository tree at a target SHA,
+- applies `.shivaignore` + built-in ignore defaults,
+- prefilters by OpenAPI-like extensions and lightweight top-level sniff,
+- validates root documents and resolves local `$ref` dependency closure per discovered root.
+
+Worker orchestration still uses delta-only mode until bootstrap routing is implemented in `cmd/shiva`.
 
 ## References
 - Setup and envs: `docs/setup.md`
