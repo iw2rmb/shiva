@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/iw2rmb/shiva/internal/store"
 )
@@ -25,29 +26,115 @@ type readRouteStore interface {
 	) (store.EndpointIndexRecord, bool, error)
 }
 
-type endpointResponse struct {
-	Method      string          `json:"method"`
-	Path        string          `json:"path"`
-	OperationID string          `json:"operation_id,omitempty"`
-	Summary     string          `json:"summary,omitempty"`
-	Deprecated  bool            `json:"deprecated"`
-	RawJSON     json.RawMessage `json:"raw_json"`
+type contentFormat string
+
+const (
+	formatJSON contentFormat = "json"
+	formatYAML contentFormat = "yaml"
+)
+
+var supportedHTTPMethods = map[string]struct{}{
+	"get":     {},
+	"post":    {},
+	"put":     {},
+	"patch":   {},
+	"delete":  {},
+	"head":    {},
+	"options": {},
+	"trace":   {},
 }
 
-func (s *Server) handleGetSpecJSON(c *fiber.Ctx) error {
-	return s.handleGetSpec(c, fiber.MIMEApplicationJSONCharsetUTF8, func(a store.SpecArtifact) []byte {
-		return a.SpecJSON
-	})
+func (s *Server) handleGetSpecNoSelector(c *fiber.Ctx) error {
+	format, ok := parseContentFormat(c.Params("format"))
+	if !ok {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
+	return s.handleGetSpec(c, true, "", format)
 }
 
-func (s *Server) handleGetSpecYAML(c *fiber.Ctx) error {
-	return s.handleGetSpec(c, "application/yaml; charset=utf-8", func(a store.SpecArtifact) []byte {
-		return []byte(a.SpecYAML)
-	})
+func (s *Server) handleGetSpecOrMethodSliceNoSelector(c *fiber.Ctx) error {
+	format, ok := parseContentFormat(c.Params("format"))
+	if !ok {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
+
+	selector, err := decodePathParam(c.Params("selector"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	method := normalizeHTTPMethod(selector)
+	if method != "" {
+		return s.handleGetMethodSlice(c, true, "", method, format)
+	}
+
+	return s.handleGetSpec(c, false, selector, format)
 }
 
-func (s *Server) handleGetSpec(c *fiber.Ctx, contentType string, payload func(store.SpecArtifact) []byte) error {
-	resolved, err := s.resolveReadSelector(c, false)
+func (s *Server) handleGetMethodSliceBySelector(c *fiber.Ctx) error {
+	format, ok := parseContentFormat(c.Params("format"))
+	if !ok {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
+
+	selector, err := decodePathParam(c.Params("selector"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	method, isMethod, err := decodeHTTPMethodParam(c.Params("method"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	if !isMethod {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
+
+	return s.handleGetMethodSlice(c, false, selector, method, format)
+}
+
+func (s *Server) handleGetOperationNoSelector(c *fiber.Ctx) error {
+	method, isMethod, err := decodeHTTPMethodParam(c.Params("method"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	if !isMethod {
+		return c.Next()
+	}
+
+	return s.handleGetOperationSlice(c, true, "", method, c.Params("*"))
+}
+
+func (s *Server) handleGetOperationBySelector(c *fiber.Ctx) error {
+	selector, err := decodePathParam(c.Params("selector"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	method, isMethod, err := decodeHTTPMethodParam(c.Params("method"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	if !isMethod {
+		return c.Next()
+	}
+
+	return s.handleGetOperationSlice(c, false, selector, method, c.Params("*"))
+}
+
+func (s *Server) handleGetSpec(c *fiber.Ctx, noSelector bool, selector string, format contentFormat) error {
+	resolved, err := s.resolveReadSelector(c, noSelector, selector)
 	if err != nil {
 		return s.writeReadRouteError(c, err)
 	}
@@ -62,20 +149,26 @@ func (s *Server) handleGetSpec(c *fiber.Ctx, contentType string, payload func(st
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 
-	c.Set(fiber.HeaderContentType, contentType)
-	return c.Status(fiber.StatusOK).Send(payload(artifact))
+	switch format {
+	case formatJSON:
+		c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
+		return c.Status(fiber.StatusOK).Send(artifact.SpecJSON)
+	case formatYAML:
+		c.Set(fiber.HeaderContentType, "application/yaml; charset=utf-8")
+		return c.Status(fiber.StatusOK).SendString(artifact.SpecYAML)
+	default:
+		return c.SendStatus(fiber.StatusNotFound)
+	}
 }
 
-func (s *Server) handleListEndpointsBySelector(c *fiber.Ctx) error {
-	return s.handleListEndpoints(c, false)
-}
-
-func (s *Server) handleListEndpointsNoSelector(c *fiber.Ctx) error {
-	return s.handleListEndpoints(c, true)
-}
-
-func (s *Server) handleListEndpoints(c *fiber.Ctx, noSelector bool) error {
-	resolved, err := s.resolveReadSelector(c, noSelector)
+func (s *Server) handleGetMethodSlice(
+	c *fiber.Ctx,
+	noSelector bool,
+	selector string,
+	method string,
+	format contentFormat,
+) error {
+	resolved, err := s.resolveReadSelector(c, noSelector, selector)
 	if err != nil {
 		return s.writeReadRouteError(c, err)
 	}
@@ -85,23 +178,32 @@ func (s *Server) handleListEndpoints(c *fiber.Ctx, noSelector bool) error {
 		return s.writeReadRouteError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(mapEndpoints(endpoints))
+	payload, found, err := buildMethodSlicePayload(endpoints, method)
+	if err != nil {
+		return s.writeReadRouteError(c, err)
+	}
+	if !found {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "method slice not found",
+		})
+	}
+
+	return writeSliceResponse(c, format, payload)
 }
 
-func (s *Server) handleGetEndpointBySelector(c *fiber.Ctx) error {
-	resolved, err := s.resolveReadSelector(c, false)
+func (s *Server) handleGetOperationSlice(
+	c *fiber.Ctx,
+	noSelector bool,
+	selector string,
+	method string,
+	rawPath string,
+) error {
+	resolved, err := s.resolveReadSelector(c, noSelector, selector)
 	if err != nil {
 		return s.writeReadRouteError(c, err)
 	}
 
-	method := strings.ToLower(strings.TrimSpace(c.Params("method")))
-	if method == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "method must not be empty",
-		})
-	}
-
-	endpointPath, err := decodeEndpointPathParam(c.Params("*"))
+	endpointPath, format, err := decodeEndpointPathAndFormat(rawPath)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
@@ -123,10 +225,19 @@ func (s *Server) handleGetEndpointBySelector(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(mapEndpoint(endpoint))
+	payload, err := buildOperationSlicePayload(endpoint)
+	if err != nil {
+		return s.writeReadRouteError(c, err)
+	}
+
+	return writeSliceResponse(c, format, payload)
 }
 
-func (s *Server) resolveReadSelector(c *fiber.Ctx, noSelector bool) (store.ResolvedReadSelector, error) {
+func (s *Server) resolveReadSelector(
+	c *fiber.Ctx,
+	noSelector bool,
+	selector string,
+) (store.ResolvedReadSelector, error) {
 	if s.readStore == nil {
 		return store.ResolvedReadSelector{}, errors.New("read store is not configured")
 	}
@@ -153,33 +264,143 @@ func (s *Server) resolveReadSelector(c *fiber.Ctx, noSelector bool) (store.Resol
 		NoSelector: noSelector,
 	}
 	if !noSelector {
-		selector, selectorErr := decodePathParam(c.Params("selector"))
-		if selectorErr != nil {
-			return store.ResolvedReadSelector{}, &store.SelectorResolutionError{
-				Code:      store.SelectorResolutionInvalidInput,
-				TenantKey: tenantKey,
-				RepoPath:  repoPath,
-				Err:       fmt.Errorf("decode selector path parameter: %w", selectorErr),
-			}
-		}
 		input.Selector = selector
 	}
 
 	return s.readStore.ResolveReadSelector(c.Context(), input)
 }
 
-func decodeEndpointPathParam(value string) (string, error) {
+func buildMethodSlicePayload(
+	endpoints []store.EndpointIndexRecord,
+	method string,
+) (map[string]any, bool, error) {
+	paths := make(map[string]map[string]any)
+	for _, endpoint := range endpoints {
+		if endpoint.Method != method {
+			continue
+		}
+
+		operation, err := decodeOperationRawJSON(endpoint.RawJSON)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if _, ok := paths[endpoint.Path]; !ok {
+			paths[endpoint.Path] = make(map[string]any)
+		}
+		paths[endpoint.Path][method] = operation
+	}
+
+	if len(paths) == 0 {
+		return nil, false, nil
+	}
+
+	return map[string]any{"paths": paths}, true, nil
+}
+
+func buildOperationSlicePayload(endpoint store.EndpointIndexRecord) (map[string]any, error) {
+	operation, err := decodeOperationRawJSON(endpoint.RawJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"paths": map[string]any{
+			endpoint.Path: map[string]any{
+				endpoint.Method: operation,
+			},
+		},
+	}, nil
+}
+
+func decodeOperationRawJSON(raw []byte) (map[string]any, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("endpoint raw json must not be empty")
+	}
+
+	var operation any
+	if err := json.Unmarshal(raw, &operation); err != nil {
+		return nil, fmt.Errorf("unmarshal endpoint raw json: %w", err)
+	}
+
+	operationObject, ok := operation.(map[string]any)
+	if !ok {
+		return nil, errors.New("endpoint raw json must be an object")
+	}
+
+	return operationObject, nil
+}
+
+func writeSliceResponse(c *fiber.Ctx, format contentFormat, payload any) error {
+	switch format {
+	case formatJSON:
+		return c.Status(fiber.StatusOK).JSON(payload)
+	case formatYAML:
+		body, err := yaml.Marshal(payload)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": fmt.Sprintf("marshal yaml response: %v", err),
+			})
+		}
+		c.Set(fiber.HeaderContentType, "application/yaml; charset=utf-8")
+		return c.Status(fiber.StatusOK).Send(body)
+	default:
+		return c.SendStatus(fiber.StatusNotFound)
+	}
+}
+
+func decodeHTTPMethodParam(value string) (string, bool, error) {
 	decoded, err := decodePathParam(value)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if decoded == "" {
-		return "", errors.New("endpoint path must not be empty")
+		return "", false, nil
+	}
+
+	method := normalizeHTTPMethod(decoded)
+	if method == "" {
+		return strings.ToLower(strings.TrimSpace(decoded)), false, nil
+	}
+	return method, true, nil
+}
+
+func normalizeHTTPMethod(value string) string {
+	method := strings.ToLower(strings.TrimSpace(value))
+	if _, ok := supportedHTTPMethods[method]; !ok {
+		return ""
+	}
+	return method
+}
+
+func decodeEndpointPathAndFormat(value string) (string, contentFormat, error) {
+	decoded, err := decodePathParam(value)
+	if err != nil {
+		return "", "", err
+	}
+	if decoded == "" {
+		return "", "", errors.New("endpoint path must not be empty")
+	}
+
+	format := formatJSON
+	lowerDecoded := strings.ToLower(decoded)
+	switch {
+	case strings.HasSuffix(lowerDecoded, ".json"):
+		decoded = decoded[:len(decoded)-len(".json")]
+		format = formatJSON
+	case strings.HasSuffix(lowerDecoded, ".yaml"):
+		decoded = decoded[:len(decoded)-len(".yaml")]
+		format = formatYAML
+	}
+
+	decoded = strings.TrimSpace(decoded)
+	if decoded == "" {
+		return "", "", errors.New("endpoint path must not be empty")
 	}
 	if !strings.HasPrefix(decoded, "/") {
 		decoded = "/" + decoded
 	}
-	return decoded, nil
+	return decoded, format, nil
 }
 
 func decodePathParam(value string) (string, error) {
@@ -195,22 +416,14 @@ func decodePathParam(value string) (string, error) {
 	return strings.TrimSpace(decoded), nil
 }
 
-func mapEndpoints(records []store.EndpointIndexRecord) []endpointResponse {
-	mapped := make([]endpointResponse, 0, len(records))
-	for _, record := range records {
-		mapped = append(mapped, mapEndpoint(record))
-	}
-	return mapped
-}
-
-func mapEndpoint(record store.EndpointIndexRecord) endpointResponse {
-	return endpointResponse{
-		Method:      record.Method,
-		Path:        record.Path,
-		OperationID: record.OperationID,
-		Summary:     record.Summary,
-		Deprecated:  record.Deprecated,
-		RawJSON:     json.RawMessage(record.RawJSON),
+func parseContentFormat(value string) (contentFormat, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "json":
+		return formatJSON, true
+	case "yaml", "yml":
+		return formatYAML, true
+	default:
+		return "", false
 	}
 }
 
