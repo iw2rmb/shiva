@@ -1,0 +1,59 @@
+# Webhooks
+
+## Scope
+This document defines webhook contracts used by Shiva:
+- inbound GitLab webhook,
+- outbound subscriber webhooks.
+
+## Inbound GitLab Webhook
+Route:
+- `POST /internal/webhooks/gitlab`
+
+Required headers:
+- `X-Gitlab-Token` (must equal `SHIVA_GITLAB_WEBHOOK_SECRET`),
+- delivery id from first non-empty header:
+  - `X-Gitlab-Delivery`,
+  - `X-Gitlab-Event-UUID`,
+  - `X-Gitlab-Webhook-UUID`.
+
+Payload requirements:
+- valid JSON,
+- `after` must be non-zero commit SHA,
+- `ref` must be `refs/heads/<branch>`.
+
+Response behavior:
+- `202` accepted for new event,
+- `200` accepted for duplicate event,
+- `401` missing token header,
+- `403` invalid token,
+- `400` invalid payload/headers,
+- `503` when webhook secret or store is not configured.
+
+Deduplication is DB-backed by unique `(repo_id, delivery_id)` and `(repo_id, sha)`.
+
+## Outbound Subscriber Webhooks
+Triggered after successful OpenAPI-changed revision processing.
+
+Event types:
+- `spec.updated.full`
+- `spec.updated.diff`
+
+Per event attempt headers:
+- `Content-Type: application/json`
+- `X-Shiva-Timestamp: <RFC3339Nano UTC>`
+- `X-Shiva-Signature: sha256=<hex(hmac_sha256(secret, raw_body))>`
+- `X-Shiva-Event-ID: sub:<subscription_id>:rev:<revision_id>:event:<event_type>`
+
+Delivery model:
+- subscription list is loaded from enabled repo subscriptions,
+- attempts are persisted in `delivery_attempts`,
+- statuses: `pending`, `retry_scheduled`, `succeeded`, `failed`,
+- retries use exponential backoff bounded by subscription settings,
+- terminal `succeeded/failed` blocks duplicate redispatch for the same key.
+
+## References
+- Ingestion and resolver flow: `docs/gitlab.md`
+- Runtime setup and secrets: `docs/setup.md`
+- Endpoint/read route behavior after processing: `docs/endpoints.md`
+- Delivery tables and state: `docs/database.md`
+- Webhook and notifier tests: `docs/testing.md`

@@ -1,70 +1,53 @@
 # Shiva
 
-Shiva is a Go service that tracks OpenAPI changes in GitLab repositories, rebuilds canonical specs, and distributes updates to subscribers. It also serves tenant-scoped, versioned routes for full specs and endpoint-level views.
+Shiva is a Go service that ingests GitLab push events, detects OpenAPI changes, builds canonical specs, stores endpoint indexes, computes semantic diffs, and sends outbound webhook notifications.
 
-## Current State
-- Roadmap status: fully implemented (`roadmap/shiva.md` items 1-12 are complete).
-- Stack: Go, Fiber, PostgreSQL (sqlc + pgx), async worker pipeline.
-- CI/test baseline: full test suite runs with `go test ./...`.
-
-## Implemented Capabilities
-- GitLab webhook ingest with token verification and idempotent delivery handling.
-- Repo-ordered async processing with retries/backoff.
-- GitLab Compare + Repository Files API retrieval (no clone/archive flow).
-- OpenAPI candidate detection and recursive local `$ref` resolution with cycle/fetch limits.
-- Canonical spec build (`json` + `yaml`) and endpoint index persistence.
-- Semantic diff persistence (`spec_changes`) with structured endpoint/parameter/schema changes.
-- Outbound notifications:
-  - event types: `spec.updated.full`, `spec.updated.diff`
-  - HMAC signing (`X-Shiva-Signature`) + timestamp header (`X-Shiva-Timestamp`)
-  - retry/backoff and terminal failure state in `delivery_attempts`
-- Selector-based read API with `404/409` semantics and `ETag`/`If-None-Match` handling.
-- Hardening controls:
-  - correlation IDs in structured logs
-  - ingest/build/delivery metrics at configurable metrics path
-  - tracing spans across ingest/process/build/diff/notify
-  - ingress body-size and rate limiting
+## Current Scope
+- Stack: Go + Fiber + PostgreSQL (`pgx` + `sqlc`).
+- Processing model: async DB-backed worker with retry/backoff.
+- OpenAPI detection: compare-based candidate resolution from GitLab APIs (no full-tree bootstrap discovery yet).
+- Read API: selector-based full spec fetch and endpoint operation slices.
 
 ## HTTP Routes
 - `POST /internal/webhooks/gitlab`
 - `GET /healthz`
-- `GET /internal/metrics` (path configurable via `SHIVA_METRICS_PATH`)
+- `GET /internal/metrics` (or configured `SHIVA_METRICS_PATH`)
 - `GET /{tenant}/{repo}.{json|yaml}`
 - `GET /{tenant}/{repo}/{selector}.{json|yaml}`
 - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{path}`
 - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{selector}/{path}`
 
-`selector` is one of:
-- commit SHA
-- branch name
-- `latest` (default branch latest processed revision)
+Selector semantics:
+- `selector` is commit SHA, branch, or `latest`.
+- no-selector routes resolve to latest processed revision on `main`.
 
-No-selector routes default to latest processed revision on `main`.
-For operation routes, the HTTP request method is the endpoint method selector.
-Operation routes default to JSON and support `.json` / `.yaml` suffix on `{path}`.
+Operation-slice semantics:
+- request HTTP verb is the endpoint method selector,
+- response is JSON by default,
+- `{path}.json` and `{path}.yaml` are supported format addons.
 
-## Configuration
-Environment variables are documented in [docs/runtime-baseline.md](docs/runtime-baseline.md), including:
-- runtime and worker settings
-- GitLab integration settings
-- outbound timeout
-- ingress rate/body limits
-- metrics/tracing controls
+## Quick Start
+1. Set required envs for full mode:
+   - `SHIVA_DATABASE_URL`
+   - `SHIVA_GITLAB_BASE_URL`
+   - `SHIVA_GITLAB_WEBHOOK_SECRET`
+2. Start:
+   - `go run ./cmd/shiva`
+3. Validate:
+   - `go test ./...`
 
-## Documentation Map
+## Documentation
+- Setup and configuration: [docs/setup.md](docs/setup.md)
+- GitLab spec ingestion flow: [docs/gitlab.md](docs/gitlab.md)
+- Endpoint extraction and read routes: [docs/endpoints.md](docs/endpoints.md)
+- Inbound/outbound webhook contracts: [docs/webhooks.md](docs/webhooks.md)
+- Test layout and commands: [docs/testing.md](docs/testing.md)
+- Database schema and sqlc generation: [docs/database.md](docs/database.md)
+
+## Design and Roadmap
 - Architecture/design: [design/shiva.md](design/shiva.md)
+- Monorepo/bootstrap design draft: [design/mono.md](design/mono.md)
 - Implementation roadmap: [roadmap/shiva.md](roadmap/shiva.md)
-- Runtime/config baseline: [docs/runtime-baseline.md](docs/runtime-baseline.md)
-- Webhook ingest: [docs/gitlab-webhook-ingest.md](docs/gitlab-webhook-ingest.md)
-- Worker processing: [docs/ingest-worker-processing.md](docs/ingest-worker-processing.md)
-- OpenAPI resolution: [docs/openapi-candidate-resolution.md](docs/openapi-candidate-resolution.md)
-- Canonical artifacts/index: [docs/canonical-spec-build-persistence.md](docs/canonical-spec-build-persistence.md)
-- Semantic diff: [docs/semantic-diff-engine.md](docs/semantic-diff-engine.md)
-- Outbound notifications: [docs/outbound-webhook-notifications.md](docs/outbound-webhook-notifications.md)
-- Read API selectors/routes: [docs/read-api-selector-resolution.md](docs/read-api-selector-resolution.md)
-- Hardening/observability/security: [docs/hardening-observability-security-controls.md](docs/hardening-observability-security-controls.md)
-- Release readiness: [docs/release-readiness-item-12.md](docs/release-readiness-item-12.md)
-- Operations runbook: [docs/operations-runbook.md](docs/operations-runbook.md)
 
 ## Deployment
-- Minimal Kubernetes manifest: [deploy/k8s/shiva.yaml](deploy/k8s/shiva.yaml)
+- Kubernetes example manifest: [deploy/k8s/shiva.yaml](deploy/k8s/shiva.yaml)

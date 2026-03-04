@@ -208,6 +208,6 @@ Subscribers can filter by API instance.
 
 ## References
 - Base architecture: `design/shiva.md`
-- OpenAPI resolver behavior: `docs/openapi-candidate-resolution.md`
-- Canonical persistence: `docs/canonical-spec-build-persistence.md`
-- Worker processing: `docs/ingest-worker-processing.md`
+- GitLab ingestion and resolver behavior: `docs/gitlab.md`
+- Endpoint extraction and read routes: `docs/endpoints.md`
+- Runtime and configuration: `docs/setup.md`
