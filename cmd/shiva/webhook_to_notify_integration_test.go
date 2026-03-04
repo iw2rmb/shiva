@@ -449,6 +449,32 @@ func (s *integrationRevisionStore) GetRepoBootstrapState(
 	return s.bootstrapState, nil
 }
 
+func (s *integrationRevisionStore) ClearRepoForceRescan(_ context.Context, repoID int64) error {
+	if s.repo.ID != repoID {
+		return fmt.Errorf("repo %d not found", repoID)
+	}
+	s.bootstrapState.ForceRescan = false
+	return nil
+}
+
+func (s *integrationRevisionStore) UpsertAPISpec(_ context.Context, _ store.UpsertAPISpecInput) (store.APISpec, error) {
+	return store.APISpec{}, fmt.Errorf("unexpected UpsertAPISpec call")
+}
+
+func (s *integrationRevisionStore) CreateAPISpecRevision(
+	_ context.Context,
+	_ store.CreateAPISpecRevisionInput,
+) (store.APISpecRevision, error) {
+	return store.APISpecRevision{}, fmt.Errorf("unexpected CreateAPISpecRevision call")
+}
+
+func (s *integrationRevisionStore) ReplaceAPISpecDependencies(
+	_ context.Context,
+	_ store.ReplaceAPISpecDependenciesInput,
+) error {
+	return fmt.Errorf("unexpected ReplaceAPISpecDependencies call")
+}
+
 func (s *integrationRevisionStore) PersistCanonicalSpec(_ context.Context, input store.PersistCanonicalSpecInput) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

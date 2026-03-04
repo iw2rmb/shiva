@@ -15,6 +15,11 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
    - `.shivaignore` + built-in ignore filtering,
    - extension and top-level sniff filtering,
    - root validation and local `$ref` closure resolution.
+   - per discovered root:
+     - upsert `api_specs` by `root_path`,
+     - write `api_spec_revisions` status rows,
+     - replace `api_spec_dependencies`,
+     - build/persist canonical artifact + endpoint index (revision-level storage).
 6. Incremental mode resolver runs:
    - GitLab Compare API (`from=parent_sha`, `to=sha`) to get changed paths,
    - candidate filtering by include globs,
@@ -31,7 +36,7 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 ## GitLab APIs Used
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`
 - `GET /projects/:id/repository/files/:path?ref=<sha>`
-- `GET /projects/:id/repository/tree?ref=<sha>&recursive=true` (resolver bootstrap entrypoint, not yet wired into worker orchestration)
+- `GET /projects/:id/repository/tree?ref=<sha>&recursive=true`
 
 No clone/archive strategy is used.
 
@@ -57,8 +62,9 @@ Marked permanent (revision failed, no further retries for that event):
 Other errors are retried by worker backoff policy.
 
 ## Current Limitation
-Bootstrap routing is now active, but build persistence is still revision-level single-spec storage.
-Per-discovered-root persistence (`api_spec_revisions`, dependency rows, and per-root build loop semantics) is not wired yet.
+Bootstrap now persists per-root API metadata (`api_specs`, `api_spec_revisions`, `api_spec_dependencies`) and isolates root-local permanent build failures so other roots can still build.
+
+Canonical artifact/index/change tables are still keyed by `revision_id`. In multi-root bootstrap, later successful root builds overwrite earlier root artifact/index rows for the same revision.
 
 ## References
 - Setup and envs: `docs/setup.md`

@@ -82,7 +82,7 @@ Legend: [ ] todo, [x] done.
   - Snippets: `mode := decideMode(repoState, job.ParentSha)` then `resolveBootstrap(...)` or `ResolveChangedOpenAPI(...)`
   - Tests: processor tests for mode selection matrix (`parent_sha` empty/non-empty, active specs 0/non-zero, force-rescan flag true/false)
 
-- [ ] Persist bootstrap outputs per discovered root and finalize revision status — bootstrap result semantics must match design
+- [x] Persist bootstrap outputs per discovered root and finalize revision status — bootstrap result semantics must match design
   - Repository: `shiva`
   - Component: `cmd/shiva`, `internal/store`
   - Scope: For each discovered root:

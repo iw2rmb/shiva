@@ -230,6 +230,10 @@ type revisionStore interface {
 	MarkRevisionFailed(ctx context.Context, revisionID int64, errorMessage string) error
 	GetRepoByID(ctx context.Context, repoID int64) (store.Repo, error)
 	GetRepoBootstrapState(ctx context.Context, repoID int64) (store.RepoBootstrapState, error)
+	ClearRepoForceRescan(ctx context.Context, repoID int64) error
+	UpsertAPISpec(ctx context.Context, input store.UpsertAPISpecInput) (store.APISpec, error)
+	CreateAPISpecRevision(ctx context.Context, input store.CreateAPISpecRevisionInput) (store.APISpecRevision, error)
+	ReplaceAPISpecDependencies(ctx context.Context, input store.ReplaceAPISpecDependenciesInput) error
 	PersistCanonicalSpec(ctx context.Context, input store.PersistCanonicalSpecInput) error
 	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 		ctx context.Context,
@@ -250,6 +254,10 @@ type ingestionMode string
 const (
 	ingestionModeIncremental ingestionMode = "incremental"
 	ingestionModeBootstrap   ingestionMode = "bootstrap"
+
+	apiSpecRevisionBuildStatusProcessing = "processing"
+	apiSpecRevisionBuildStatusProcessed  = "processed"
+	apiSpecRevisionBuildStatusFailed     = "failed"
 )
 
 func decideIngestionMode(state store.RepoBootstrapState) ingestionMode {
@@ -259,18 +267,11 @@ func decideIngestionMode(state store.RepoBootstrapState) ingestionMode {
 	return ingestionModeIncremental
 }
 
-func bootstrapRootsToResolutionResult(roots []openapi.RootResolution) openapi.ResolutionResult {
-	if len(roots) == 0 {
-		return openapi.ResolutionResult{
-			OpenAPIChanged: false,
-			CandidateFiles: []string{},
-			Documents:      map[string][]byte{},
-		}
-	}
+func bootstrapRootToResolutionResult(root openapi.RootResolution) openapi.ResolutionResult {
 	return openapi.ResolutionResult{
 		OpenAPIChanged: true,
-		CandidateFiles: []string{roots[0].RootPath},
-		Documents:      roots[0].Documents,
+		CandidateFiles: []string{root.RootPath},
+		Documents:      root.Documents,
 	}
 }
 
@@ -354,6 +355,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	}
 
 	var resolution openapi.ResolutionResult
+	var bootstrapRoots []openapi.RootResolution
 	switch mode {
 	case ingestionModeBootstrap:
 		bootstrapCtx, bootstrapSpan := p.tracer.Start(ctx, "gitlab.bootstrap", trace.WithAttributes(
@@ -372,10 +374,9 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 			bootstrapSpan.RecordError(resolveErr)
 			bootstrapSpan.SetStatus(codes.Error, "openapi bootstrap failed")
 		} else {
-			resolution = bootstrapRootsToResolutionResult(roots)
+			bootstrapRoots = roots
 			bootstrapSpan.SetAttributes(
 				attribute.Int("openapi.bootstrap.root_count", len(roots)),
-				attribute.Bool("openapi.changed", resolution.OpenAPIChanged),
 			)
 			bootstrapSpan.SetStatus(codes.Ok, "")
 		}
@@ -421,7 +422,9 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		return fmt.Errorf("resolve openapi candidates for revision %d: %w", revisionID, err)
 	}
 
-	if resolution.OpenAPIChanged {
+	openAPIChanged := false
+	switch mode {
+	case ingestionModeBootstrap:
 		buildStartedAt := time.Now()
 		buildSuccess := false
 		recordBuildMetric := func() {
@@ -430,51 +433,153 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 			}
 		}
 
-		if err := p.runBuildStage(ctx, job, revisionID, resolution); err != nil {
+		successfulRoots, err := p.processBootstrapRoots(ctx, job, revisionID, bootstrapRoots)
+		if err != nil {
 			recordBuildMetric()
-			if isPermanentOpenAPIProcessingError(err) {
-				if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
-					processSpan.RecordError(markErr)
-					processSpan.SetStatus(codes.Error, "mark revision failed")
-					return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "bootstrap build stage failed")
+			return fmt.Errorf("build bootstrap openapi roots for revision %d: %w", revisionID, err)
+		}
+		openAPIChanged = successfulRoots > 0
+
+		if openAPIChanged {
+			if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
+				recordBuildMetric()
+				processSpan.RecordError(err)
+				processSpan.SetStatus(codes.Error, "semantic diff failed")
+				return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
+			}
+			buildSuccess = true
+		}
+		recordBuildMetric()
+	default:
+		openAPIChanged = resolution.OpenAPIChanged
+		if openAPIChanged {
+			buildStartedAt := time.Now()
+			buildSuccess := false
+			recordBuildMetric := func() {
+				if p.metrics != nil {
+					p.metrics.ObserveBuild(time.Since(buildStartedAt), buildSuccess)
+				}
+			}
+
+			if err := p.runBuildStage(ctx, job, revisionID, resolution); err != nil {
+				recordBuildMetric()
+				if isPermanentOpenAPIProcessingError(err) {
+					if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
+						processSpan.RecordError(markErr)
+						processSpan.SetStatus(codes.Error, "mark revision failed")
+						return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
+					}
+					processSpan.RecordError(err)
+					processSpan.SetStatus(codes.Error, "canonical openapi permanent failure")
+					return worker.Permanent(fmt.Errorf("canonical openapi build failed: %w", err))
 				}
 				processSpan.RecordError(err)
-				processSpan.SetStatus(codes.Error, "canonical openapi permanent failure")
-				return worker.Permanent(fmt.Errorf("canonical openapi build failed: %w", err))
+				processSpan.SetStatus(codes.Error, "build stage failed")
+				return fmt.Errorf("build canonical openapi for revision %d: %w", revisionID, err)
 			}
-			processSpan.RecordError(err)
-			processSpan.SetStatus(codes.Error, "build stage failed")
-			return fmt.Errorf("build canonical openapi for revision %d: %w", revisionID, err)
-		}
 
-		if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
+			if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
+				recordBuildMetric()
+				processSpan.RecordError(err)
+				processSpan.SetStatus(codes.Error, "semantic diff failed")
+				return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
+			}
+			buildSuccess = true
 			recordBuildMetric()
-			processSpan.RecordError(err)
-			processSpan.SetStatus(codes.Error, "semantic diff failed")
-			return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
 		}
-		buildSuccess = true
-		recordBuildMetric()
 	}
 
-	if err := p.store.MarkRevisionProcessed(ctx, revisionID, resolution.OpenAPIChanged); err != nil {
+	if err := p.store.MarkRevisionProcessed(ctx, revisionID, openAPIChanged); err != nil {
 		processSpan.RecordError(err)
 		processSpan.SetStatus(codes.Error, "mark revision processed failed")
 		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
 	}
-	if resolution.OpenAPIChanged {
+	if openAPIChanged {
 		if err := p.emitOutboundNotifications(ctx, repo, revisionID, job); err != nil {
 			processSpan.RecordError(err)
 			processSpan.SetStatus(codes.Error, "notify dispatch failed")
 			return fmt.Errorf("emit outbound notifications for revision %d: %w", revisionID, err)
 		}
 	}
+	if mode == ingestionModeBootstrap {
+		if err := p.store.ClearRepoForceRescan(ctx, job.RepoID); err != nil {
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "clear repo force rescan failed")
+			return fmt.Errorf("clear repo %d force-rescan: %w", job.RepoID, err)
+		}
+	}
 	if logger != nil {
-		logger.Info("revision processed", "openapi_changed", resolution.OpenAPIChanged)
+		logger.Info("revision processed", "openapi_changed", openAPIChanged)
 	}
 
 	processSpan.SetStatus(codes.Ok, "")
 	return nil
+}
+
+func (p revisionProcessor) processBootstrapRoots(
+	ctx context.Context,
+	job worker.QueueJob,
+	revisionID int64,
+	roots []openapi.RootResolution,
+) (int, error) {
+	successfulRoots := 0
+
+	for _, root := range roots {
+		apiSpec, err := p.store.UpsertAPISpec(ctx, store.UpsertAPISpecInput{
+			RepoID:   job.RepoID,
+			RootPath: root.RootPath,
+		})
+		if err != nil {
+			return 0, fmt.Errorf("upsert api spec for root %q: %w", root.RootPath, err)
+		}
+
+		apiSpecRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+			APISpecID:   apiSpec.ID,
+			RevisionID:  revisionID,
+			BuildStatus: apiSpecRevisionBuildStatusProcessing,
+		})
+		if err != nil {
+			return 0, fmt.Errorf("create api spec revision for root %q: %w", root.RootPath, err)
+		}
+
+		if err := p.store.ReplaceAPISpecDependencies(ctx, store.ReplaceAPISpecDependenciesInput{
+			APISpecRevisionID: apiSpecRevision.ID,
+			FilePaths:         root.DependencyFiles,
+		}); err != nil {
+			return 0, fmt.Errorf("replace api spec dependencies for root %q: %w", root.RootPath, err)
+		}
+
+		err = p.runBuildStage(ctx, job, revisionID, bootstrapRootToResolutionResult(root))
+		if err != nil {
+			if isPermanentOpenAPIProcessingError(err) {
+				if _, markErr := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+					APISpecID:   apiSpec.ID,
+					RevisionID:  revisionID,
+					BuildStatus: apiSpecRevisionBuildStatusFailed,
+					Error:       err.Error(),
+				}); markErr != nil {
+					return 0, fmt.Errorf("mark api spec revision failed for root %q: %w", root.RootPath, markErr)
+				}
+				continue
+			}
+
+			return 0, fmt.Errorf("build canonical openapi for root %q: %w", root.RootPath, err)
+		}
+
+		if _, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+			APISpecID:   apiSpec.ID,
+			RevisionID:  revisionID,
+			BuildStatus: apiSpecRevisionBuildStatusProcessed,
+		}); err != nil {
+			return 0, fmt.Errorf("mark api spec revision processed for root %q: %w", root.RootPath, err)
+		}
+
+		successfulRoots++
+	}
+
+	return successfulRoots, nil
 }
 
 func (p revisionProcessor) runBuildStage(

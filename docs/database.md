@@ -26,6 +26,7 @@ This document describes current schema layout and SQL code generation workflow.
 - `ingest_events.status`: `pending | processing | processed | failed`
 - `revisions.status`: `pending | processed | failed | skipped`
 - `api_specs.status`: `active | deleted`
+- `api_spec_revisions.build_status`: processor writes `processing | processed | failed` during bootstrap per-root build loop.
 - `delivery_attempts.status`: `pending | retry_scheduled | succeeded | failed`
 - `repos.openapi_force_rescan`: `true` when next bootstrap decision should force full repository scan.
 

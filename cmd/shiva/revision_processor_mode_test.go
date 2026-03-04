@@ -297,6 +297,31 @@ func (s *modeSelectionRevisionStore) GetRepoBootstrapState(
 	return s.bootstrapState, nil
 }
 
+func (s *modeSelectionRevisionStore) ClearRepoForceRescan(_ context.Context, repoID int64) error {
+	if s.repo.ID != repoID {
+		return fmt.Errorf("repo %d not found", repoID)
+	}
+	return nil
+}
+
+func (s *modeSelectionRevisionStore) UpsertAPISpec(_ context.Context, _ store.UpsertAPISpecInput) (store.APISpec, error) {
+	return store.APISpec{}, errors.New("unexpected UpsertAPISpec call")
+}
+
+func (s *modeSelectionRevisionStore) CreateAPISpecRevision(
+	_ context.Context,
+	_ store.CreateAPISpecRevisionInput,
+) (store.APISpecRevision, error) {
+	return store.APISpecRevision{}, errors.New("unexpected CreateAPISpecRevision call")
+}
+
+func (s *modeSelectionRevisionStore) ReplaceAPISpecDependencies(
+	_ context.Context,
+	_ store.ReplaceAPISpecDependenciesInput,
+) error {
+	return errors.New("unexpected ReplaceAPISpecDependencies call")
+}
+
 func (s *modeSelectionRevisionStore) PersistCanonicalSpec(_ context.Context, _ store.PersistCanonicalSpecInput) error {
 	return errors.New("unexpected PersistCanonicalSpec call")
 }
