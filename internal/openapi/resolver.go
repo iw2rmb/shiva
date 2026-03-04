@@ -151,11 +151,11 @@ func (r *Resolver) ResolveChangedOpenAPI(
 			return ResolutionResult{}, fmt.Errorf("fetch candidate %q: %w", candidatePath, err)
 		}
 
-		parsed, err := parseDocument(content)
+		isRoot, err := isOpenAPIRootDocument(content, candidatePath, true)
 		if err != nil {
-			return ResolutionResult{}, fmt.Errorf("%w: parse %q: %v", ErrInvalidOpenAPIDocument, candidatePath, err)
+			return ResolutionResult{}, err
 		}
-		if !hasTopLevelOpenAPIOrSwagger(parsed) {
+		if !isRoot {
 			return ResolutionResult{}, fmt.Errorf(
 				"%w: %q is missing top-level openapi/swagger field",
 				ErrInvalidOpenAPIDocument,
@@ -179,16 +179,9 @@ func (r *Resolver) ResolveChangedOpenAPI(
 		}, nil
 	}
 
-	documents := make(map[string][]byte, len(rootDocuments))
-	for filePath, content := range rootDocuments {
-		documents[filePath] = content
-	}
-	visitState := make(map[string]visitState, len(roots))
-
-	for _, rootPath := range roots {
-		if err := r.resolveRecursive(ctx, client, projectID, toSHA, rootPath, documents, visitState, nil); err != nil {
-			return ResolutionResult{}, err
-		}
+	documents, err := r.resolveRootSet(ctx, client, projectID, toSHA, roots, rootDocuments)
+	if err != nil {
+		return ResolutionResult{}, err
 	}
 
 	return ResolutionResult{

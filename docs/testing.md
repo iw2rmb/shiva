@@ -26,7 +26,10 @@ Current baseline: full suite passes.
 - GitLab API client behavior.
 - Inbound webhook validation + ingest persistence behavior.
 - Worker retry and permanent-failure handling.
-- OpenAPI resolver (`compare`, candidate filtering, `$ref` recursion/cycle/fetch limit).
+- OpenAPI resolver:
+  - incremental path (`compare`, candidate filtering, strict top-level validation, duplicate candidate collapse),
+  - bootstrap path (`repository/tree` discovery, `.shivaignore` filtering, per-root dependency closure),
+  - `$ref` recursion/cycle/fetch limit guards.
 - Canonical spec build and endpoint extraction.
 - Semantic diff computation.
 - Read route selector resolution and endpoint slice responses.

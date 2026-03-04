@@ -121,6 +121,95 @@ func TestResolverResolveChangedOpenAPI_InvalidTopLevelDocument(t *testing.T) {
 	}
 }
 
+func TestResolverResolveChangedOpenAPI_StrictValidation_ForIncrementalMode(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		openapi  string
+		expected string
+	}{
+		{
+			name:     "invalid yaml document",
+			openapi:  "openapi: [\n",
+			expected: "invalid openapi document",
+		},
+		{
+			name:     "missing top-level field",
+			openapi:  "info:\n  title: Missing Header\n",
+			expected: "missing top-level openapi/swagger field",
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			resolver, err := NewResolver(ResolverConfig{
+				IncludeGlobs: []string{"specs/*.yaml"},
+			})
+			if err != nil {
+				t.Fatalf("NewResolver() unexpected error: %v", err)
+			}
+
+			client := &fakeGitLabClient{
+				changedPaths: []gitlab.ChangedPath{
+					{NewPath: "specs/service.yaml"},
+					{NewPath: "specs/good.yaml"},
+				},
+				files: map[string]string{
+					"specs/service.yaml": testCase.openapi,
+					"specs/good.yaml":    "openapi: 3.1.0\ninfo:\n  title: Good\npaths: {}\n",
+				},
+			}
+
+			_, err = resolver.ResolveChangedOpenAPI(context.Background(), client, 7, "from-sha", "to-sha")
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if !errors.Is(err, ErrInvalidOpenAPIDocument) {
+				t.Fatalf("expected ErrInvalidOpenAPIDocument, got %v", err)
+			}
+			if !strings.Contains(err.Error(), testCase.expected) {
+				t.Fatalf("expected error to contain %q, got %q", testCase.expected, err.Error())
+			}
+		})
+	}
+}
+
+func TestResolverResolveChangedOpenAPI_DeduplicatesChangedCandidates(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := NewResolver(ResolverConfig{
+		IncludeGlobs: []string{"specs/*.yaml"},
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() unexpected error: %v", err)
+	}
+
+	client := &fakeGitLabClient{
+		changedPaths: []gitlab.ChangedPath{
+			{NewPath: "specs/service.yaml"},
+			{NewPath: "specs/service.yaml"},
+		},
+		files: map[string]string{
+			"specs/service.yaml": "openapi: 3.1.0\ninfo:\n  title: Demo\npaths: {}\n",
+		},
+	}
+
+	result, err := resolver.ResolveChangedOpenAPI(context.Background(), client, 7, "from-sha", "to-sha")
+	if err != nil {
+		t.Fatalf("ResolveChangedOpenAPI() unexpected error: %v", err)
+	}
+	if len(result.CandidateFiles) != 1 {
+		t.Fatalf("expected one deduplicated candidate, got %#v", result.CandidateFiles)
+	}
+	if result.CandidateFiles[0] != "specs/service.yaml" {
+		t.Fatalf("expected candidate specs/service.yaml, got %q", result.CandidateFiles[0])
+	}
+}
+
 func TestResolverResolveChangedOpenAPI_ReferenceCycle(t *testing.T) {
 	t.Parallel()
 

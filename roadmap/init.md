@@ -64,7 +64,7 @@ Legend: [ ] todo, [x] done.
   - Snippets: return per-root resolution objects (`root_path`, `documents`, dependency file list) instead of single candidate set
   - Tests: `go test ./internal/openapi` — fixtures for unrelated change bootstrap, `.shivaignore` exclusion, and zero-root repositories (`openapi_changed=false`)
 
-- [ ] Keep existing incremental resolver path intact and explicit — bootstrap adds mode, not hidden behavior changes
+- [x] Keep existing incremental resolver path intact and explicit — bootstrap adds mode, not hidden behavior changes
   - Repository: `shiva`
   - Component: `internal/openapi`
   - Scope: Preserve `ResolveChangedOpenAPI` for incremental mode and factor shared parsing/ref-resolution helpers to avoid duplicated logic
