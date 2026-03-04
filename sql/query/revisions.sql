@@ -27,6 +27,14 @@ SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, stat
 FROM revisions
 WHERE id = sqlc.arg(id);
 
+-- name: GetLatestRevisionByBranch :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
+FROM revisions
+WHERE repo_id = sqlc.arg(repo_id)
+  AND branch = sqlc.arg(branch)
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
 -- name: GetLatestProcessedRevisionByBranch :one
 SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
 FROM revisions

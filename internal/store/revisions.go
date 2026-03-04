@@ -23,12 +23,15 @@ type Repo struct {
 }
 
 type Revision struct {
-	ID          int64
-	RepoID      int64
-	Sha         string
-	Branch      string
-	ParentSHA   string
-	ProcessedAt *time.Time
+	ID             int64
+	RepoID         int64
+	Sha            string
+	Branch         string
+	ParentSHA      string
+	ProcessedAt    *time.Time
+	OpenAPIChanged *bool
+	Status         string
+	Error          string
 }
 
 func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
@@ -159,6 +162,8 @@ func mapRevision(revision sqlc.Revision) Revision {
 		RepoID: revision.RepoID,
 		Sha:    revision.Sha,
 		Branch: revision.Branch,
+		Status: revision.Status,
+		Error:  revision.Error,
 	}
 	if revision.ParentSha.Valid {
 		mapped.ParentSHA = revision.ParentSha.String
@@ -166,6 +171,10 @@ func mapRevision(revision sqlc.Revision) Revision {
 	if revision.ProcessedAt.Valid {
 		processedAt := revision.ProcessedAt.Time.UTC()
 		mapped.ProcessedAt = &processedAt
+	}
+	if revision.OpenapiChanged.Valid {
+		openAPIChanged := revision.OpenapiChanged.Bool
+		mapped.OpenAPIChanged = &openAPIChanged
 	}
 	return mapped
 }

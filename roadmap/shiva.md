@@ -86,7 +86,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - delivery retries and terminal failure states observable in DB.
 
 ## Phase 5: Read API
-10. Implement selector resolution and read routes.
+10. [x] Implement selector resolution and read routes.
 - Deliverables:
   - `GET /{tenant}/{repo}/{selector}/spec.json`
   - `GET /{tenant}/{repo}/{selector}/spec.yaml`

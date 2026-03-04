@@ -39,6 +39,7 @@
 - Canonical artifact build/persistence for item 7 is documented in `docs/canonical-spec-build-persistence.md`.
 - Semantic diff engine for item 8 is documented in `docs/semantic-diff-engine.md`.
 - Outbound notifications for item 9 are documented in `docs/outbound-webhook-notifications.md`.
-- Read API and hardening work (items 10-11) are not implemented yet.
+- Read API selector routes (item 10) are implemented; see `docs/read-api-selector-resolution.md`.
+- Hardening work (item 11) and release-readiness test expansion (item 12) are not implemented yet.
 - Database baseline artifacts are documented in `docs/database-schema-baseline.md`.
 - See `design/shiva.md` for the broader architecture and `roadmap/shiva.md` for remaining items.

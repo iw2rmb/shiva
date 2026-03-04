@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var ErrSpecArtifactNotFound = errors.New("spec artifact not found")
+
 type EndpointIndexRecord struct {
 	Method      string
 	Path        string
@@ -58,7 +60,7 @@ func (s *Store) GetSpecArtifactByRevisionID(ctx context.Context, revisionID int6
 	artifact, err := sqlc.New(s.pool).GetSpecArtifactByRevisionID(ctx, revisionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return SpecArtifact{}, fmt.Errorf("spec artifact not found for revision %d", revisionID)
+			return SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", ErrSpecArtifactNotFound, revisionID)
 		}
 		return SpecArtifact{}, fmt.Errorf("get spec artifact by revision %d: %w", revisionID, err)
 	}

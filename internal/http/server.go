@@ -17,6 +17,7 @@ type Server struct {
 	logger         *slog.Logger
 	store          *store.Store
 	gitlabIngestor gitlabWebhookIngestor
+	readStore      readRouteStore
 }
 
 func New(cfg config.Config, logger *slog.Logger, store *store.Store) *Server {
@@ -29,6 +30,7 @@ func New(cfg config.Config, logger *slog.Logger, store *store.Store) *Server {
 		logger:         logger,
 		store:          store,
 		gitlabIngestor: store,
+		readStore:      store,
 	}
 	srv.registerRoutes()
 	return srv
@@ -45,6 +47,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) registerRoutes() {
 	s.app.Get("/healthz", s.healthz)
 	s.app.Post("/internal/webhooks/gitlab", s.handleGitLabWebhook)
+	s.app.Get("/:tenant/:repo/:selector/spec.json", s.handleGetSpecJSON)
+	s.app.Get("/:tenant/:repo/:selector/spec.yaml", s.handleGetSpecYAML)
+	s.app.Get("/:tenant/:repo/:selector/endpoints", s.handleListEndpointsBySelector)
+	s.app.Get("/:tenant/:repo/:selector/endpoints/:method/*", s.handleGetEndpointBySelector)
+	s.app.Get("/:tenant/:repo/endpoints", s.handleListEndpointsNoSelector)
 }
 
 type healthResponse struct {
