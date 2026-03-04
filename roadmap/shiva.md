@@ -4,7 +4,7 @@
 Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sqlc + pgx, with GitLab Compare API + Repository Files API for OpenAPI detection and retrieval.
 
 ## Phase 1: Foundation
-1. Bootstrap project structure and runtime wiring.
+1. [x] Bootstrap project structure and runtime wiring.
 - Deliverables:
   - `go.mod`
   - `cmd/shiva/main.go`
