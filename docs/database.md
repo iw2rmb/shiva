@@ -30,6 +30,10 @@ This document describes current schema layout and SQL code generation workflow.
 - `delivery_attempts.status`: `pending | retry_scheduled | succeeded | failed`
 - `repos.openapi_force_rescan`: `true` when next bootstrap decision should force full repository scan.
 
+## API Spec Store Primitives
+- `ListActiveAPISpecsWithLatestDependencies(repo_id)`: returns active `api_specs` in `root_path` order with dependency file paths from each spec's latest `api_spec_revisions` row where `build_status='processed'` (ties resolved by `revision_id DESC, id DESC`); specs without processed revisions return an empty dependency list.
+- `MarkAPISpecDeleted(api_spec_id)`: sets `api_specs.status='deleted'` for root deactivation flows.
+
 ## Generation
 sqlc config:
 - `sqlc.yaml`

@@ -31,6 +31,11 @@ type APISpecRevision struct {
 	Error              string
 }
 
+type ActiveAPISpecWithLatestDependencies struct {
+	APISpec
+	DependencyFilePaths []string
+}
+
 type UpsertAPISpecInput struct {
 	RepoID   int64
 	RootPath string
@@ -76,6 +81,20 @@ func (s *Store) CountActiveAPISpecsByRepo(ctx context.Context, repoID int64) (in
 	return countActiveAPISpecsByRepo(ctx, sqlc.New(s.pool), repoID)
 }
 
+func (s *Store) ListActiveAPISpecsWithLatestDependencies(
+	ctx context.Context,
+	repoID int64,
+) ([]ActiveAPISpecWithLatestDependencies, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+	if repoID < 1 {
+		return nil, errors.New("repo id must be positive")
+	}
+
+	return listActiveAPISpecsWithLatestDependencies(ctx, sqlc.New(s.pool), repoID)
+}
+
 func (s *Store) UpsertAPISpec(ctx context.Context, input UpsertAPISpecInput) (APISpec, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return APISpec{}, ErrStoreNotConfigured
@@ -115,6 +134,17 @@ func (s *Store) ReplaceAPISpecDependencies(ctx context.Context, input ReplaceAPI
 	return replaceAPISpecDependencies(ctx, sqlc.New(s.pool), normalized)
 }
 
+func (s *Store) MarkAPISpecDeleted(ctx context.Context, apiSpecID int64) error {
+	if s == nil || !s.configured || s.pool == nil {
+		return ErrStoreNotConfigured
+	}
+	if apiSpecID < 1 {
+		return errors.New("api spec id must be positive")
+	}
+
+	return markAPISpecDeleted(ctx, sqlc.New(s.pool), apiSpecID)
+}
+
 type apiSpecCountQueries interface {
 	CountActiveAPISpecsByRepo(ctx context.Context, repoID int64) (int64, error)
 }
@@ -125,6 +155,45 @@ func countActiveAPISpecsByRepo(ctx context.Context, queries apiSpecCountQueries,
 		return 0, fmt.Errorf("count active api specs for repo %d: %w", repoID, err)
 	}
 	return count, nil
+}
+
+type apiSpecLatestDependencyQueries interface {
+	ListActiveAPISpecsWithLatestDependencies(
+		ctx context.Context,
+		repoID int64,
+	) ([]sqlc.ListActiveAPISpecsWithLatestDependenciesRow, error)
+}
+
+func listActiveAPISpecsWithLatestDependencies(
+	ctx context.Context,
+	queries apiSpecLatestDependencyQueries,
+	repoID int64,
+) ([]ActiveAPISpecWithLatestDependencies, error) {
+	rows, err := queries.ListActiveAPISpecsWithLatestDependencies(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list active api specs with latest dependencies for repo %d: %w", repoID, err)
+	}
+
+	result := make([]ActiveAPISpecWithLatestDependencies, 0, len(rows))
+	for _, row := range rows {
+		dependencyPaths := make([]string, len(row.DependencyPaths))
+		copy(dependencyPaths, row.DependencyPaths)
+
+		result = append(result, ActiveAPISpecWithLatestDependencies{
+			APISpec: mapAPISpec(sqlc.ApiSpec{
+				ID:          row.ID,
+				RepoID:      row.RepoID,
+				RootPath:    row.RootPath,
+				Status:      row.Status,
+				DisplayName: row.DisplayName,
+				CreatedAt:   row.CreatedAt,
+				UpdatedAt:   row.UpdatedAt,
+			}),
+			DependencyFilePaths: dependencyPaths,
+		})
+	}
+
+	return result, nil
 }
 
 type apiSpecUpsertQueries interface {
@@ -199,6 +268,21 @@ func replaceAPISpecDependencies(
 		FilePaths:         input.FilePaths,
 	}); err != nil {
 		return fmt.Errorf("replace api spec dependencies api_spec_revision_id=%d: %w", input.APISpecRevisionID, err)
+	}
+	return nil
+}
+
+type apiSpecDeleteQueries interface {
+	MarkAPISpecDeleted(ctx context.Context, apiSpecID int64) (int64, error)
+}
+
+func markAPISpecDeleted(ctx context.Context, queries apiSpecDeleteQueries, apiSpecID int64) error {
+	rows, err := queries.MarkAPISpecDeleted(ctx, apiSpecID)
+	if err != nil {
+		return fmt.Errorf("mark api spec %d deleted: %w", apiSpecID, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: id=%d", ErrAPISpecNotFound, apiSpecID)
 	}
 	return nil
 }

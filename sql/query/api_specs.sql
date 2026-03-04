@@ -57,3 +57,43 @@ SELECT
     dependency_path
 FROM UNNEST(sqlc.arg(file_paths)::TEXT[]) AS dependency_path
 ON CONFLICT (api_spec_revision_id, file_path) DO NOTHING;
+
+-- name: ListActiveAPISpecsWithLatestDependencies :many
+WITH active_specs AS (
+    SELECT id, repo_id, root_path, status, display_name, created_at, updated_at
+    FROM api_specs
+    WHERE repo_id = sqlc.arg(repo_id)
+      AND status = 'active'
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.id,
+        api_spec_revisions.api_spec_id
+    FROM api_spec_revisions
+    JOIN active_specs ON active_specs.id = api_spec_revisions.api_spec_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.revision_id DESC, api_spec_revisions.id DESC
+)
+SELECT
+    active_specs.id,
+    active_specs.repo_id,
+    active_specs.root_path,
+    active_specs.status,
+    active_specs.display_name,
+    active_specs.created_at,
+    active_specs.updated_at,
+    COALESCE(dependencies.dependency_paths, ARRAY[]::TEXT[])::TEXT[] AS dependency_paths
+FROM active_specs
+LEFT JOIN latest_processed ON latest_processed.api_spec_id = active_specs.id
+LEFT JOIN LATERAL (
+    SELECT ARRAY_AGG(api_spec_dependencies.file_path ORDER BY api_spec_dependencies.file_path)::TEXT[] AS dependency_paths
+    FROM api_spec_dependencies
+    WHERE api_spec_dependencies.api_spec_revision_id = latest_processed.id
+) AS dependencies ON TRUE
+ORDER BY active_specs.root_path ASC;
+
+-- name: MarkAPISpecDeleted :execrows
+UPDATE api_specs
+SET status = 'deleted',
+    updated_at = NOW()
+WHERE id = sqlc.arg(api_spec_id);
