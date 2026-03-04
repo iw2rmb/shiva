@@ -13,7 +13,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
 - Exit criteria:
   - service starts and responds on `/healthz`.
 
-2. Create database schema and sqlc generation.
+2. [x] Create database schema and sqlc generation.
 - Deliverables:
   - `sql/schema/*.sql` migrations for tenants/repos/events/revisions/artifacts/index/changes/delivery attempts
   - `sql/query/*.sql`

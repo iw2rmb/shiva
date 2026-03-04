@@ -25,4 +25,5 @@
 
 ## Notes
 - No webhook ingest, GitLab client, SQL queries, or read routes are implemented yet.
+- Database baseline artifacts are documented in `docs/database-schema-baseline.md`.
 - See `design/shiva.md` for the broader architecture and `roadmap/shiva.md` for remaining items.
