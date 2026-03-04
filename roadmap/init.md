@@ -35,7 +35,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./internal/store` — force-rescan true triggers bootstrap decision inputs; successful bootstrap clears flag
 
 ## GitLab Tree Discovery API
-- [ ] Extend GitLab client with paginated repository tree listing at specific SHA — bootstrap requires full tree enumeration independent of compare diff
+- [x] Extend GitLab client with paginated repository tree listing at specific SHA — bootstrap requires full tree enumeration independent of compare diff
   - Repository: `shiva`
   - Component: `internal/gitlab`
   - Scope: Add `ListRepositoryTree(ctx, projectID, sha, path, recursive)` with internal pagination over `GET /projects/:id/repository/tree`; include typed tree node model and path normalization

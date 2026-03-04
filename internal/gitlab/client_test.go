@@ -223,3 +223,128 @@ func TestClientGetFileContentErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestClientListRepositoryTree(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		path         string
+		recursive    bool
+		makeServer   func(t *testing.T) *httptest.Server
+		wantEntries  []TreeEntry
+		wantErr      bool
+		wantNotFound bool
+	}{
+		{
+			name:      "aggregates all pages and returns files only",
+			path:      "/specs/api",
+			recursive: true,
+			makeServer: func(t *testing.T) *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method != http.MethodGet {
+						t.Fatalf("expected method %s, got %s", http.MethodGet, r.Method)
+					}
+					if r.URL.Path != "/api/v4/projects/42/repository/tree" {
+						t.Fatalf("unexpected path: %s", r.URL.Path)
+					}
+					if got := r.URL.Query().Get("page"); got == "" {
+						t.Fatalf("expected page query param")
+					}
+
+					switch r.URL.Query().Get("page") {
+					case "1":
+						w.Header().Set("X-Next-Page", "2")
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = w.Write([]byte(`[
+							{"id":"111","name":"root.yaml","type":"file","path":"/specs/openapi.yaml"},
+							{"id":"112","name":"ignore","type":"tree","path":"specs/ignore"}
+						]`))
+					case "2":
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = w.Write([]byte(`[
+							{"id":"113","name":"nested.yaml","type":"blob","path":"/specs/nested/openapi.json"},
+							{"id":"114","name":"other","type":"tree","path":"specs/other"}
+						]`))
+					default:
+						t.Fatalf("unexpected page: %s", r.URL.Query().Get("page"))
+					}
+				}))
+			},
+			wantEntries: []TreeEntry{
+				{Path: "specs/openapi.yaml", Type: "file"},
+				{Path: "specs/nested/openapi.json", Type: "file"},
+			},
+		},
+		{
+			name:      "passes path ref recursive query params",
+			path:      "/specs/api",
+			recursive: true,
+			makeServer: func(t *testing.T) *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if got := r.URL.Query().Get("ref"); got != "feedface" {
+						t.Fatalf("expected ref=feedface, got %q", got)
+					}
+					if got := r.URL.Query().Get("recursive"); got != "true" {
+						t.Fatalf("expected recursive=true, got %q", got)
+					}
+					if got := r.URL.Query().Get("path"); got != "specs/api" {
+						t.Fatalf("expected path=specs/api, got %q", got)
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`[{"id":"111","name":"openapi.json","type":"file","path":"specs/openapi.json"}]`))
+				}))
+			},
+			wantEntries: []TreeEntry{
+				{Path: "specs/openapi.json", Type: "file"},
+			},
+		},
+		{
+			name:         "maps 404 to ErrNotFound",
+			path:         "specs",
+			recursive:    false,
+			wantNotFound: true,
+			wantErr:      true,
+			makeServer: func(t *testing.T) *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"message":"404 Not Found"}`))
+				}))
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := tc.makeServer(t)
+			defer server.Close()
+
+			client, err := NewClient(server.URL, "")
+			if err != nil {
+				t.Fatalf("NewClient() unexpected error: %v", err)
+			}
+
+			entries, err := client.ListRepositoryTree(context.Background(), 42, "feedface", tc.path, tc.recursive)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				if tc.wantNotFound {
+					if !errors.Is(err, ErrNotFound) {
+						t.Fatalf("expected ErrNotFound, got %v", err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ListRepositoryTree() unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(entries, tc.wantEntries) {
+				t.Fatalf("entries mismatch: expected %#v, got %#v", tc.wantEntries, entries)
+			}
+		})
+	}
+}

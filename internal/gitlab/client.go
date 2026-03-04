@@ -55,6 +55,11 @@ type ChangedPath struct {
 	DeletedFile bool
 }
 
+type TreeEntry struct {
+	Path string
+	Type string
+}
+
 func NewClient(baseURL, token string, options ...Option) (*Client, error) {
 	normalizedBaseURL, err := normalizeBaseURL(baseURL)
 	if err != nil {
@@ -203,6 +208,79 @@ func (c *Client) GetFileContent(ctx context.Context, projectID int64, filePath, 
 	return decoded, nil
 }
 
+func (c *Client) ListRepositoryTree(ctx context.Context, projectID int64, sha, path string, recursive bool) ([]TreeEntry, error) {
+	if projectID < 1 {
+		return nil, errors.New("project id must be positive")
+	}
+	normalizedSHA := strings.TrimSpace(sha)
+	if normalizedSHA == "" {
+		return nil, errors.New("sha must not be empty")
+	}
+	normalizedPath := normalizeRepositoryPath(path)
+
+	query := url.Values{}
+	query.Set("ref", normalizedSHA)
+	query.Set("recursive", strconv.FormatBool(recursive))
+	query.Set("path", normalizedPath)
+	query.Set("page", "1")
+
+	entries := make([]TreeEntry, 0)
+	for {
+		requestURL := c.makeRequestURL(
+			"/projects/"+strconv.FormatInt(projectID, 10)+"/repository/tree",
+			"",
+			query,
+		)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("build repository tree request: %w", err)
+		}
+
+		response, err := c.do(request)
+		if err != nil {
+			return nil, err
+		}
+
+		if response.StatusCode == http.StatusNotFound {
+			response.Body.Close()
+			return nil, fmt.Errorf("%w: project=%d sha=%q path=%q", ErrNotFound, projectID, normalizedSHA, normalizedPath)
+		}
+		if response.StatusCode < 200 || response.StatusCode > 299 {
+			response.Body.Close()
+			return nil, newAPIError(request, response)
+		}
+
+		var payload []struct {
+			Path string `json:"path"`
+			Type string `json:"type"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+			response.Body.Close()
+			return nil, fmt.Errorf("decode repository tree response: %w", err)
+		}
+		response.Body.Close()
+
+		for _, item := range payload {
+			normalizedType := normalizeTreeNodeType(item.Type)
+			if normalizedType != "file" {
+				continue
+			}
+			entries = append(entries, TreeEntry{
+				Path: normalizeRepositoryPath(item.Path),
+				Type: normalizedType,
+			})
+		}
+
+		nextPage := strings.TrimSpace(response.Header.Get("X-Next-Page"))
+		if nextPage == "" {
+			break
+		}
+		query.Set("page", nextPage)
+	}
+
+	return entries, nil
+}
+
 func normalizeBaseURL(rawBaseURL string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(rawBaseURL)
 	if trimmed == "" {
@@ -227,6 +305,19 @@ func normalizeBaseURL(rawBaseURL string) (*url.URL, error) {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed, nil
+}
+
+func normalizeRepositoryPath(rawPath string) string {
+	return strings.TrimPrefix(strings.TrimSpace(rawPath), "/")
+}
+
+func normalizeTreeNodeType(rawType string) string {
+	switch strings.ToLower(strings.TrimSpace(rawType)) {
+	case "blob":
+		return "file"
+	default:
+		return strings.ToLower(strings.TrimSpace(rawType))
+	}
 }
 
 func (c *Client) makeRequestURL(pathSuffix string, rawPathSuffix string, query url.Values) string {
