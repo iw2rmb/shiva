@@ -24,6 +24,10 @@ VALUES (
     $3,
     $4
 )
+ON CONFLICT (to_revision_id) DO UPDATE
+SET repo_id = EXCLUDED.repo_id,
+    from_revision_id = EXCLUDED.from_revision_id,
+    change_json = EXCLUDED.change_json
 RETURNING id, repo_id, from_revision_id, to_revision_id, change_json, created_at
 `
 

@@ -60,6 +60,42 @@ func (q *Queries) CreateRevision(ctx context.Context, arg CreateRevisionParams) 
 	return i, err
 }
 
+const getLatestProcessedOpenAPIRevisionByBranchExcludingID = `-- name: GetLatestProcessedOpenAPIRevisionByBranchExcludingID :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
+FROM revisions
+WHERE repo_id = $1
+  AND branch = $2
+  AND status = 'processed'
+  AND openapi_changed = TRUE
+  AND id <> $3
+ORDER BY processed_at DESC NULLS LAST, id DESC
+LIMIT 1
+`
+
+type GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams struct {
+	RepoID            int64  `json:"repo_id"`
+	Branch            string `json:"branch"`
+	ExcludeRevisionID int64  `json:"exclude_revision_id"`
+}
+
+func (q *Queries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(ctx context.Context, arg GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams) (Revision, error) {
+	row := q.db.QueryRow(ctx, getLatestProcessedOpenAPIRevisionByBranchExcludingID, arg.RepoID, arg.Branch, arg.ExcludeRevisionID)
+	var i Revision
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
+		&i.Status,
+		&i.Error,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getLatestProcessedRevisionByBranch = `-- name: GetLatestProcessedRevisionByBranch :one
 SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
 FROM revisions

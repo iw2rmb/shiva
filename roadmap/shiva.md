@@ -70,7 +70,7 @@ Implement the Shiva service described in `design/shiva.md` using Go + Fiber + sq
   - endpoint routes can read indexed data.
 
 ## Phase 4: Diff and Notifications
-8. Implement semantic diff engine.
+8. [x] Implement semantic diff engine.
 - Deliverables:
   - compare previous processed revision vs current
   - structured `spec_changes` JSON

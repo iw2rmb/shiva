@@ -48,5 +48,6 @@
 - GitLab webhook ingest: `docs/gitlab-webhook-ingest.md`
 - Worker processing queue: `docs/ingest-worker-processing.md`
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
+- Semantic diff engine: `docs/semantic-diff-engine.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

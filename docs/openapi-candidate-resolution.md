@@ -8,8 +8,9 @@
   - recursive local `$ref` fetch via GitLab Repository Files API,
   - cycle detection and fetch limits.
 - Explicitly out of scope for this item:
-- canonical artifact persistence/index is implemented in item 7 (see `docs/canonical-spec-build-persistence.md`),
-- diff/notify/read API work (items 8-10).
+  - canonical artifact persistence/index is implemented in item 7 (see `docs/canonical-spec-build-persistence.md`),
+  - semantic diff is implemented in item 8 (see `docs/semantic-diff-engine.md`),
+  - outbound notifications and read API work (items 9-10).
 
 ## Components
 - Resolver:
@@ -69,6 +70,7 @@
 - Runtime baseline: `docs/runtime-baseline.md`
 - Worker processing: `docs/ingest-worker-processing.md`
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
+- Semantic diff engine: `docs/semantic-diff-engine.md`
 - GitLab client integrations: `docs/gitlab-client-integrations.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

@@ -36,6 +36,7 @@
 - GitLab API retrieval client for item 5 is documented in `docs/gitlab-client-integrations.md`.
 - OpenAPI candidate detection and `$ref` resolution for item 6 are documented in `docs/openapi-candidate-resolution.md`.
 - Canonical artifact build/persistence for item 7 is documented in `docs/canonical-spec-build-persistence.md`.
-- Diff/notify/read API work (items 8-10) is still not implemented.
+- Semantic diff engine for item 8 is documented in `docs/semantic-diff-engine.md`.
+- Outbound notifications and read API work (items 9-10) are not implemented yet.
 - Database baseline artifacts are documented in `docs/database-schema-baseline.md`.
 - See `design/shiva.md` for the broader architecture and `roadmap/shiva.md` for remaining items.

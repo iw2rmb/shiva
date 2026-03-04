@@ -24,6 +24,7 @@
     - upserts revision from queue event,
     - runs OpenAPI candidate detection + local `$ref` resolution,
     - when OpenAPI changed, builds canonical spec and persists `spec_artifacts` + `endpoint_index`,
+    - computes semantic diff against previous processed OpenAPI baseline and persists `spec_changes`,
     - marks revision `processed` or `failed` with explicit error state.
 
 ## Queue Semantics
@@ -58,5 +59,6 @@
 - Database schema: `docs/database-schema-baseline.md`
 - OpenAPI resolution flow: `docs/openapi-candidate-resolution.md`
 - Canonical build + persistence: `docs/canonical-spec-build-persistence.md`
+- Semantic diff engine: `docs/semantic-diff-engine.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

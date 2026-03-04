@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -256,6 +257,10 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		}); err != nil {
 			return fmt.Errorf("persist canonical openapi for revision %d: %w", revisionID, err)
 		}
+
+		if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
+			return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
+		}
 	}
 
 	if err := p.store.MarkRevisionProcessed(ctx, revisionID, resolution.OpenAPIChanged); err != nil {
@@ -297,4 +302,72 @@ func isPermanentOpenAPIProcessingError(err error) bool {
 	}
 
 	return false
+}
+
+func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.QueueJob, toRevisionID int64) error {
+	previousRevision, hasPreviousRevision, err := p.store.GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+		ctx,
+		job.RepoID,
+		job.Branch,
+		toRevisionID,
+	)
+	if err != nil {
+		return fmt.Errorf("load previous processed openapi revision: %w", err)
+	}
+
+	currentEndpoints, err := p.store.ListEndpointIndexByRevision(ctx, toRevisionID)
+	if err != nil {
+		return fmt.Errorf("load endpoint index for current revision %d: %w", toRevisionID, err)
+	}
+
+	previousEndpoints := make([]store.EndpointIndexRecord, 0)
+	var fromRevisionID *int64
+	if hasPreviousRevision {
+		previousEndpoints, err = p.store.ListEndpointIndexByRevision(ctx, previousRevision.ID)
+		if err != nil {
+			return fmt.Errorf(
+				"load endpoint index for previous revision %d: %w",
+				previousRevision.ID,
+				err,
+			)
+		}
+		fromRevisionIDValue := previousRevision.ID
+		fromRevisionID = &fromRevisionIDValue
+	}
+
+	changes, err := openapi.ComputeSemanticDiff(
+		endpointSnapshots(previousEndpoints),
+		endpointSnapshots(currentEndpoints),
+	)
+	if err != nil {
+		return fmt.Errorf("diff endpoint snapshots: %w", err)
+	}
+
+	changeJSON, err := json.Marshal(changes)
+	if err != nil {
+		return fmt.Errorf("marshal spec change json: %w", err)
+	}
+
+	if err := p.store.PersistSpecChange(ctx, store.PersistSpecChangeInput{
+		RepoID:         job.RepoID,
+		FromRevisionID: fromRevisionID,
+		ToRevisionID:   toRevisionID,
+		ChangeJSON:     changeJSON,
+	}); err != nil {
+		return fmt.Errorf("persist spec change row: %w", err)
+	}
+
+	return nil
+}
+
+func endpointSnapshots(endpoints []store.EndpointIndexRecord) []openapi.EndpointSnapshot {
+	snapshots := make([]openapi.EndpointSnapshot, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		snapshots = append(snapshots, openapi.EndpointSnapshot{
+			Method:  endpoint.Method,
+			Path:    endpoint.Path,
+			RawJSON: endpoint.RawJSON,
+		})
+	}
+	return snapshots
 }

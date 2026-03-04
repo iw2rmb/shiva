@@ -31,6 +31,17 @@ WHERE repo_id = sqlc.arg(repo_id)
 ORDER BY processed_at DESC NULLS LAST, id DESC
 LIMIT 1;
 
+-- name: GetLatestProcessedOpenAPIRevisionByBranchExcludingID :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
+FROM revisions
+WHERE repo_id = sqlc.arg(repo_id)
+  AND branch = sqlc.arg(branch)
+  AND status = 'processed'
+  AND openapi_changed = TRUE
+  AND id <> sqlc.arg(exclude_revision_id)
+ORDER BY processed_at DESC NULLS LAST, id DESC
+LIMIT 1;
+
 -- name: MarkRevisionProcessed :one
 UPDATE revisions
 SET processed_at = NOW(),

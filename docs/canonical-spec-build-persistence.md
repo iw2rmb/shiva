@@ -7,7 +7,7 @@
   - `spec_artifacts` upsert by `revision_id`,
   - `endpoint_index` extraction and replacement writes per revision.
 - Explicitly out of scope for this item:
-  - semantic diff (`spec_changes`, item 8),
+  - semantic diff implementation details (`spec_changes`, item 8),
   - outbound notifications (item 9),
   - read HTTP routes (item 10).
 
@@ -80,5 +80,6 @@
 - Worker processing: `docs/ingest-worker-processing.md`
 - OpenAPI candidate resolution: `docs/openapi-candidate-resolution.md`
 - Database baseline: `docs/database-schema-baseline.md`
+- Semantic diff engine: `docs/semantic-diff-engine.md`
 - Design: `design/shiva.md`
 - Roadmap: `roadmap/shiva.md`

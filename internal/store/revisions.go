@@ -20,6 +20,14 @@ type Repo struct {
 	DefaultBranch   string
 }
 
+type Revision struct {
+	ID        int64
+	RepoID    int64
+	Sha       string
+	Branch    string
+	ParentSHA string
+}
+
 func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return Repo{}, ErrStoreNotConfigured
@@ -76,4 +84,61 @@ func (s *Store) MarkRevisionFailed(ctx context.Context, revisionID int64, errorM
 		return fmt.Errorf("mark revision %d failed: %w", revisionID, err)
 	}
 	return nil
+}
+
+func (s *Store) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+	ctx context.Context,
+	repoID int64,
+	branch string,
+	excludeRevisionID int64,
+) (Revision, bool, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return Revision{}, false, ErrStoreNotConfigured
+	}
+	if repoID < 1 {
+		return Revision{}, false, errors.New("repo id must be positive")
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return Revision{}, false, errors.New("branch must not be empty")
+	}
+	if excludeRevisionID < 1 {
+		return Revision{}, false, errors.New("exclude revision id must be positive")
+	}
+
+	revision, err := sqlc.New(s.pool).GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+		ctx,
+		sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams{
+			RepoID:            repoID,
+			Branch:            branch,
+			ExcludeRevisionID: excludeRevisionID,
+		},
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Revision{}, false, nil
+		}
+		return Revision{}, false, fmt.Errorf(
+			"get latest processed openapi revision for repo %d branch %q excluding %d: %w",
+			repoID,
+			branch,
+			excludeRevisionID,
+			err,
+		)
+	}
+
+	return mapRevision(revision), true, nil
+}
+
+func mapRevision(revision sqlc.Revision) Revision {
+	mapped := Revision{
+		ID:     revision.ID,
+		RepoID: revision.RepoID,
+		Sha:    revision.Sha,
+		Branch: revision.Branch,
+	}
+	if revision.ParentSha.Valid {
+		mapped.ParentSHA = revision.ParentSha.String
+	}
+	return mapped
 }
