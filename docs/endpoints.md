@@ -20,6 +20,8 @@ Endpoint extraction from canonical document:
 
 Endpoints are sorted by `(method, path)` and persisted to `endpoint_index` with unique key `(revision_id, method, path)`.
 
+Persistence is revision-scoped: `PersistCanonicalSpec` upserts `spec_artifacts` and replaces the full `endpoint_index` for a revision. When multiple roots are rebuilt in the same revision, the last successful build wins for both artifact and index rows.
+
 ## Read Routes
 
 ### Full Spec

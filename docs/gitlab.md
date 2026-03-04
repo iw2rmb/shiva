@@ -23,22 +23,33 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
      - build/persist canonical artifact + endpoint index (revision-level storage).
 6. Incremental mode runs:
    - GitLab Compare API (`from=parent_sha`, `to=sha`) once to load changed paths.
-   - Load active `api_specs` with latest dependency sets.
-   - Resolve impacted APIs by changed-path intersection against `{root_path + dependency_paths}`.
-   - For impacted APIs:
-     - if root path is deleted in compare, mark API spec status as `deleted`;
+   - Normalize changed paths and load active `api_specs` with latest `processed` dependency snapshots.
+   - Build impacted set from changed-path intersection against `{root_path + dependency_paths}`.
+   - Rename changes contribute both `old_path` and `new_path` to impact checks.
+   - For each impacted API:
+     - if the root path is deleted in compare, call `MarkAPISpecDeleted`.
      - otherwise, write `api_spec_revisions` `processing`, resolve/build that root at `sha`, then write terminal status:
        - `processed` on success,
        - `failed` on permanent root-local errors (invalid root/`$ref`/cycle/fetch-limit/not-found/GitLab 4xx), while continuing with other APIs.
-   - If no impacted APIs were found and compare includes `new_file` or `renamed_file` paths, run targeted discovery on those changed paths and create/build newly valid roots.
+   - If no impacted APIs are found, run targeted discovery on `new_file` / `renamed_file` candidate paths and create/build newly valid roots.
 7. If at least one API was rebuilt:
    - build canonical JSON+YAML,
    - extract endpoints,
    - persist `spec_artifacts` and `endpoint_index`,
    - compute and persist semantic diff.
-   - Note: deleted-root deactivation without any rebuilt API updates `api_specs` status only; revision-level canonical artifact/diff is not rebuilt in that case.
+   - Note: `openapi_changed` is true only when at least one root built successfully. Deleted-root-only events or zero impacted changes are marked processed with `openapi_changed=false`.
 8. Mark revision processed and emit outbound notifications.
 9. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
+
+## Incremental vs Bootstrap Matrix
+| Dimension | Bootstrap | Incremental |
+|---|---|---|
+| Trigger | `active_api_count == 0` or `openapi_force_rescan == true` | `active_api_count > 0` and `openapi_force_rescan == false` |
+| Discovery scope | Full tree at `sha` | Changed paths from one compare (`from=parent_sha`,`to=sha`) |
+| Rebuild scope | Every discovered root | Impacted roots only, plus fallback discovery when no impacts and create/rename candidates exist |
+| Dependency use | Replaces `api_spec_dependencies` for each discovered root | Reuses latest `api_spec_dependencies` from processed revisions to detect impact |
+| Root deletion | No deletion pass | Deletes matching impacted roots by setting `api_specs.status='deleted'` |
+| Artifact/diff outputs | `openapi_changed=true` if any root built | `openapi_changed=true` if any API build succeeds |
 
 ## GitLab APIs Used
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`
@@ -72,6 +83,10 @@ Incremental mode exception for impacted/fallback per-API execution:
 - the same permanent error classes are isolated to that API (`api_spec_revisions` `failed`) and do not fail the whole revision when other APIs can proceed.
 
 Other errors are retried by worker backoff policy.
+
+Cross-failure behavior:
+- Compare/diff/persist failures in incremental mode are revision-scoped and can fail the whole revision.
+- Per-API/per-root permanent processing errors in incremental mode are scoped to that root and do not block other impacted roots.
 
 ## Current Limitation
 Bootstrap now persists per-root API metadata (`api_specs`, `api_spec_revisions`, `api_spec_dependencies`) and isolates root-local permanent build failures so other roots can still build.

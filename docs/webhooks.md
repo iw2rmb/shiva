@@ -32,7 +32,7 @@ Response behavior:
 Deduplication is DB-backed by unique `(repo_id, delivery_id)` and `(repo_id, sha)`.
 
 ## Outbound Subscriber Webhooks
-Triggered after successful OpenAPI-changed revision processing.
+Triggered only after `openapi_changed=true` revision processing.
 
 Event types:
 - `spec.updated.full`
@@ -50,6 +50,10 @@ Delivery model:
 - statuses: `pending`, `retry_scheduled`, `succeeded`, `failed`,
 - retries use exponential backoff bounded by subscription settings,
 - terminal `succeeded/failed` blocks duplicate redispatch for the same key.
+
+Incremental edge behavior:
+- root-local permanent errors are isolated to `api_spec_revisions` and do not block outbound delivery if another root in the same revision succeeds (`openapi_changed=true`).
+- `openapi_changed=false` (deleted root only, unchanged/no-impact changes, or fallback miss) results in no outbound webhook events.
 
 ## References
 - Ingestion and resolver flow: `docs/gitlab.md`

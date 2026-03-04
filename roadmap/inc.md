@@ -54,7 +54,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./cmd/shiva` — one impacted API fails with invalid root while another succeeds in same revision
 
 ## Documentation Synchronization
-- [ ] Update runtime and verification docs to match implemented incremental behavior — keep docs authoritative for current ingest flow
+- [x] Update runtime and verification docs to match implemented incremental behavior — keep docs authoritative for current ingest flow
   - Repository: `shiva`
   - Component: `docs/gitlab.md`, `docs/database.md`, `docs/testing.md`, `docs/endpoints.md`, `docs/webhooks.md`
   - Scope: Document dependency-intersection incremental flow, fallback discovery trigger, root deletion/deactivation semantics, and added test coverage
