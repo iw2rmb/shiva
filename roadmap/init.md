@@ -6,12 +6,17 @@ Documentation: `design/init.md`, `design/mono.md`, `design/inc.md`, `docs/gitlab
 
 Legend: [ ] todo, [x] done.
 
+## Scope Boundary
+- This roadmap covers full ingestion bootstrap only (`design/init.md`) plus required data foundation from `design/mono.md`.
+- Incremental redesign from `design/inc.md` is the next phase after this roadmap is fully implemented and verified end-to-end.
+- Keep existing incremental delta flow intact in this roadmap, except integration points needed to avoid regressions.
+
 ## Codebase Confirmation
 - [x] Confirm current resolver is delta-only and cannot bootstrap existing specs when first processed revision is unrelated — establishes root-cause baseline from code, not assumptions
   - Repository: `shiva`
   - Component: `cmd/shiva`, `internal/openapi`, `internal/gitlab`
   - Scope: `cmd/shiva/main.go` exits early with `openapi_changed=false` when `parent_sha` is empty; resolver path is `ResolveChangedOpenAPI` only; GitLab client supports compare + file fetch only
-  - Snippets: `revisionProcessor.Process` currently calls `MarkRevisionProcessed(..., false)` when `parent_sha == ""`; resolver uses `CompareChangedPaths(parent_sha, sha)` and candidate filtering from changed files
+  - Snippets: `revisionProcessor.Process` currently calls `MarkRevisionProcessed(..., false)` when `parent_sha == ""`; when `parent_sha != ""`, resolver uses `CompareChangedPaths(parent_sha, sha)` and candidate filtering from changed files
   - Tests: Existing resolver tests in `internal/openapi/resolver_test.go` cover changed-path flow only — no full-tree bootstrap coverage
 
 ## Data Foundation (Required for Init Trigger/Persistence)

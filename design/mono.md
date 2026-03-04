@@ -30,6 +30,7 @@ Current storage, indexing, and read contracts treat one revision as one canonica
 ### New Tables
 - `api_specs`
   - `id`, `repo_id`, `root_path`, `display_name`, `status` (`active|deleted`), timestamps.
+  - `display_name` source: `info.title` from the latest successful root build; fallback to `root_path` when absent.
   - unique: `(repo_id, root_path)`.
 - `api_spec_revisions`
   - `id`, `api_spec_id`, `revision_id`, `root_path_at_revision`, `build_status`, `error`, timestamps.
@@ -39,6 +40,7 @@ Current storage, indexing, and read contracts treat one revision as one canonica
   - unique: `(api_spec_revision_id, file_path)`.
 
 ### Existing Tables Refactor
+- This is a breaking replacement of current revision-keyed artifact/index/change storage.
 - `spec_artifacts`: replace `revision_id` key with `api_spec_revision_id`.
 - `endpoint_index`: key by `api_spec_revision_id`.
 - `spec_changes`: key by `api_spec_id` plus from/to `api_spec_revision_id`.

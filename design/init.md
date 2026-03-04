@@ -5,6 +5,11 @@ This design defines first-time ingestion when a repository has no known API inst
 
 The design assumes no backward compatibility constraints.
 
+## Phase Ordering
+- This document is phase 1 for ingestion correctness.
+- Implement and verify this bootstrap flow end-to-end before implementing `design/inc.md`.
+- Incremental impact/deactivation rules are phase 2 and are out of scope for this phase.
+
 ## Problem
 A delta-only resolver (`compare(parent_sha, sha)` + changed-path filtering) misses existing OpenAPI roots when the first processed revision does not touch spec files.
 
@@ -37,7 +42,10 @@ Discovery uses full repository tree at `sha` and does not depend on compare diff
 4. Fast content sniff:
    - YAML: top-level `openapi:` or `swagger:`.
    - JSON: top-level `"openapi"` or `"swagger"`.
-5. Strict parse and validate with resolver parser.
+5. Parse and validate candidate root:
+   - file parses as YAML/JSON document,
+   - root node is an object/map,
+   - top-level `openapi` or `swagger` key is present.
 
 Only candidates passing step 5 become API roots.
 
@@ -84,9 +92,6 @@ Revision status:
 - `.shivaignore` excludes test fixtures and generated paths.
 - Malformed `.shivaignore` lines are handled deterministically.
 - Zero-discovery bootstrap still marks revision processed with `openapi_changed=false`.
-
-## Open Questions
-- Should `.shivaignore` support negation (`!pattern`) in v1?
 
 ## References
 - Monorepo entities and contracts: `design/mono.md`

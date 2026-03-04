@@ -5,6 +5,11 @@ This design defines update behavior after API instances are already known for a 
 
 The design assumes no backward compatibility constraints.
 
+## Phase Gate
+- This design is the next step after full ingestion bootstrap from `design/init.md` is implemented and verified.
+- It requires monorepo persistence/entities from `design/mono.md` (`api_specs`, `api_spec_revisions`, `api_spec_dependencies`).
+- Until that gate is complete, current delta-only incremental behavior remains expected.
+
 ## Input
 - Changed paths from GitLab compare: `parent_sha -> sha`.
 
@@ -28,6 +33,13 @@ For each active API instance:
 If changed paths include create/rename events matching discovery heuristics and no impacted APIs were found:
 - Run targeted discovery on changed files.
 - Create new API instances for any newly valid roots.
+
+Discovery heuristics are the same candidate filtering pipeline from `design/init.md`:
+- path normalization,
+- ignore filtering,
+- extension prefilter,
+- top-level sniff,
+- parse + top-level `openapi`/`swagger` validation.
 
 ## Failure Handling
 - Invalid root or invalid local `$ref` fails only that API instance revision.
