@@ -33,6 +33,7 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
    - persist `spec_artifacts` and `endpoint_index`,
    - compute and persist semantic diff.
 8. Mark revision processed and emit outbound notifications.
+9. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
 
 ## GitLab APIs Used
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`

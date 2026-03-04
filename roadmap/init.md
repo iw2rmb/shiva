@@ -110,7 +110,7 @@ Legend: [ ] todo, [x] done.
   - Snippets: fake GitLab client implementing both compare and repository-tree endpoints
   - Tests: `go test ./cmd/shiva ./internal/openapi ./internal/gitlab`
 
-- [ ] Update runtime/state docs after implementation — keep `docs/` synchronized with actual behavior in commit series
+- [x] Update runtime/state docs after implementation — keep `docs/` synchronized with actual behavior in commit series
   - Repository: `shiva`
   - Component: `docs/`
   - Scope: Update `docs/gitlab.md`, `docs/database.md`, `docs/setup.md`, `docs/testing.md` to describe bootstrap trigger, tree API usage, `.shivaignore`, and new persistence entities
