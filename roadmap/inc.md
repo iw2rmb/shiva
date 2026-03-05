@@ -60,3 +60,16 @@ Legend: [ ] todo, [x] done.
   - Scope: Document dependency-intersection incremental flow, fallback discovery trigger, root deletion/deactivation semantics, and added test coverage
   - Snippets: explicit mode flow table + failure-scope notes
   - Tests: docs cross-reference pass (`docs/*` link and scope sanity against implemented code)
+
+## Gap Closure: Deleted Root Delivery
+- [x] Ensure deleted-root-only incremental revisions still emit semantic diff notifications when canonical artifact is absent
+  - Repository: `shiva`
+  - Component: `cmd/shiva/main.go`, `internal/notify/notifier.go`, `cmd/shiva/revision_processor_incremental_impact_test.go`, `cmd/shiva/webhook_to_notify_integration_test.go`, `internal/notify/notifier_test.go`, `docs/gitlab.md`, `docs/webhooks.md`, `docs/testing.md`
+  - Scope:
+    - set `openapi_changed=true` for incremental revisions with root deactivations even when no root rebuild succeeded,
+    - persist semantic diff for deletion-only revisions,
+    - make full webhook optional when `spec_artifacts` row is missing and still dispatch `spec.updated.diff`.
+  - Tests:
+    - `go test ./internal/notify`
+    - `go test ./cmd/shiva`
+    - `go test ./...`

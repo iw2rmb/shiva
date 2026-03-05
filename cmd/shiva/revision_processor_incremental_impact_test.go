@@ -33,6 +33,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 		wantFallbackPaths       []string
 		wantMarkedDeletedIDs    []int64
 		wantPersistCanonical    int
+		wantPersistSpecChange   int
 		wantCreateSpecRevisions int
 		wantUpsertRoots         []string
 		wantOpenAPIChanged      bool
@@ -68,6 +69,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 			wantRootResolvePaths:    []string{"apis/pets/openapi.yaml"},
 			wantMarkedDeletedIDs:    []int64{},
 			wantPersistCanonical:    1,
+			wantPersistSpecChange:   1,
 			wantCreateSpecRevisions: 2,
 			wantUpsertRoots:         []string{},
 			wantOpenAPIChanged:      true,
@@ -91,6 +93,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 			wantRootResolvePaths:    []string{},
 			wantMarkedDeletedIDs:    []int64{},
 			wantPersistCanonical:    0,
+			wantPersistSpecChange:   0,
 			wantCreateSpecRevisions: 0,
 			wantUpsertRoots:         []string{},
 			wantOpenAPIChanged:      false,
@@ -114,9 +117,10 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 			wantRootResolvePaths:    []string{},
 			wantMarkedDeletedIDs:    []int64{11},
 			wantPersistCanonical:    0,
+			wantPersistSpecChange:   1,
 			wantCreateSpecRevisions: 0,
 			wantUpsertRoots:         []string{},
-			wantOpenAPIChanged:      false,
+			wantOpenAPIChanged:      true,
 		},
 		{
 			name: "fallback discovery builds create rename candidate when no impacted apis",
@@ -141,6 +145,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 			wantFallbackPaths:       []string{"apis/new/openapi.yaml"},
 			wantMarkedDeletedIDs:    []int64{},
 			wantPersistCanonical:    1,
+			wantPersistSpecChange:   1,
 			wantCreateSpecRevisions: 2,
 			wantUpsertRoots:         []string{"apis/new/openapi.yaml"},
 			wantOpenAPIChanged:      true,
@@ -167,6 +172,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 			wantRootResolvePaths:    []string{"apis/pets/openapi.yaml"},
 			wantMarkedDeletedIDs:    []int64{},
 			wantPersistCanonical:    1,
+			wantPersistSpecChange:   1,
 			wantCreateSpecRevisions: 2,
 			wantUpsertRoots:         []string{},
 			wantOpenAPIChanged:      true,
@@ -226,6 +232,9 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 			assertSortedInt64sEqual(t, "marked deleted ids", storeFake.markDeletedIDs, tc.wantMarkedDeletedIDs)
 			if len(storeFake.persistCanonicalCalls) != tc.wantPersistCanonical {
 				t.Fatalf("expected %d PersistCanonicalSpec calls, got %d", tc.wantPersistCanonical, len(storeFake.persistCanonicalCalls))
+			}
+			if len(storeFake.persistSpecChangeCalls) != tc.wantPersistSpecChange {
+				t.Fatalf("expected %d PersistSpecChange calls, got %d", tc.wantPersistSpecChange, len(storeFake.persistSpecChangeCalls))
 			}
 			if len(storeFake.createAPISpecRevisionCalls) != tc.wantCreateSpecRevisions {
 				t.Fatalf(
@@ -326,6 +335,9 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution_PermanentFailureIs
 
 	if len(storeFake.persistCanonicalCalls) != 1 {
 		t.Fatalf("expected one PersistCanonicalSpec call, got %d", len(storeFake.persistCanonicalCalls))
+	}
+	if len(storeFake.persistSpecChangeCalls) != 1 {
+		t.Fatalf("expected one PersistSpecChange call, got %d", len(storeFake.persistSpecChangeCalls))
 	}
 	if storeFake.markProcessedCalls != 1 {
 		t.Fatalf("expected one MarkRevisionProcessed call, got %d", storeFake.markProcessedCalls)

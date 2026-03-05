@@ -36,6 +36,8 @@ Current baseline: full suite passes.
 - Read route selector resolution and endpoint slice responses.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shiva/webhook_to_notify_integration_test.go`.
+- Delete-only incremental integration path in `cmd/shiva/webhook_to_notify_integration_test.go`:
+  no artifact persisted, `openapi_changed=true`, `spec_changes` persisted, and outbound emits diff-only event.
 - Bootstrap ingest regression guard in `cmd/shiva/webhook_to_notify_integration_test.go`:
   compare has no OpenAPI paths, repository-tree bootstrap still persists artifact/index, and zero-root bootstrap emits no notifications.
 - Incremental impact orchestration in `cmd/shiva/revision_processor_incremental_impact_test.go`:

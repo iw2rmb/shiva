@@ -35,11 +35,16 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 7. If at least one API was rebuilt:
    - build canonical JSON+YAML,
    - extract endpoints,
-   - persist `spec_artifacts` and `endpoint_index`,
-   - compute and persist semantic diff.
-   - Note: `openapi_changed` is true only when at least one root built successfully. Deleted-root-only events or zero impacted changes are marked processed with `openapi_changed=false`.
-8. Mark revision processed and emit outbound notifications.
-9. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
+   - persist `spec_artifacts` and `endpoint_index`.
+8. If at least one API was rebuilt or deactivated (deleted root):
+   - compute and persist semantic diff (`spec_changes`).
+   - mark revision `openapi_changed=true`.
+9. If no API was rebuilt and no API was deactivated:
+   - mark revision `openapi_changed=false`.
+10. Emit outbound notifications:
+   - always emit `spec.updated.diff` for `openapi_changed=true`,
+   - emit `spec.updated.full` only when canonical artifact exists for that revision.
+11. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
 
 ## Incremental vs Bootstrap Matrix
 | Dimension | Bootstrap | Incremental |
@@ -49,7 +54,7 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 | Rebuild scope | Every discovered root | Impacted roots only, plus fallback discovery when no impacts and create/rename candidates exist |
 | Dependency use | Replaces `api_spec_dependencies` for each discovered root | Reuses latest `api_spec_dependencies` from processed revisions to detect impact |
 | Root deletion | No deletion pass | Deletes matching impacted roots by setting `api_specs.status='deleted'` |
-| Artifact/diff outputs | `openapi_changed=true` if any root built | `openapi_changed=true` if any API build succeeds |
+| Artifact/diff outputs | `openapi_changed=true` if any root built | `openapi_changed=true` if any API build succeeds or impacted root is deleted; diff is always emitted for changed revisions, full event only when artifact exists |
 
 ## GitLab APIs Used
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`

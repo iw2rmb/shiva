@@ -53,7 +53,8 @@ Delivery model:
 
 Incremental edge behavior:
 - root-local permanent errors are isolated to `api_spec_revisions` and do not block outbound delivery if another root in the same revision succeeds (`openapi_changed=true`).
-- `openapi_changed=false` (deleted root only, unchanged/no-impact changes, or fallback miss) results in no outbound webhook events.
+- deleted-root-only revisions emit `spec.updated.diff` even when no canonical artifact exists for the revision.
+- `openapi_changed=false` (unchanged/no-impact changes, or fallback miss) results in no outbound webhook events.
 
 ## References
 - Ingestion and resolver flow: `docs/gitlab.md`

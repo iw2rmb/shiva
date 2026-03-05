@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -335,6 +336,65 @@ func TestIntegrationWebhookToNotifyFlow_BootstrapRegressionGuards(t *testing.T) 
 				t.Fatalf("expected %d repository-tree calls, got %d", tc.wantTreeCalls, got)
 			}
 		})
+	}
+}
+
+func TestIntegrationWebhookToNotifyFlow_IncrementalDeletedRootEmitsDiffOnly(t *testing.T) {
+	t.Parallel()
+
+	result := runWebhookToNotifyIntegrationCase(t, integrationWebhookToNotifyCase{
+		parentSHA:      "1111111111111111111111111111111111111111",
+		targetSHA:      "4444444444444444444444444444444444444444",
+		bootstrapState: store.RepoBootstrapState{ActiveAPICount: 1, ForceRescan: false},
+		changedPaths: []gitlab.ChangedPath{
+			{OldPath: "api/openapi.yaml", DeletedFile: true},
+		},
+		files:        map[string]string{},
+		waitOutbound: 1,
+	})
+
+	revision := result.revision
+	if revision.Status != "processed" {
+		t.Fatalf("expected processed revision status, got %q", revision.Status)
+	}
+	if revision.OpenAPIChanged == nil || !*revision.OpenAPIChanged {
+		t.Fatalf("expected openapi_changed=true for deleted-root incremental revision")
+	}
+
+	if _, err := result.revisionStore.GetSpecArtifactByRevisionID(context.Background(), revision.ID); !errors.Is(err, store.ErrSpecArtifactNotFound) {
+		t.Fatalf("expected ErrSpecArtifactNotFound for deleted-root revision artifact lookup, got %v", err)
+	}
+
+	specChange, err := result.revisionStore.GetSpecChangeByToRevision(context.Background(), revision.ID)
+	if err != nil {
+		t.Fatalf("GetSpecChangeByToRevision() unexpected error: %v", err)
+	}
+	if len(specChange.ChangeJSON) == 0 {
+		t.Fatalf("expected spec change payload for deleted-root revision")
+	}
+
+	activeSpecs, err := result.revisionStore.ListActiveAPISpecsWithLatestDependencies(context.Background(), result.revisionStore.repo.ID)
+	if err != nil {
+		t.Fatalf("ListActiveAPISpecsWithLatestDependencies() unexpected error: %v", err)
+	}
+	if len(activeSpecs) != 0 {
+		t.Fatalf("expected deleted root to be deactivated, got %d active specs", len(activeSpecs))
+	}
+
+	if outboundCount := result.outboundCapture.count(); outboundCount != 1 {
+		t.Fatalf("expected 1 outbound notification, got %d", outboundCount)
+	}
+	eventTypes := result.outboundCapture.eventTypes(t)
+	if len(eventTypes) != 1 || eventTypes[0] != store.DeliveryEventTypeSpecUpdatedDiff {
+		t.Fatalf("expected only %q event, got %v", store.DeliveryEventTypeSpecUpdatedDiff, eventTypes)
+	}
+	for _, request := range result.outboundCapture.snapshot() {
+		if strings.TrimSpace(request.signature) == "" {
+			t.Fatalf("expected signature header on outbound request")
+		}
+		if strings.TrimSpace(request.timestamp) == "" {
+			t.Fatalf("expected timestamp header on outbound request")
+		}
 	}
 }
 
@@ -1044,7 +1104,7 @@ func (s *integrationRevisionStore) GetSpecArtifactByRevisionID(_ context.Context
 
 	artifact, exists := s.artifacts[revisionID]
 	if !exists {
-		return store.SpecArtifact{}, fmt.Errorf("artifact revision %d not found", revisionID)
+		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
 	}
 	return artifact, nil
 }

@@ -128,6 +128,86 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 	}
 }
 
+func TestNotifierNotifyRevision_EmitsDiffOnlyWhenFullArtifactMissing(t *testing.T) {
+	t.Parallel()
+
+	type receivedRequest struct {
+		body []byte
+	}
+
+	var (
+		mu       sync.Mutex
+		received []receivedRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		mu.Lock()
+		received = append(received, receivedRequest{body: body})
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	storeMock := newFakeNotifierStore(
+		store.Subscription{
+			ID:                    44,
+			TenantID:              7,
+			RepoID:                9,
+			TargetURL:             server.URL,
+			Secret:                "top-secret",
+			MaxAttempts:           3,
+			BackoffInitialSeconds: 1,
+			BackoffMaxSeconds:     5,
+		},
+	)
+
+	notifier := New(
+		storeMock,
+		WithHTTPClient(server.Client()),
+		WithSleep(func(_ context.Context, _ time.Duration) error { return nil }),
+	)
+
+	err := notifier.NotifyRevision(context.Background(), RevisionNotification{
+		TenantID:    7,
+		TenantKey:   "tenant-alpha",
+		RepoID:      9,
+		RepoPath:    "group/repo",
+		RevisionID:  333,
+		Sha:         "sha-333",
+		Branch:      "main",
+		ProcessedAt: time.Now().UTC(),
+		IncludeFull: false,
+		SpecChange: store.SpecChange{
+			RepoID:       9,
+			ToRevisionID: 333,
+			ChangeJSON:   []byte(`{"version":1,"summary":{"changed_endpoints":1}}`),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NotifyRevision() unexpected error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(received) != 1 {
+		t.Fatalf("expected 1 outbound request, got %d", len(received))
+	}
+
+	var envelope map[string]any
+	if err := json.Unmarshal(received[0].body, &envelope); err != nil {
+		t.Fatalf("unmarshal outbound payload: %v", err)
+	}
+	if eventType, _ := envelope["type"].(string); eventType != store.DeliveryEventTypeSpecUpdatedDiff {
+		t.Fatalf("expected outbound event type %q, got %q", store.DeliveryEventTypeSpecUpdatedDiff, eventType)
+	}
+}
+
 func TestDispatchEvent_RetryAndTerminalStates(t *testing.T) {
 	t.Parallel()
 

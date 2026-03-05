@@ -70,6 +70,7 @@ type RevisionNotification struct {
 	Branch      string
 	ProcessedAt time.Time
 	Artifact    store.SpecArtifact
+	IncludeFull bool
 	SpecChange  store.SpecChange
 	FromSHA     string
 }
@@ -229,23 +230,6 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 	tenantKey := strings.TrimSpace(notification.TenantKey)
 	repoPath := strings.TrimSpace(notification.RepoPath)
 
-	fullEnvelope := eventEnvelope[fullEventPayload]{
-		Type:        store.DeliveryEventTypeSpecUpdatedFull,
-		EventID:     deterministicEnvelopeEventID(notification.RevisionID, store.DeliveryEventTypeSpecUpdatedFull),
-		Tenant:      tenantKey,
-		Repo:        repoPath,
-		RevisionID:  notification.RevisionID,
-		Sha:         notification.Sha,
-		Branch:      notification.Branch,
-		ProcessedAt: processedAtText,
-		Payload: fullEventPayload{
-			ETag:      notification.Artifact.ETag,
-			SizeBytes: notification.Artifact.SizeBytes,
-			SpecJSON:  json.RawMessage(notification.Artifact.SpecJSON),
-			SpecYAML:  notification.Artifact.SpecYAML,
-		},
-	}
-
 	diffEnvelope := eventEnvelope[diffEventPayload]{
 		Type:        store.DeliveryEventTypeSpecUpdatedDiff,
 		EventID:     deterministicEnvelopeEventID(notification.RevisionID, store.DeliveryEventTypeSpecUpdatedDiff),
@@ -264,32 +248,59 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 		},
 	}
 
-	fullBodyWithoutID, err := json.Marshal(fullEnvelope)
-	if err != nil {
-		return nil, fmt.Errorf("marshal full event payload: %w", err)
-	}
 	diffBodyWithoutID, err := json.Marshal(diffEnvelope)
 	if err != nil {
 		return nil, fmt.Errorf("marshal diff event payload: %w", err)
-	}
-	// Validate canonical payload JSON before dispatch.
-	if !json.Valid(fullBodyWithoutID) {
-		return nil, errors.New("full event payload is invalid json")
 	}
 	if !json.Valid(diffBodyWithoutID) {
 		return nil, errors.New("diff event payload is invalid json")
 	}
 
-	return []builtEvent{
-		{
-			eventType: store.DeliveryEventTypeSpecUpdatedFull,
-			body:      fullBodyWithoutID,
-		},
+	events := []builtEvent{
 		{
 			eventType: store.DeliveryEventTypeSpecUpdatedDiff,
 			body:      diffBodyWithoutID,
 		},
-	}, nil
+	}
+
+	includeFull := notification.IncludeFull || hasFullArtifactPayload(notification.Artifact)
+	if !includeFull {
+		return events, nil
+	}
+
+	fullEnvelope := eventEnvelope[fullEventPayload]{
+		Type:        store.DeliveryEventTypeSpecUpdatedFull,
+		EventID:     deterministicEnvelopeEventID(notification.RevisionID, store.DeliveryEventTypeSpecUpdatedFull),
+		Tenant:      tenantKey,
+		Repo:        repoPath,
+		RevisionID:  notification.RevisionID,
+		Sha:         notification.Sha,
+		Branch:      notification.Branch,
+		ProcessedAt: processedAtText,
+		Payload: fullEventPayload{
+			ETag:      notification.Artifact.ETag,
+			SizeBytes: notification.Artifact.SizeBytes,
+			SpecJSON:  json.RawMessage(notification.Artifact.SpecJSON),
+			SpecYAML:  notification.Artifact.SpecYAML,
+		},
+	}
+
+	fullBodyWithoutID, err := json.Marshal(fullEnvelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshal full event payload: %w", err)
+	}
+	if !json.Valid(fullBodyWithoutID) {
+		return nil, errors.New("full event payload is invalid json")
+	}
+
+	return append(events, builtEvent{
+		eventType: store.DeliveryEventTypeSpecUpdatedFull,
+		body:      fullBodyWithoutID,
+	}), nil
+}
+
+func hasFullArtifactPayload(artifact store.SpecArtifact) bool {
+	return len(artifact.SpecJSON) > 0 && strings.TrimSpace(artifact.SpecYAML) != ""
 }
 
 func (n *Notifier) dispatchEvent(

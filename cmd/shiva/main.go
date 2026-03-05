@@ -559,6 +559,7 @@ func (p revisionProcessor) processIncrementalRevision(
 	compareSpan.End()
 
 	rebuiltAPIs := 0
+	deactivatedAPIs := 0
 	for _, item := range impacted {
 		if item.rootDeleted {
 			if err := p.store.MarkAPISpecDeleted(ctx, item.spec.ID); err != nil {
@@ -569,6 +570,7 @@ func (p revisionProcessor) processIncrementalRevision(
 					err,
 				)
 			}
+			deactivatedAPIs++
 			continue
 		}
 
@@ -590,13 +592,18 @@ func (p revisionProcessor) processIncrementalRevision(
 	}
 
 	if rebuiltAPIs == 0 {
-		return false, nil
+		if deactivatedAPIs == 0 {
+			return false, nil
+		}
+		if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
+			return false, fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
+		}
+		return true, nil
 	}
 
 	if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
 		return false, fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
 	}
-
 	return true, nil
 }
 
@@ -1035,8 +1042,13 @@ func (p revisionProcessor) emitOutboundNotifications(
 	}
 
 	artifact, err := p.store.GetSpecArtifactByRevisionID(ctx, revisionID)
+	includeFullEvent := true
 	if err != nil {
-		return fmt.Errorf("load spec artifact for revision %d: %w", revisionID, err)
+		if errors.Is(err, store.ErrSpecArtifactNotFound) {
+			includeFullEvent = false
+		} else {
+			return fmt.Errorf("load spec artifact for revision %d: %w", revisionID, err)
+		}
 	}
 
 	specChange, err := p.store.GetSpecChangeByToRevision(ctx, revisionID)
@@ -1069,6 +1081,7 @@ func (p revisionProcessor) emitOutboundNotifications(
 		Branch:      revision.Branch,
 		ProcessedAt: processedAt,
 		Artifact:    artifact,
+		IncludeFull: includeFullEvent,
 		SpecChange:  specChange,
 		FromSHA:     fromSHA,
 	}); err != nil {
