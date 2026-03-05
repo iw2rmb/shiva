@@ -54,18 +54,43 @@ Current storage, indexing, and read contracts treat one revision as one canonica
 
 ## Read API Contract
 
-### API Identity in Routes
-Read routes include API selector segment:
-- `GET /{tenant}/{repo}/{api}.{json|yaml}`
-- `GET /{tenant}/{repo}/{selector}/{api}.{json|yaml}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{api}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{selector}/{api}/{path}`
+### Route Namespace
+- Shiva routes use `/v1/...`.
+- Service routes (webhooks, internal endpoints) stay under `/v1/...` outside `specs` and `routes`.
+- Spec/listing routes are under `/v1/specs/...`.
+- Endpoint routes are under `/v1/routes/...`.
 
-`api` is URL-encoded `root_path` and is stable.
+### Selector Contract
+- `selector` is optional.
+- `selector` format is short SHA: exactly 8 lowercase hex chars (`sha[:8]`).
+- Missing selector resolves to `HEAD` on `main`.
+- Branch remains stored in DB metadata; branch is not part of read-route selector.
+
+### API Identity in Routes
+- Single-spec routes do not include API segment.
+- Monorepo routes require API segment with delimiter guards:
+  - `/-/{api}/-/`
+- `api` is raw `root_path` (not URL-encoded), bounded by `/-/` on both sides.
+
+Specs routes:
+- Single-spec:
+  - `GET /v1/specs/{tenant}/{repo}/{openapi|index}.{yaml|json}`
+  - `GET /v1/specs/{tenant}/{repo}/{selector}/{openapi|index}.{yaml|json}`
+- Monorepo:
+  - `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{openapi|index}.{yaml|json}`
+  - `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{selector}/{openapi|index}.{yaml|json}`
+
+Endpoint routes:
+- Single-spec:
+  - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{path}`
+  - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{selector}/{path}`
+- Monorepo:
+  - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/-/{api}/-/{path}`
+  - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/-/{api}/-/{selector}/{path}`
 
 ### API Listing Routes
-- `GET /{tenant}/{repo}/apis`
-- `GET /{tenant}/{repo}/{selector}/apis`
+- `GET /v1/specs/{tenant}/{repo}/apis`
+- `GET /v1/specs/{tenant}/{repo}/{selector}/apis`
 
 Response includes `api` (root path), status, and last processed revision.
 
@@ -87,7 +112,8 @@ Subscribers can filter by API instance.
 ## Tests
 - Two roots in one repo produce independent artifacts and diffs.
 - One API failure does not block another API build in same repo revision.
-- Read routes resolve the correct API by root path.
+- Read routes resolve the correct API by root path and respect `/-/{api}/-/` delimiter parsing.
+- Selector routes accept only 8-char SHA selector and default to `HEAD` on `main` when omitted.
 - Notification payloads include stable API identity.
 
 ## Open Questions
