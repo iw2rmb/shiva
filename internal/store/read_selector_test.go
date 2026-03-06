@@ -13,27 +13,16 @@ import (
 func TestResolveReadSelector_NoSelectorDefaultsToMainHead(t *testing.T) {
 	t.Parallel()
 
-	queries := &fakeSelectorResolutionQueries{
-		tenant: sqlc.Tenant{ID: 3, Key: "tenant-a"},
-		repo: sqlc.Repo{
-			ID:                44,
-			TenantID:          3,
-			PathWithNamespace: "acme/platform-api",
-			DefaultBranch:     "release",
-		},
-		latestByBranch: map[string]sqlc.Revision{
-			mainBranchName: newSelectorTestRevision(500, "processed", boolPtr(false), mainBranchName, "main-head"),
-		},
-		openAPIByBranch: map[string]sqlc.Revision{
-			mainBranchName: newSelectorTestRevision(490, "processed", boolPtr(true), mainBranchName, "main-artifact"),
-		},
+	queries := newSelectorTestQueries()
+	queries.repo.DefaultBranch = "release"
+	queries.latestByBranch = map[string]sqlc.Revision{
+		mainBranchName: newSelectorTestRevision(500, "processed", boolPtr(false), mainBranchName, "main-head"),
+	}
+	queries.openAPIByBranch = map[string]sqlc.Revision{
+		mainBranchName: newSelectorTestRevision(490, "processed", boolPtr(true), mainBranchName, "main-artifact"),
 	}
 
-	resolved, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
-		tenantKey: "tenant-a",
-		repoPath:  "acme/platform-api",
-		kind:      SelectorKindNoSelector,
-	})
+	resolved, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindNoSelector, ""))
 	if err != nil {
 		t.Fatalf("resolveReadSelector() unexpected error: %v", err)
 	}
@@ -52,24 +41,12 @@ func TestResolveReadSelector_NoSelectorDefaultsToMainHead(t *testing.T) {
 func TestResolveReadSelector_NoSelectorHeadUnprocessedReturnsConflict(t *testing.T) {
 	t.Parallel()
 
-	queries := &fakeSelectorResolutionQueries{
-		tenant: sqlc.Tenant{ID: 3, Key: "tenant-a"},
-		repo: sqlc.Repo{
-			ID:                44,
-			TenantID:          3,
-			PathWithNamespace: "acme/platform-api",
-			DefaultBranch:     "main",
-		},
-		latestByBranch: map[string]sqlc.Revision{
-			mainBranchName: newSelectorTestRevision(501, "pending", nil, mainBranchName, "main-head"),
-		},
+	queries := newSelectorTestQueries()
+	queries.latestByBranch = map[string]sqlc.Revision{
+		mainBranchName: newSelectorTestRevision(501, "pending", nil, mainBranchName, "main-head"),
 	}
 
-	_, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
-		tenantKey: "tenant-a",
-		repoPath:  "acme/platform-api",
-		kind:      SelectorKindNoSelector,
-	})
+	_, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindNoSelector, ""))
 	if err == nil {
 		t.Fatalf("expected unprocessed selector error")
 	}
@@ -89,31 +66,18 @@ func TestResolveReadSelector_NoSelectorHeadUnprocessedReturnsConflict(t *testing
 func TestResolveReadSelector_SHAProcessedWithoutOpenAPIArtifactReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
-	queries := &fakeSelectorResolutionQueries{
-		tenant: sqlc.Tenant{ID: 3, Key: "tenant-a"},
-		repo: sqlc.Repo{
-			ID:                44,
-			TenantID:          3,
-			PathWithNamespace: "acme/platform-api",
-			DefaultBranch:     "main",
-		},
-		bySHAPrefix: map[string]sqlc.Revision{
-			"11111111": newSelectorTestRevision(
-				700,
-				"processed",
-				boolPtr(false),
-				"main",
-				"1111111111111111111111111111111111111111",
-			),
-		},
+	queries := newSelectorTestQueries()
+	queries.bySHAPrefix = map[string]sqlc.Revision{
+		"11111111": newSelectorTestRevision(
+			700,
+			"processed",
+			boolPtr(false),
+			"main",
+			"1111111111111111111111111111111111111111",
+		),
 	}
 
-	_, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
-		tenantKey: "tenant-a",
-		repoPath:  "acme/platform-api",
-		selector:  "11111111",
-		kind:      SelectorKindSHA,
-	})
+	_, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindSHA, "11111111"))
 	if err == nil {
 		t.Fatalf("expected not found selector error")
 	}
@@ -125,22 +89,9 @@ func TestResolveReadSelector_SHAProcessedWithoutOpenAPIArtifactReturnsNotFound(t
 func TestResolveReadSelector_NotFoundShortSHA(t *testing.T) {
 	t.Parallel()
 
-	queries := &fakeSelectorResolutionQueries{
-		tenant: sqlc.Tenant{ID: 3, Key: "tenant-a"},
-		repo: sqlc.Repo{
-			ID:                44,
-			TenantID:          3,
-			PathWithNamespace: "acme/platform-api",
-			DefaultBranch:     "main",
-		},
-	}
+	queries := newSelectorTestQueries()
 
-	_, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
-		tenantKey: "tenant-a",
-		repoPath:  "acme/platform-api",
-		selector:  "deadbeef",
-		kind:      SelectorKindSHA,
-	})
+	_, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindSHA, "deadbeef"))
 	if err == nil {
 		t.Fatalf("expected not found selector error")
 	}
@@ -266,6 +217,27 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 				t.Fatalf("expected selector %q, got %q", testCase.selector, normalized.selector)
 			}
 		})
+	}
+}
+
+func newSelectorTestQueries() *fakeSelectorResolutionQueries {
+	return &fakeSelectorResolutionQueries{
+		tenant: sqlc.Tenant{ID: 3, Key: "tenant-a"},
+		repo: sqlc.Repo{
+			ID:                44,
+			TenantID:          3,
+			PathWithNamespace: "acme/platform-api",
+			DefaultBranch:     "main",
+		},
+	}
+}
+
+func newSelectorTestInput(kind SelectorKind, selector string) normalizedResolveReadSelectorInput {
+	return normalizedResolveReadSelectorInput{
+		tenantKey: "tenant-a",
+		repoPath:  "acme/platform-api",
+		kind:      kind,
+		selector:  selector,
 	}
 }
 
