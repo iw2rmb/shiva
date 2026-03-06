@@ -30,60 +30,60 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 		{
 			name:   "no-selector spec route",
 			method: http.MethodGet,
-			path:   "/tenant-a/acme%2Fplatform-api.json",
+			path:   "/v1/specs/tenant-a/acme-platform-api/openapi.json",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey:  "tenant-a",
-				RepoPath:   "acme/platform-api",
+				RepoPath:   "acme-platform-api",
 				NoSelector: true,
 			},
 		},
 		{
 			name:   "selector spec route",
 			method: http.MethodGet,
-			path:   "/tenant-a/acme%2Fplatform-api/latest.json",
+			path:   "/v1/specs/tenant-a/acme-platform-api/latest/openapi.json",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
+				RepoPath:  "acme-platform-api",
 				Selector:  "latest",
 			},
 		},
 		{
 			name:   "selector spec route with sha",
 			method: http.MethodGet,
-			path:   fmt.Sprintf("/tenant-a/acme%%2Fplatform-api/%s.yaml", shaSelector),
+			path:   fmt.Sprintf("/v1/specs/tenant-a/acme-platform-api/%s/openapi.yaml", shaSelector),
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
+				RepoPath:  "acme-platform-api",
 				Selector:  shaSelector,
 			},
 		},
 		{
 			name:   "operation slice route without selector",
 			method: http.MethodGet,
-			path:   "/tenant-a/acme%2Fplatform-api/%2Fpets",
+			path:   "/v1/routes/tenant-a/acme-platform-api/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey:  "tenant-a",
-				RepoPath:   "acme/platform-api",
+				RepoPath:   "acme-platform-api",
 				NoSelector: true,
 			},
 		},
 		{
 			name:   "operation slice route with selector",
 			method: http.MethodGet,
-			path:   "/tenant-a/acme%2Fplatform-api/release/%2Fpets",
+			path:   "/v1/routes/tenant-a/acme-platform-api/release/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
+				RepoPath:  "acme-platform-api",
 				Selector:  "release",
 			},
 		},
 		{
 			name:   "operation route uses request method",
 			method: http.MethodPost,
-			path:   "/tenant-a/acme%2Fplatform-api/release/%2Fpets",
+			path:   "/v1/routes/tenant-a/acme-platform-api/release/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
+				RepoPath:  "acme-platform-api",
 				Selector:  "release",
 			},
 		},
@@ -97,10 +97,10 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			readStore := &fakeReadRouteStore{
 				resolved: store.ResolvedReadSelector{Revision: store.Revision{ID: 21}},
 				artifact: store.SpecArtifact{
-					RevisionID: 21,
-					SpecJSON:   []byte(`{"openapi":"3.1.0","paths":{}}`),
-					SpecYAML:   "openapi: 3.1.0\npaths: {}\n",
-					ETag:       "\"etag-21\"",
+					APISpecRevisionID: 21,
+					SpecJSON:          []byte(`{"openapi":"3.1.0","paths":{}}`),
+					SpecYAML:          "openapi: 3.1.0\npaths: {}\n",
+					ETag:              "\"etag-21\"",
 				},
 				endpoint: store.EndpointIndexRecord{
 					Method:  "get",
@@ -127,6 +127,163 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 			}
 			if !reflect.DeepEqual(readStore.resolveInputs[0], testCase.expectedInput) {
 				t.Fatalf("unexpected selector resolution input: %+v", readStore.resolveInputs[0])
+			}
+		})
+	}
+}
+
+func TestReadRoutes_DelimitedMonorepoPathParsing(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                 string
+		path                 string
+		method               string
+		expectedAPIRoot      string
+		expectApiLookup      bool
+		expectSingleLookup   bool
+		expectEndpointLookup bool
+	}{
+		{
+			name:                 "single-spec route ignores api delimiter",
+			path:                 "/v1/routes/tenant-a/repo/%2Fpets",
+			method:               http.MethodGet,
+			expectApiLookup:      false,
+			expectSingleLookup:   true,
+			expectEndpointLookup: true,
+		},
+		{
+			name:                 "monorepo route resolves api path with slash-delimited api root",
+			path:                 "/v1/routes/tenant-a/repo/-/platform/api/-/release/%2Fpets",
+			method:               http.MethodGet,
+			expectedAPIRoot:      "platform/api",
+			expectApiLookup:      true,
+			expectSingleLookup:   false,
+			expectEndpointLookup: true,
+		},
+		{
+			name:                 "monorepo spec route resolves api path and artifact",
+			path:                 "/v1/specs/tenant-a/repo/-/platform/api/-/openapi.json",
+			method:               http.MethodGet,
+			expectedAPIRoot:      "platform/api",
+			expectApiLookup:      true,
+			expectSingleLookup:   false,
+			expectEndpointLookup: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			readStore := &fakeReadRouteStore{
+				resolved: store.ResolvedReadSelector{
+					RepoID:   101,
+					Revision: store.Revision{ID: 44},
+				},
+				apiSpecRevisionIDByRepoAndRootPathResult: 401,
+				artifact: store.SpecArtifact{
+					APISpecRevisionID: 401,
+					SpecJSON:          []byte(`{"openapi":"3.1.0","paths":{}}`),
+					SpecYAML:          "openapi: 3.1.0\npaths: {}\n",
+					ETag:              "\"etag-401\"",
+				},
+				endpoint: store.EndpointIndexRecord{
+					Method:  "get",
+					Path:    "/pets",
+					RawJSON: []byte(`{"responses":{"200":{"description":"ok"}}}`),
+				},
+				endpointFound: true,
+			}
+			server := newReadRouteTestServer(readStore)
+
+			resp, err := server.App().Test(httptest.NewRequest(testCase.method, testCase.path, nil), -1)
+			if err != nil {
+				t.Fatalf("http test request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, string(body))
+			}
+
+			if testCase.expectApiLookup {
+				if len(readStore.apiSpecLookupInputs) != 1 {
+					t.Fatalf("expected one API lookup, got %d", len(readStore.apiSpecLookupInputs))
+				}
+				if readStore.apiSpecLookupInputs[0].APIRoot != testCase.expectedAPIRoot {
+					t.Fatalf("expected api root %q, got %q", testCase.expectedAPIRoot, readStore.apiSpecLookupInputs[0].APIRoot)
+				}
+				if testCase.expectEndpointLookup && readStore.lastEndpointLookupAPISpec.RevisionID != 401 {
+					t.Fatalf("expected api-spec endpoint revision id 401, got %d", readStore.lastEndpointLookupAPISpec.RevisionID)
+				}
+				if readStore.lastEndpointLookup.RevisionID != 0 {
+					t.Fatalf("expected no single-spec endpoint lookup, got %+v", readStore.lastEndpointLookup)
+				}
+				if !testCase.expectEndpointLookup && readStore.lastEndpointLookupAPISpec != (struct {
+					RevisionID int64
+					Method     string
+					Path       string
+				}{}) {
+					t.Fatalf("expected no api-spec endpoint lookup, got %+v", readStore.lastEndpointLookupAPISpec)
+				}
+			}
+
+			if testCase.expectSingleLookup {
+				if len(readStore.apiSpecLookupInputs) != 0 {
+					t.Fatalf("expected no API lookup, got %d", len(readStore.apiSpecLookupInputs))
+				}
+				if readStore.lastEndpointLookup.RevisionID != 44 {
+					t.Fatalf("expected single-spec endpoint lookup by repo revision, got %d", readStore.lastEndpointLookup.RevisionID)
+				}
+			}
+		})
+	}
+}
+
+func TestReadRoutes_RejectMalformedMonorepoDelimiter(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "missing closing delimiter",
+			path: "/v1/routes/tenant-a/repo/-/platform/api/%2Fpets",
+		},
+		{
+			name: "empty api root",
+			path: "/v1/specs/tenant-a/repo/-/-/openapi.json",
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			readStore := &fakeReadRouteStore{
+				resolved: store.ResolvedReadSelector{
+					RepoID:   101,
+					Revision: store.Revision{ID: 44},
+				},
+			}
+			server := newReadRouteTestServer(readStore)
+
+			resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, testCase.path, nil), -1)
+			if err != nil {
+				t.Fatalf("http test request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d", resp.StatusCode)
+			}
+			if len(readStore.resolveInputs) != 0 {
+				t.Fatalf("expected malformed delimiter path to reject before selector resolution")
 			}
 		})
 	}
@@ -181,7 +338,7 @@ func TestReadRoutes_StatusMappingForSelectorAndArtifactErrors(t *testing.T) {
 			}
 			server := newReadRouteTestServer(readStore)
 
-			req := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/latest.json", nil)
+			req := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/latest/openapi.json", nil)
 			resp, err := server.App().Test(req, -1)
 			if err != nil {
 				t.Fatalf("http test request failed: %v", err)
@@ -201,15 +358,15 @@ func TestSpecRoutes_ETagSupport(t *testing.T) {
 	readStore := &fakeReadRouteStore{
 		resolved: store.ResolvedReadSelector{Revision: store.Revision{ID: 33}},
 		artifact: store.SpecArtifact{
-			RevisionID: 33,
-			SpecJSON:   []byte(`{"openapi":"3.1.0","paths":{}}`),
-			SpecYAML:   "openapi: 3.1.0\npaths: {}\n",
-			ETag:       "\"etag-33\"",
+			APISpecRevisionID: 33,
+			SpecJSON:          []byte(`{"openapi":"3.1.0","paths":{}}`),
+			SpecYAML:          "openapi: 3.1.0\npaths: {}\n",
+			ETag:              "\"etag-33\"",
 		},
 	}
 	server := newReadRouteTestServer(readStore)
 
-	etagRequest := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/latest.json", nil)
+	etagRequest := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/latest/openapi.json", nil)
 	etagRequest.Header.Set("If-None-Match", "\"etag-33\"")
 
 	etagResponse, err := server.App().Test(etagRequest, -1)
@@ -225,7 +382,7 @@ func TestSpecRoutes_ETagSupport(t *testing.T) {
 		t.Fatalf("expected ETag header %q, got %q", "\"etag-33\"", got)
 	}
 
-	normalRequest := httptest.NewRequest(http.MethodGet, "/tenant-a/repo.yaml", nil)
+	normalRequest := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/openapi.yaml", nil)
 	normalResponse, err := server.App().Test(normalRequest, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -262,7 +419,7 @@ func TestOperationRoute_UsesRequestMethodAndFormatAddon(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	jsonReq := httptest.NewRequest(http.MethodPost, "/tenant-a/repo/%2Fpets", nil)
+	jsonReq := httptest.NewRequest(http.MethodPost, "/v1/routes/tenant-a/repo/%2Fpets", nil)
 	jsonResp, err := server.App().Test(jsonReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -283,7 +440,7 @@ func TestOperationRoute_UsesRequestMethodAndFormatAddon(t *testing.T) {
 		t.Fatalf("expected paths object in operation slice")
 	}
 
-	yamlReq := httptest.NewRequest(http.MethodPatch, "/tenant-a/repo/release/%2Fpets.yaml", nil)
+	yamlReq := httptest.NewRequest(http.MethodPatch, "/v1/routes/tenant-a/repo/release/%2Fpets.yaml", nil)
 	yamlResp, err := server.App().Test(yamlReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -295,8 +452,8 @@ func TestOperationRoute_UsesRequestMethodAndFormatAddon(t *testing.T) {
 	}
 	body, _ := io.ReadAll(yamlResp.Body)
 	bodyText := string(body)
-	if !strings.Contains(bodyText, "paths:") {
-		t.Fatalf("expected yaml to contain paths key, got %q", bodyText)
+	if strings.TrimSpace(bodyText) == "" || !strings.Contains(bodyText, "paths:") {
+		t.Fatalf("expected yaml payload body, got %q", bodyText)
 	}
 	if readStore.lastEndpointLookup.Method != "patch" || readStore.lastEndpointLookup.Path != "/pets" {
 		t.Fatalf("unexpected endpoint lookup key for patch: %+v", readStore.lastEndpointLookup)
@@ -317,7 +474,7 @@ func TestOperationSlice_DefaultJSONAndYAMLAddon(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	jsonReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/%2Fpets%2F%7Bid%7D", nil)
+	jsonReq := httptest.NewRequest(http.MethodGet, "/v1/routes/tenant-a/repo/%2Fpets%2F%7Bid%7D", nil)
 	jsonResp, err := server.App().Test(jsonReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -339,7 +496,7 @@ func TestOperationSlice_DefaultJSONAndYAMLAddon(t *testing.T) {
 		t.Fatalf("expected paths object in operation slice")
 	}
 
-	yamlReq := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/release/%2Fpets%2F%7Bid%7D.yaml", nil)
+	yamlReq := httptest.NewRequest(http.MethodGet, "/v1/routes/tenant-a/repo/release/%2Fpets%2F%7Bid%7D.yaml", nil)
 	yamlResp, err := server.App().Test(yamlReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -373,14 +530,14 @@ func TestOperationRoute_SelectorNotFoundFallsBackToNoSelector(t *testing.T) {
 		},
 		endpoint: store.EndpointIndexRecord{
 			Method:  "get",
-			Path:    "/v1/pets",
+			Path:    "/pets",
 			RawJSON: []byte(`{"responses":{"200":{"description":"ok"}}}`),
 		},
 		endpointFound: true,
 	}
 	server := newReadRouteTestServer(readStore)
 
-	req := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/v1/pets", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/routes/tenant-a/repo/v1/%2Fpets", nil)
 	resp, err := server.App().Test(req, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -388,7 +545,8 @@ func TestOperationRoute_SelectorNotFoundFallsBackToNoSelector(t *testing.T) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	if len(readStore.resolveInputs) != 2 {
 		t.Fatalf("expected two selector resolution calls, got %d", len(readStore.resolveInputs))
@@ -399,7 +557,7 @@ func TestOperationRoute_SelectorNotFoundFallsBackToNoSelector(t *testing.T) {
 	if !readStore.resolveInputs[1].NoSelector {
 		t.Fatalf("expected second resolution to use no-selector fallback, got %+v", readStore.resolveInputs[1])
 	}
-	if readStore.lastEndpointLookup.Method != "get" || readStore.lastEndpointLookup.Path != "/v1/pets" {
+	if readStore.lastEndpointLookup.Method != "get" || readStore.lastEndpointLookup.Path != "/pets" {
 		t.Fatalf("unexpected endpoint lookup after fallback: %+v", readStore.lastEndpointLookup)
 	}
 }
@@ -410,15 +568,15 @@ func TestReadRoutes_SelectorSpecRouteBypassesOperationRoute(t *testing.T) {
 	readStore := &fakeReadRouteStore{
 		resolved: store.ResolvedReadSelector{Revision: store.Revision{ID: 77}},
 		artifact: store.SpecArtifact{
-			RevisionID: 77,
-			SpecJSON:   []byte(`{"openapi":"3.1.0","paths":{}}`),
-			SpecYAML:   "openapi: 3.1.0\npaths: {}\n",
-			ETag:       "\"etag-77\"",
+			APISpecRevisionID: 77,
+			SpecJSON:          []byte(`{"openapi":"3.1.0","paths":{}}`),
+			SpecYAML:          "openapi: 3.1.0\npaths: {}\n",
+			ETag:              "\"etag-77\"",
 		},
 	}
 	server := newReadRouteTestServer(readStore)
 
-	req := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/release.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/release/openapi.json", nil)
 	resp, err := server.App().Test(req, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -449,6 +607,10 @@ type fakeReadRouteStore struct {
 	resolved      store.ResolvedReadSelector
 	resolveFn     func(input store.ResolveReadSelectorInput) (store.ResolvedReadSelector, error)
 
+	apiSpecLookupInputs                      []apiSpecLookupInput
+	apiSpecRevisionIDByRepoAndRootPathResult int64
+	apiSpecRevisionIDByRepoAndRootPathErr    error
+
 	artifactErr error
 	artifact    store.SpecArtifact
 
@@ -456,6 +618,11 @@ type fakeReadRouteStore struct {
 	endpoint           store.EndpointIndexRecord
 	endpointFound      bool
 	lastEndpointLookup struct {
+		RevisionID int64
+		Method     string
+		Path       string
+	}
+	lastEndpointLookupAPISpec struct {
 		RevisionID int64
 		Method     string
 		Path       string
@@ -480,10 +647,40 @@ func (f *fakeReadRouteStore) GetSpecArtifactByRevisionID(_ context.Context, revi
 	if f.artifactErr != nil {
 		return store.SpecArtifact{}, f.artifactErr
 	}
-	if f.artifact.RevisionID == 0 {
+	if f.artifact.APISpecRevisionID == 0 {
 		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
 	}
 	return f.artifact, nil
+}
+
+func (f *fakeReadRouteStore) GetSpecArtifactByAPISpecRevisionID(_ context.Context, apiSpecRevisionID int64) (store.SpecArtifact, error) {
+	if f.artifactErr != nil {
+		return store.SpecArtifact{}, f.artifactErr
+	}
+	if f.artifact.APISpecRevisionID == 0 {
+		return store.SpecArtifact{}, fmt.Errorf("%w: api_spec_revision_id=%d", store.ErrSpecArtifactNotFound, apiSpecRevisionID)
+	}
+	return f.artifact, nil
+}
+
+func (f *fakeReadRouteStore) GetAPISpecRevisionIDByRepoAndRootPath(
+	_ context.Context,
+	repoID int64,
+	apiRootPath string,
+	revisionID int64,
+) (int64, error) {
+	f.apiSpecLookupInputs = append(f.apiSpecLookupInputs, apiSpecLookupInput{
+		RepoID:   repoID,
+		APIRoot:  apiRootPath,
+		Revision: revisionID,
+	})
+	if f.apiSpecRevisionIDByRepoAndRootPathErr != nil {
+		return 0, f.apiSpecRevisionIDByRepoAndRootPathErr
+	}
+	if f.apiSpecRevisionIDByRepoAndRootPathResult != 0 {
+		return f.apiSpecRevisionIDByRepoAndRootPathResult, nil
+	}
+	return 0, fmt.Errorf("%w: repo_id=%d api=%q revision_id=%d", store.ErrAPISpecNotFound, repoID, apiRootPath, revisionID)
 }
 
 func (f *fakeReadRouteStore) GetEndpointIndexByMethodPath(
@@ -503,6 +700,31 @@ func (f *fakeReadRouteStore) GetEndpointIndexByMethodPath(
 		return store.EndpointIndexRecord{}, false, nil
 	}
 	return f.endpoint, true, nil
+}
+
+func (f *fakeReadRouteStore) GetEndpointIndexByMethodPathForAPISpecRevision(
+	_ context.Context,
+	apiSpecRevisionID int64,
+	method string,
+	path string,
+) (store.EndpointIndexRecord, bool, error) {
+	f.lastEndpointLookupAPISpec.RevisionID = apiSpecRevisionID
+	f.lastEndpointLookupAPISpec.Method = method
+	f.lastEndpointLookupAPISpec.Path = path
+
+	if f.endpointErr != nil {
+		return store.EndpointIndexRecord{}, false, f.endpointErr
+	}
+	if !f.endpointFound {
+		return store.EndpointIndexRecord{}, false, nil
+	}
+	return f.endpoint, true, nil
+}
+
+type apiSpecLookupInput struct {
+	RepoID   int64
+	APIRoot  string
+	Revision int64
 }
 
 func TestIfNoneMatchMatches(t *testing.T) {
@@ -556,7 +778,7 @@ func TestWriteReadRouteError_DefaultInternalServerError(t *testing.T) {
 	t.Parallel()
 
 	server := newReadRouteTestServer(&fakeReadRouteStore{})
-	req := httptest.NewRequest(http.MethodGet, "/tenant-a/repo/latest.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/latest/openapi.json", nil)
 
 	server.readStore = &fakeReadRouteStore{
 		resolveErr: errors.New("unexpected"),

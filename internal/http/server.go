@@ -112,14 +112,13 @@ func (s *Server) registerRoutes() {
 	}))
 	webhookGroup.Post("/gitlab", s.handleGitLabWebhook)
 
-	// Selector-aware operation routes must be registered before no-selector variants.
+	v1 := s.app.Group("/v1")
+	specGroup := v1.Group("/specs/:tenant/:repo")
+	specGroup.Get("/*", s.handleGetSpec)
+
+	routeGroup := v1.Group("/routes/:tenant/:repo")
 	for _, method := range readOperationHTTPMethods {
-		s.app.Add(method, "/:tenant/:repo/:selector/*", s.handleOperationBySelector)
-	}
-	s.app.Get("/:tenant/:repo/:selector.:format", s.handleGetSpecBySelector)
-	s.app.Get("/:tenant/:repo.:format", s.handleGetSpecNoSelector)
-	for _, method := range readOperationHTTPMethods {
-		s.app.Add(method, "/:tenant/:repo/*", s.handleOperationNoSelector)
+		routeGroup.Add(method, "/*", s.handleOperationRoute)
 	}
 }
 

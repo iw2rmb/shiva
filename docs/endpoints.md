@@ -18,19 +18,29 @@ Endpoint extraction from canonical document:
   - `operation_id`, `summary`, `deprecated`,
   - `raw_json` (canonical operation JSON).
 
-Endpoints are sorted by `(method, path)` and persisted to `endpoint_index` with unique key `(revision_id, method, path)`.
+Endpoints are sorted by `(method, path)` and persisted to `endpoint_index` with unique key `(api_spec_revision_id, method, path)`.
 
-Persistence is revision-scoped: `PersistCanonicalSpec` upserts `spec_artifacts` and replaces the full `endpoint_index` for a revision. When multiple roots are rebuilt in the same revision, the last successful build wins for both artifact and index rows.
+Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifacts` and replaces the full `endpoint_index` for an API revision.
 
 ## Read Routes
 
 ### Full Spec
-- `GET /{tenant}/{repo}.{json|yaml}`
-- `GET /{tenant}/{repo}/{selector}.{json|yaml}`
+- `GET /v1/specs/{tenant}/{repo}/{openapi|index}.{yaml|json}`
+- `GET /v1/specs/{tenant}/{repo}/{selector}/{openapi|index}.{yaml|json}`
+- `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{openapi|index}.{yaml|json}`
+- `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{selector}/{openapi|index}.{yaml|json}`
 
 ### Endpoint Operation Slice
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{selector}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{selector}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/-/{api}/-/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/-/{api}/-/{selector}/{path}`
+
+Monorepo `api` is the raw root path, bounded by `/-/{api}/-/` in the URL.
+
+Malformed delimiter shapes are rejected as `400`:
+- missing closing delimiter `/-/{api}/` (example: `/-/{api}/pets`),
+- empty `api` (example: `/-/-/openapi.json`).
 
 Route method is the endpoint method selector.
 

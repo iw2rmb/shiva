@@ -58,7 +58,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./cmd/shiva` with multi-root fixtures proving independent success/failure and independent diff state
 
 ## HTTP Route Namespace and Parser
-- [ ] Implement `/v1/specs` and `/v1/routes` route families with delimiter-safe monorepo API segment — eliminate ambiguity between API path and endpoint path
+- [x] Implement `/v1/specs` and `/v1/routes` route families with delimiter-safe monorepo API segment — eliminate ambiguity between API path and endpoint path
   - Repository: `shiva`
   - Component: `internal/http`
   - Scope:
