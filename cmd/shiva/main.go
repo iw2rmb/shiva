@@ -242,6 +242,7 @@ type revisionStore interface {
 	GetRepoBootstrapState(ctx context.Context, repoID int64) (store.RepoBootstrapState, error)
 	ClearRepoForceRescan(ctx context.Context, repoID int64) error
 	UpsertAPISpec(ctx context.Context, input store.UpsertAPISpecInput) (store.APISpec, error)
+	ListAPISpecListingByRepo(ctx context.Context, repoID int64) ([]store.APISpecListing, error)
 	ListActiveAPISpecsWithLatestDependencies(
 		ctx context.Context,
 		repoID int64,
@@ -250,18 +251,16 @@ type revisionStore interface {
 	CreateAPISpecRevision(ctx context.Context, input store.CreateAPISpecRevisionInput) (store.APISpecRevision, error)
 	ReplaceAPISpecDependencies(ctx context.Context, input store.ReplaceAPISpecDependenciesInput) error
 	PersistCanonicalSpec(ctx context.Context, input store.PersistCanonicalSpecInput) error
-	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
-		ctx context.Context,
-		repoID int64,
-		branch string,
-		excludeRevisionID int64,
-	) (store.Revision, bool, error)
-	ListEndpointIndexByRevision(ctx context.Context, revisionID int64) ([]store.EndpointIndexRecord, error)
+	ListEndpointIndexByAPISpecRevision(ctx context.Context, apiSpecRevisionID int64) ([]store.EndpointIndexRecord, error)
 	PersistSpecChange(ctx context.Context, input store.PersistSpecChangeInput) error
 	GetTenantByID(ctx context.Context, tenantID int64) (store.Tenant, error)
 	GetRevisionByID(ctx context.Context, revisionID int64) (store.Revision, error)
-	GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (store.SpecArtifact, error)
-	GetSpecChangeByToRevision(ctx context.Context, toRevisionID int64) (store.SpecChange, error)
+	GetSpecArtifactByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) (store.SpecArtifact, error)
+	GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
+		ctx context.Context,
+		apiSpecID int64,
+		toAPISpecRevisionID int64,
+	) (store.SpecChange, error)
 }
 
 type ingestionMode string
@@ -386,6 +385,12 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		processSpan.SetStatus(codes.Error, "load repo failed")
 		return fmt.Errorf("load repo %d for ingest event %d: %w", job.RepoID, job.EventID, err)
 	}
+	previousAPISpecRevisionByRoot, err := p.loadPreviousAPISpecRevisionsByRoot(ctx, job.RepoID)
+	if err != nil {
+		processSpan.RecordError(err)
+		processSpan.SetStatus(codes.Error, "load previous api spec revisions failed")
+		return fmt.Errorf("load previous api spec revisions for repo %d: %w", job.RepoID, err)
+	}
 
 	var bootstrapRoots []openapi.RootResolution
 	switch mode {
@@ -419,6 +424,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		return p.handleRevisionError(ctx, processSpan, revisionID, err, "openapi resolution")
 	}
 
+	changedAPIs := make([]changedAPISpecRevision, 0)
 	openAPIChanged := false
 	switch mode {
 	case ingestionModeBootstrap:
@@ -430,31 +436,46 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 			}
 		}
 
-		successfulRoots, err := p.processResolvedRoots(ctx, job, revisionID, bootstrapRoots)
+		changedAPIs, err = p.processResolvedRoots(
+			ctx,
+			job,
+			revisionID,
+			bootstrapRoots,
+			previousAPISpecRevisionByRoot,
+		)
 		if err != nil {
 			recordBuildMetric()
 			processSpan.RecordError(err)
 			processSpan.SetStatus(codes.Error, "bootstrap build stage failed")
 			return fmt.Errorf("build bootstrap openapi roots for revision %d: %w", revisionID, err)
 		}
-		openAPIChanged = successfulRoots > 0
 
-		if openAPIChanged {
-			if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
-				recordBuildMetric()
-				processSpan.RecordError(err)
-				processSpan.SetStatus(codes.Error, "semantic diff failed")
-				return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
-			}
-			buildSuccess = true
+		if err := p.persistSemanticDiffsForAPIs(ctx, job, changedAPIs); err != nil {
+			recordBuildMetric()
+			processSpan.RecordError(err)
+			processSpan.SetStatus(codes.Error, "semantic diff failed")
+			return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
 		}
+		openAPIChanged = len(changedAPIs) > 0
+		buildSuccess = openAPIChanged
 		recordBuildMetric()
 	default:
 		incrementalStartedAt := time.Now()
-		openAPIChanged, err = p.processIncrementalRevision(ctx, job, revisionID, repo.GitLabProjectID, parentSHA)
+		changedAPIs, err = p.processIncrementalRevision(
+			ctx,
+			job,
+			revisionID,
+			repo.GitLabProjectID,
+			parentSHA,
+			previousAPISpecRevisionByRoot,
+		)
 		if err != nil {
 			return p.handleRevisionError(ctx, processSpan, revisionID, err, "incremental openapi processing")
 		}
+		if err := p.persistSemanticDiffsForAPIs(ctx, job, changedAPIs); err != nil {
+			return p.handleRevisionError(ctx, processSpan, revisionID, err, "incremental semantic diff")
+		}
+		openAPIChanged = len(changedAPIs) > 0
 		if openAPIChanged && p.metrics != nil {
 			p.metrics.ObserveBuild(time.Since(incrementalStartedAt), true)
 		}
@@ -466,7 +487,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
 	}
 	if openAPIChanged {
-		if err := p.emitOutboundNotifications(ctx, repo, revisionID, job); err != nil {
+		if err := p.emitOutboundNotifications(ctx, repo, revisionID, job, changedAPIs); err != nil {
 			processSpan.RecordError(err)
 			processSpan.SetStatus(codes.Error, "notify dispatch failed")
 			return fmt.Errorf("emit outbound notifications for revision %d: %w", revisionID, err)
@@ -487,33 +508,44 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	return nil
 }
 
+type changedAPISpecRevision struct {
+	apiSpec               store.APISpec
+	fromAPISpecRevisionID *int64
+	toAPISpecRevisionID   int64
+}
+
 func (p revisionProcessor) processResolvedRoots(
 	ctx context.Context,
 	job worker.QueueJob,
 	revisionID int64,
 	roots []openapi.RootResolution,
-) (int, error) {
-	built := 0
+	previousAPISpecRevisionByRoot map[string]int64,
+) ([]changedAPISpecRevision, error) {
+	changed := make([]changedAPISpecRevision, 0, len(roots))
 	for _, root := range roots {
 		apiSpec, err := p.store.UpsertAPISpec(ctx, store.UpsertAPISpecInput{
 			RepoID:   job.RepoID,
 			RootPath: root.RootPath,
 		})
 		if err != nil {
-			return 0, fmt.Errorf("upsert api spec for root %q: %w", root.RootPath, err)
+			return nil, fmt.Errorf("upsert api spec for root %q: %w", root.RootPath, err)
 		}
 
-		ok, err := p.processIncrementalAPI(ctx, job, revisionID, apiSpec, func(context.Context) (openapi.RootResolution, error) {
+		apiSpecRevision, ok, err := p.processIncrementalAPI(ctx, job, revisionID, apiSpec, func(context.Context) (openapi.RootResolution, error) {
 			return root, nil
 		})
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		if ok {
-			built++
+			changed = append(changed, changedAPISpecRevision{
+				apiSpec:               apiSpec,
+				fromAPISpecRevisionID: previousAPISpecRevisionForRoot(previousAPISpecRevisionByRoot, apiSpec.RootPath),
+				toAPISpecRevisionID:   apiSpecRevision.ID,
+			})
 		}
 	}
-	return built, nil
+	return changed, nil
 }
 
 type impactedAPISpec struct {
@@ -527,7 +559,8 @@ func (p revisionProcessor) processIncrementalRevision(
 	revisionID int64,
 	projectID int64,
 	parentSHA string,
-) (bool, error) {
+	previousAPISpecRevisionByRoot map[string]int64,
+) ([]changedAPISpecRevision, error) {
 	compareCtx, compareSpan := p.effectiveTracer().Start(ctx, "gitlab.compare", trace.WithAttributes(
 		attribute.Int64("repo.id", job.RepoID),
 		attribute.String("delivery.id", job.DeliveryID),
@@ -540,7 +573,7 @@ func (p revisionProcessor) processIncrementalRevision(
 		compareSpan.RecordError(err)
 		compareSpan.SetStatus(codes.Error, "load changed paths failed")
 		compareSpan.End()
-		return false, fmt.Errorf("load changed paths: %w", err)
+		return nil, fmt.Errorf("load changed paths: %w", err)
 	}
 
 	impacted, err := p.resolveImpactedAPIs(compareCtx, job.RepoID, changedPaths)
@@ -548,7 +581,7 @@ func (p revisionProcessor) processIncrementalRevision(
 		compareSpan.RecordError(err)
 		compareSpan.SetStatus(codes.Error, "resolve impacted apis failed")
 		compareSpan.End()
-		return false, fmt.Errorf("resolve impacted apis: %w", err)
+		return nil, fmt.Errorf("resolve impacted apis: %w", err)
 	}
 
 	compareSpan.SetAttributes(
@@ -558,53 +591,144 @@ func (p revisionProcessor) processIncrementalRevision(
 	compareSpan.SetStatus(codes.Ok, "")
 	compareSpan.End()
 
-	rebuiltAPIs := 0
-	deactivatedAPIs := 0
+	changed := make([]changedAPISpecRevision, 0, len(impacted))
 	for _, item := range impacted {
 		if item.rootDeleted {
-			if err := p.store.MarkAPISpecDeleted(ctx, item.spec.ID); err != nil {
-				return false, fmt.Errorf(
-					"mark api spec %d deleted for root %q: %w",
-					item.spec.ID,
-					item.spec.RootPath,
-					err,
-				)
+			changedAPI, err := p.processDeletedImpactedAPI(
+				ctx,
+				revisionID,
+				item,
+				previousAPISpecRevisionByRoot,
+			)
+			if err != nil {
+				return nil, err
 			}
-			deactivatedAPIs++
+			changed = append(changed, changedAPI)
 			continue
 		}
 
-		built, err := p.processImpactedAPI(ctx, job, revisionID, projectID, item.spec)
+		apiSpecRevision, built, err := p.processImpactedAPI(ctx, job, revisionID, projectID, item.spec)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 		if built {
-			rebuiltAPIs++
+			changed = append(changed, changedAPISpecRevision{
+				apiSpec:               item.spec.APISpec,
+				fromAPISpecRevisionID: previousAPISpecRevisionForRoot(previousAPISpecRevisionByRoot, item.spec.RootPath),
+				toAPISpecRevisionID:   apiSpecRevision.ID,
+			})
 		}
 	}
 
 	if len(impacted) == 0 {
-		fallbackBuilt, err := p.processFallbackDiscovery(ctx, job, revisionID, projectID, changedPaths)
+		discovered, err := p.processFallbackDiscovery(
+			ctx,
+			job,
+			revisionID,
+			projectID,
+			changedPaths,
+			previousAPISpecRevisionByRoot,
+		)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
-		rebuiltAPIs += fallbackBuilt
+		changed = append(changed, discovered...)
 	}
 
-	if rebuiltAPIs == 0 {
-		if deactivatedAPIs == 0 {
-			return false, nil
-		}
-		if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
-			return false, fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
-		}
-		return true, nil
+	return changed, nil
+}
+
+func (p revisionProcessor) processDeletedImpactedAPI(
+	ctx context.Context,
+	revisionID int64,
+	item impactedAPISpec,
+	previousAPISpecRevisionByRoot map[string]int64,
+) (changedAPISpecRevision, error) {
+	if err := p.store.MarkAPISpecDeleted(ctx, item.spec.ID); err != nil {
+		return changedAPISpecRevision{}, fmt.Errorf(
+			"mark api spec %d deleted for root %q: %w",
+			item.spec.ID,
+			item.spec.RootPath,
+			err,
+		)
 	}
 
-	if err := p.persistSemanticDiff(ctx, job, revisionID); err != nil {
-		return false, fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
+	apiSpecRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+		APISpecID:   item.spec.ID,
+		RevisionID:  revisionID,
+		BuildStatus: apiSpecRevisionBuildStatusProcessed,
+	})
+	if err != nil {
+		return changedAPISpecRevision{}, fmt.Errorf(
+			"create deleted api spec revision for root %q: %w",
+			item.spec.RootPath,
+			err,
+		)
 	}
-	return true, nil
+
+	return changedAPISpecRevision{
+		apiSpec:               item.spec.APISpec,
+		fromAPISpecRevisionID: previousAPISpecRevisionForRoot(previousAPISpecRevisionByRoot, item.spec.RootPath),
+		toAPISpecRevisionID:   apiSpecRevision.ID,
+	}, nil
+}
+
+func (p revisionProcessor) loadPreviousAPISpecRevisionsByRoot(
+	ctx context.Context,
+	repoID int64,
+) (map[string]int64, error) {
+	listing, err := p.store.ListAPISpecListingByRepo(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list api specs for repo %d: %w", repoID, err)
+	}
+
+	previousByRoot := make(map[string]int64, len(listing))
+	for _, item := range listing {
+		if item.LastProcessedRevision == nil {
+			continue
+		}
+		rootPath := strings.TrimSpace(item.API)
+		if rootPath == "" {
+			continue
+		}
+		previousByRoot[rootPath] = item.LastProcessedRevision.APISpecRevisionID
+	}
+
+	return previousByRoot, nil
+}
+
+func previousAPISpecRevisionForRoot(previousByRoot map[string]int64, rootPath string) *int64 {
+	if len(previousByRoot) == 0 {
+		return nil
+	}
+
+	revisionID, exists := previousByRoot[strings.TrimSpace(rootPath)]
+	if !exists {
+		return nil
+	}
+
+	value := revisionID
+	return &value
+}
+
+func (p revisionProcessor) persistSemanticDiffsForAPIs(
+	ctx context.Context,
+	job worker.QueueJob,
+	changed []changedAPISpecRevision,
+) error {
+	for _, item := range changed {
+		if err := p.persistSemanticDiffForAPI(
+			ctx,
+			job,
+			item.apiSpec.ID,
+			item.fromAPISpecRevisionID,
+			item.toAPISpecRevisionID,
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (p revisionProcessor) resolveImpactedAPIs(
@@ -673,7 +797,7 @@ func (p revisionProcessor) processImpactedAPI(
 	revisionID int64,
 	projectID int64,
 	spec store.ActiveAPISpecWithLatestDependencies,
-) (bool, error) {
+) (store.APISpecRevision, bool, error) {
 	return p.processIncrementalAPI(
 		ctx,
 		job,
@@ -701,18 +825,19 @@ func (p revisionProcessor) processFallbackDiscovery(
 	revisionID int64,
 	projectID int64,
 	changedPaths []gitlab.ChangedPath,
-) (int, error) {
+	previousAPISpecRevisionByRoot map[string]int64,
+) ([]changedAPISpecRevision, error) {
 	candidatePaths := fallbackDiscoveryCandidatePaths(changedPaths)
 	if len(candidatePaths) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 
 	roots, err := p.openapiLoader.ResolveDiscoveredRootsAtPaths(ctx, p.gitlabClient, projectID, job.Sha, candidatePaths)
 	if err != nil {
-		return 0, fmt.Errorf("resolve fallback discovered roots: %w", err)
+		return nil, fmt.Errorf("resolve fallback discovered roots: %w", err)
 	}
 
-	return p.processResolvedRoots(ctx, job, revisionID, roots)
+	return p.processResolvedRoots(ctx, job, revisionID, roots, previousAPISpecRevisionByRoot)
 }
 
 func (p revisionProcessor) processIncrementalAPI(
@@ -721,68 +846,75 @@ func (p revisionProcessor) processIncrementalAPI(
 	revisionID int64,
 	apiSpec store.APISpec,
 	resolveRoot func(context.Context) (openapi.RootResolution, error),
-) (bool, error) {
+) (store.APISpecRevision, bool, error) {
 	apiSpecRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
 		APISpecID:   apiSpec.ID,
 		RevisionID:  revisionID,
 		BuildStatus: apiSpecRevisionBuildStatusProcessing,
 	})
 	if err != nil {
-		return false, fmt.Errorf("create api spec revision for root %q: %w", apiSpec.RootPath, err)
+		return store.APISpecRevision{}, false, fmt.Errorf("create api spec revision for root %q: %w", apiSpec.RootPath, err)
 	}
 
 	root, err := resolveRoot(ctx)
 	if err != nil {
-		return p.handleIncrementalAPIFailure(ctx, apiSpec, revisionID, err)
+		return p.handleIncrementalAPIFailure(ctx, apiSpec, revisionID, apiSpecRevision, err)
 	}
 
 	if err := p.store.ReplaceAPISpecDependencies(ctx, store.ReplaceAPISpecDependenciesInput{
 		APISpecRevisionID: apiSpecRevision.ID,
 		FilePaths:         root.DependencyFiles,
 	}); err != nil {
-		return false, fmt.Errorf("replace api spec dependencies for root %q: %w", apiSpec.RootPath, err)
+		return store.APISpecRevision{}, false, fmt.Errorf("replace api spec dependencies for root %q: %w", apiSpec.RootPath, err)
 	}
 
-	if err := p.runBuildStage(ctx, job, revisionID, root); err != nil {
+	if err := p.runBuildStage(ctx, job, revisionID, apiSpecRevision.ID, root); err != nil {
 		return p.handleIncrementalAPIFailure(
 			ctx,
 			apiSpec,
 			revisionID,
+			apiSpecRevision,
 			fmt.Errorf("build canonical openapi for root %q: %w", apiSpec.RootPath, err),
 		)
 	}
 
-	if _, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+	processedRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
 		APISpecID:   apiSpec.ID,
 		RevisionID:  revisionID,
 		BuildStatus: apiSpecRevisionBuildStatusProcessed,
-	}); err != nil {
-		return false, fmt.Errorf("mark api spec revision processed for root %q: %w", apiSpec.RootPath, err)
+	})
+	if err != nil {
+		return store.APISpecRevision{}, false, fmt.Errorf("mark api spec revision processed for root %q: %w", apiSpec.RootPath, err)
 	}
 
-	return true, nil
+	return processedRevision, true, nil
 }
 
 func (p revisionProcessor) handleIncrementalAPIFailure(
 	ctx context.Context,
 	apiSpec store.APISpec,
 	revisionID int64,
+	apiSpecRevision store.APISpecRevision,
 	err error,
-) (bool, error) {
+) (store.APISpecRevision, bool, error) {
 	if !isPermanentOpenAPIProcessingError(err) {
-		return false, err
+		return store.APISpecRevision{}, false, err
 	}
 
-	if _, markErr := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
+	failedRevision, markErr := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
 		APISpecID:   apiSpec.ID,
 		RevisionID:  revisionID,
 		BuildStatus: apiSpecRevisionBuildStatusFailed,
 		Error:       err.Error(),
-	}); markErr != nil {
-		return false, fmt.Errorf("mark api spec revision failed for root %q: %w", apiSpec.RootPath, markErr)
+	})
+	if markErr != nil {
+		return store.APISpecRevision{}, false, fmt.Errorf("mark api spec revision failed for root %q: %w", apiSpec.RootPath, markErr)
+	}
+	if failedRevision.ID == 0 {
+		failedRevision = apiSpecRevision
 	}
 
-	return false, nil
+	return failedRevision, false, nil
 }
 
 func incrementalImpactPaths(changedPath gitlab.ChangedPath) []string {
@@ -863,11 +995,13 @@ func (p revisionProcessor) runBuildStage(
 	ctx context.Context,
 	job worker.QueueJob,
 	revisionID int64,
+	apiSpecRevisionID int64,
 	root openapi.RootResolution,
 ) error {
 	buildCtx, buildSpan := p.effectiveTracer().Start(ctx, "spec.build", trace.WithAttributes(
 		attribute.Int64("repo.id", job.RepoID),
 		attribute.Int64("revision.id", revisionID),
+		attribute.Int64("api_spec_revision.id", apiSpecRevisionID),
 		attribute.String("delivery.id", job.DeliveryID),
 		attribute.String("revision.sha", job.Sha),
 	))
@@ -903,16 +1037,16 @@ func (p revisionProcessor) runBuildStage(
 	}
 
 	if err := p.store.PersistCanonicalSpec(buildCtx, store.PersistCanonicalSpecInput{
-		RevisionID: revisionID,
-		SpecJSON:   canonicalSpec.SpecJSON,
-		SpecYAML:   canonicalSpec.SpecYAML,
-		ETag:       canonicalSpec.ETag,
-		SizeBytes:  canonicalSpec.SizeBytes,
-		Endpoints:  endpoints,
+		APISpecRevisionID: apiSpecRevisionID,
+		SpecJSON:          canonicalSpec.SpecJSON,
+		SpecYAML:          canonicalSpec.SpecYAML,
+		ETag:              canonicalSpec.ETag,
+		SizeBytes:         canonicalSpec.SizeBytes,
+		Endpoints:         endpoints,
 	}); err != nil {
 		buildSpan.RecordError(err)
 		buildSpan.SetStatus(codes.Error, "persist canonical spec failed")
-		return fmt.Errorf("persist canonical openapi for revision %d: %w", revisionID, err)
+		return fmt.Errorf("persist canonical openapi for api spec revision %d: %w", apiSpecRevisionID, err)
 	}
 
 	success = true
@@ -944,49 +1078,41 @@ func isPermanentOpenAPIProcessingError(err error) bool {
 	return false
 }
 
-func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.QueueJob, toRevisionID int64) error {
+func (p revisionProcessor) persistSemanticDiffForAPI(
+	ctx context.Context,
+	job worker.QueueJob,
+	apiSpecID int64,
+	fromAPISpecRevisionID *int64,
+	toAPISpecRevisionID int64,
+) error {
 	ctx, span := p.effectiveTracer().Start(ctx, "diff.compute", trace.WithAttributes(
 		attribute.Int64("repo.id", job.RepoID),
-		attribute.Int64("revision.id", toRevisionID),
+		attribute.Int64("api_spec.id", apiSpecID),
+		attribute.Int64("to_api_spec_revision.id", toAPISpecRevisionID),
 		attribute.String("delivery.id", job.DeliveryID),
 		attribute.String("revision.sha", job.Sha),
 	))
 	defer span.End()
 
-	previousRevision, hasPreviousRevision, err := p.store.GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
-		ctx,
-		job.RepoID,
-		job.Branch,
-		toRevisionID,
-	)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "load previous revision failed")
-		return fmt.Errorf("load previous processed openapi revision: %w", err)
-	}
-
-	currentEndpoints, err := p.store.ListEndpointIndexByRevision(ctx, toRevisionID)
+	currentEndpoints, err := p.store.ListEndpointIndexByAPISpecRevision(ctx, toAPISpecRevisionID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "load current endpoints failed")
-		return fmt.Errorf("load endpoint index for current revision %d: %w", toRevisionID, err)
+		return fmt.Errorf("load endpoint index for api spec revision %d: %w", toAPISpecRevisionID, err)
 	}
 
 	previousEndpoints := make([]store.EndpointIndexRecord, 0)
-	var fromRevisionID *int64
-	if hasPreviousRevision {
-		previousEndpoints, err = p.store.ListEndpointIndexByRevision(ctx, previousRevision.ID)
+	if fromAPISpecRevisionID != nil {
+		previousEndpoints, err = p.store.ListEndpointIndexByAPISpecRevision(ctx, *fromAPISpecRevisionID)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "load previous endpoints failed")
 			return fmt.Errorf(
-				"load endpoint index for previous revision %d: %w",
-				previousRevision.ID,
+				"load endpoint index for previous api spec revision %d: %w",
+				*fromAPISpecRevisionID,
 				err,
 			)
 		}
-		fromRevisionIDValue := previousRevision.ID
-		fromRevisionID = &fromRevisionIDValue
 	}
 
 	changes, err := openapi.ComputeSemanticDiff(
@@ -1007,10 +1133,10 @@ func (p revisionProcessor) persistSemanticDiff(ctx context.Context, job worker.Q
 	}
 
 	if err := p.store.PersistSpecChange(ctx, store.PersistSpecChangeInput{
-		RepoID:         job.RepoID,
-		FromRevisionID: fromRevisionID,
-		ToRevisionID:   toRevisionID,
-		ChangeJSON:     changeJSON,
+		APISpecID:             apiSpecID,
+		FromAPISpecRevisionID: fromAPISpecRevisionID,
+		ToAPISpecRevisionID:   toAPISpecRevisionID,
+		ChangeJSON:            changeJSON,
 	}); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "persist semantic diff failed")
@@ -1026,8 +1152,9 @@ func (p revisionProcessor) emitOutboundNotifications(
 	repo store.Repo,
 	revisionID int64,
 	job worker.QueueJob,
+	changedAPIs []changedAPISpecRevision,
 ) error {
-	if p.notifier == nil {
+	if p.notifier == nil || len(changedAPIs) == 0 {
 		return nil
 	}
 
@@ -1041,51 +1168,60 @@ func (p revisionProcessor) emitOutboundNotifications(
 		return fmt.Errorf("load revision %d: %w", revisionID, err)
 	}
 
-	artifact, err := p.store.GetSpecArtifactByRevisionID(ctx, revisionID)
-	includeFullEvent := true
-	if err != nil {
-		if errors.Is(err, store.ErrSpecArtifactNotFound) {
-			includeFullEvent = false
-		} else {
-			return fmt.Errorf("load spec artifact for revision %d: %w", revisionID, err)
-		}
-	}
-
-	specChange, err := p.store.GetSpecChangeByToRevision(ctx, revisionID)
-	if err != nil {
-		return fmt.Errorf("load spec change for revision %d: %w", revisionID, err)
-	}
-
-	var fromSHA string
-	if specChange.FromRevisionID != nil {
-		fromRevision, err := p.store.GetRevisionByID(ctx, *specChange.FromRevisionID)
-		if err != nil {
-			return fmt.Errorf("load from revision %d for spec change: %w", *specChange.FromRevisionID, err)
-		}
-		fromSHA = fromRevision.Sha
-	}
-
 	processedAt := time.Now().UTC()
 	if revision.ProcessedAt != nil {
 		processedAt = revision.ProcessedAt.UTC()
 	}
 
-	if err := p.notifier.NotifyRevision(ctx, notify.RevisionNotification{
-		TenantID:    tenant.ID,
-		TenantKey:   tenant.Key,
-		RepoID:      repo.ID,
-		RepoPath:    repo.PathWithNamespace,
-		RevisionID:  revisionID,
-		DeliveryID:  job.DeliveryID,
-		Sha:         revision.Sha,
-		Branch:      revision.Branch,
-		ProcessedAt: processedAt,
-		Artifact:    artifact,
-		IncludeFull: includeFullEvent,
-		SpecChange:  specChange,
-		FromSHA:     fromSHA,
-	}); err != nil {
-		return err
+	for _, item := range changedAPIs {
+		artifact, err := p.store.GetSpecArtifactByAPISpecRevisionID(ctx, item.toAPISpecRevisionID)
+		includeFullEvent := true
+		if err != nil {
+			if errors.Is(err, store.ErrSpecArtifactNotFound) {
+				includeFullEvent = false
+			} else {
+				return fmt.Errorf(
+					"load spec artifact for api_spec_id=%d api_spec_revision_id=%d: %w",
+					item.apiSpec.ID,
+					item.toAPISpecRevisionID,
+					err,
+				)
+			}
+		}
+
+		specChange, err := p.store.GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
+			ctx,
+			item.apiSpec.ID,
+			item.toAPISpecRevisionID,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"load spec change for api_spec_id=%d to_api_spec_revision_id=%d: %w",
+				item.apiSpec.ID,
+				item.toAPISpecRevisionID,
+				err,
+			)
+		}
+
+		if err := p.notifier.NotifyRevision(ctx, notify.RevisionNotification{
+			TenantID:          tenant.ID,
+			TenantKey:         tenant.Key,
+			RepoID:            repo.ID,
+			RepoPath:          repo.PathWithNamespace,
+			APISpecID:         item.apiSpec.ID,
+			API:               item.apiSpec.RootPath,
+			APISpecRevisionID: item.toAPISpecRevisionID,
+			RevisionID:        revisionID,
+			DeliveryID:        job.DeliveryID,
+			Sha:               revision.Sha,
+			Branch:            revision.Branch,
+			ProcessedAt:       processedAt,
+			Artifact:          artifact,
+			IncludeFull:       includeFullEvent,
+			SpecChange:        specChange,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

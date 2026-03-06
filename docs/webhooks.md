@@ -42,14 +42,14 @@ Per event attempt headers:
 - `Content-Type: application/json`
 - `X-Shiva-Timestamp: <RFC3339Nano UTC>`
 - `X-Shiva-Signature: sha256=<hex(hmac_sha256(secret, raw_body))>`
-- `X-Shiva-Event-ID: sub:<subscription_id>:rev:<revision_id>:event:<event_type>`
+- `X-Shiva-Event-ID: sub:<subscription_id>:api:<api_spec_id>:rev:<revision_id>:event:<event_type>`
 
 Delivery model:
 - subscription list is loaded from enabled repo subscriptions,
 - attempts are persisted in `delivery_attempts`,
 - statuses: `pending`, `retry_scheduled`, `succeeded`, `failed`,
 - retries use exponential backoff bounded by subscription settings,
-- terminal `succeeded/failed` blocks duplicate redispatch for the same key.
+- terminal `succeeded/failed` blocks duplicate redispatch for the same `(subscription_id, api_spec_id, revision_id, event_type)` key.
 
 Incremental edge behavior:
 - root-local permanent errors are isolated to `api_spec_revisions` and do not block outbound delivery if another root in the same revision succeeds (`openapi_changed=true`).

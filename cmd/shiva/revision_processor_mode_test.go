@@ -323,6 +323,13 @@ func (s *modeSelectionRevisionStore) ListActiveAPISpecsWithLatestDependencies(
 	return []store.ActiveAPISpecWithLatestDependencies{}, nil
 }
 
+func (s *modeSelectionRevisionStore) ListAPISpecListingByRepo(
+	_ context.Context,
+	_ int64,
+) ([]store.APISpecListing, error) {
+	return nil, nil
+}
+
 func (s *modeSelectionRevisionStore) MarkAPISpecDeleted(_ context.Context, _ int64) error {
 	return errors.New("unexpected MarkAPISpecDeleted call")
 }
@@ -345,20 +352,11 @@ func (s *modeSelectionRevisionStore) PersistCanonicalSpec(_ context.Context, _ s
 	return errors.New("unexpected PersistCanonicalSpec call")
 }
 
-func (s *modeSelectionRevisionStore) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
-	_ context.Context,
-	_ int64,
-	_ string,
-	_ int64,
-) (store.Revision, bool, error) {
-	return store.Revision{}, false, errors.New("unexpected GetLatestProcessedOpenAPIRevisionByBranchExcludingID call")
-}
-
-func (s *modeSelectionRevisionStore) ListEndpointIndexByRevision(
+func (s *modeSelectionRevisionStore) ListEndpointIndexByAPISpecRevision(
 	_ context.Context,
 	_ int64,
 ) ([]store.EndpointIndexRecord, error) {
-	return nil, errors.New("unexpected ListEndpointIndexByRevision call")
+	return nil, errors.New("unexpected ListEndpointIndexByAPISpecRevision call")
 }
 
 func (s *modeSelectionRevisionStore) PersistSpecChange(_ context.Context, _ store.PersistSpecChangeInput) error {
@@ -373,10 +371,17 @@ func (s *modeSelectionRevisionStore) GetRevisionByID(_ context.Context, _ int64)
 	return store.Revision{}, errors.New("unexpected GetRevisionByID call")
 }
 
-func (s *modeSelectionRevisionStore) GetSpecArtifactByRevisionID(_ context.Context, _ int64) (store.SpecArtifact, error) {
-	return store.SpecArtifact{}, errors.New("unexpected GetSpecArtifactByRevisionID call")
+func (s *modeSelectionRevisionStore) GetSpecArtifactByAPISpecRevisionID(
+	_ context.Context,
+	_ int64,
+) (store.SpecArtifact, error) {
+	return store.SpecArtifact{}, errors.New("unexpected GetSpecArtifactByAPISpecRevisionID call")
 }
 
-func (s *modeSelectionRevisionStore) GetSpecChangeByToRevision(_ context.Context, _ int64) (store.SpecChange, error) {
-	return store.SpecChange{}, errors.New("unexpected GetSpecChangeByToRevision call")
+func (s *modeSelectionRevisionStore) GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
+	_ context.Context,
+	_ int64,
+	_ int64,
+) (store.SpecChange, error) {
+	return store.SpecChange{}, errors.New("unexpected GetSpecChangeByAPISpecIDAndToAPISpecRevisionID call")
 }

@@ -745,22 +745,23 @@ func (c *integrationGitLabClient) treeCallCount() int {
 }
 
 type integrationRevisionStore struct {
-	mu             sync.Mutex
-	tenant         store.Tenant
-	repo           store.Repo
-	bootstrapState store.RepoBootstrapState
-	nextRevisionID int64
-	nextAPISpecID  int64
-	nextSpecRevID  int64
-	revisions      map[int64]store.Revision
-	revisionBySHA  map[string]int64
-	artifacts      map[int64]store.SpecArtifact
-	endpoints      map[int64][]store.EndpointIndexRecord
-	specChanges    map[int64]store.SpecChange
-	apiSpecs       map[int64]store.APISpec
-	apiSpecByRoot  map[string]int64
-	apiSpecRevs    map[int64]store.APISpecRevision
-	dependencies   map[int64][]string
+	mu              sync.Mutex
+	tenant          store.Tenant
+	repo            store.Repo
+	bootstrapState  store.RepoBootstrapState
+	nextRevisionID  int64
+	nextAPISpecID   int64
+	nextSpecRevID   int64
+	revisions       map[int64]store.Revision
+	revisionBySHA   map[string]int64
+	artifacts       map[int64]store.SpecArtifact
+	endpoints       map[int64][]store.EndpointIndexRecord
+	specChanges     map[string]store.SpecChange
+	apiSpecs        map[int64]store.APISpec
+	apiSpecByRoot   map[string]int64
+	apiSpecRevs     map[int64]store.APISpecRevision
+	apiSpecRevByKey map[string]int64
+	dependencies    map[int64][]string
 }
 
 func newIntegrationRevisionStore() *integrationRevisionStore {
@@ -777,18 +778,19 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 			ActiveAPICount: 1,
 			ForceRescan:    false,
 		},
-		nextRevisionID: 1000,
-		nextAPISpecID:  400,
-		nextSpecRevID:  700,
-		revisions:      make(map[int64]store.Revision),
-		revisionBySHA:  make(map[string]int64),
-		artifacts:      make(map[int64]store.SpecArtifact),
-		endpoints:      make(map[int64][]store.EndpointIndexRecord),
-		specChanges:    make(map[int64]store.SpecChange),
-		apiSpecs:       make(map[int64]store.APISpec),
-		apiSpecByRoot:  make(map[string]int64),
-		apiSpecRevs:    make(map[int64]store.APISpecRevision),
-		dependencies:   make(map[int64][]string),
+		nextRevisionID:  1000,
+		nextAPISpecID:   400,
+		nextSpecRevID:   700,
+		revisions:       make(map[int64]store.Revision),
+		revisionBySHA:   make(map[string]int64),
+		artifacts:       make(map[int64]store.SpecArtifact),
+		endpoints:       make(map[int64][]store.EndpointIndexRecord),
+		specChanges:     make(map[string]store.SpecChange),
+		apiSpecs:        make(map[int64]store.APISpec),
+		apiSpecByRoot:   make(map[string]int64),
+		apiSpecRevs:     make(map[int64]store.APISpecRevision),
+		apiSpecRevByKey: make(map[string]int64),
+		dependencies:    make(map[int64][]string),
 	}
 
 	s.apiSpecs[400] = store.APISpec{
@@ -805,6 +807,7 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 		RootPathAtRevision: "api/openapi.yaml",
 		BuildStatus:        apiSpecRevisionBuildStatusProcessed,
 	}
+	s.apiSpecRevByKey["400:999"] = 700
 	s.dependencies[700] = []string{"api/components.yaml", "api/openapi.yaml"}
 
 	return s
@@ -950,6 +953,61 @@ func (s *integrationRevisionStore) ListActiveAPISpecsWithLatestDependencies(
 	return rows, nil
 }
 
+func (s *integrationRevisionStore) ListAPISpecListingByRepo(
+	_ context.Context,
+	repoID int64,
+) ([]store.APISpecListing, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rows := make([]store.APISpecListing, 0, len(s.apiSpecs))
+	for _, spec := range s.apiSpecs {
+		if spec.RepoID != repoID {
+			continue
+		}
+
+		item := store.APISpecListing{
+			API:    spec.RootPath,
+			Status: spec.Status,
+		}
+
+		var (
+			latestRevisionID  int64
+			latestSpecRevID   int64
+			latestRevisionSHA string
+			latestBranch      string
+		)
+		for _, specRevision := range s.apiSpecRevs {
+			if specRevision.APISpecID != spec.ID || specRevision.BuildStatus != apiSpecRevisionBuildStatusProcessed {
+				continue
+			}
+			if specRevision.RevisionID < latestRevisionID {
+				continue
+			}
+			revision, exists := s.revisions[specRevision.RevisionID]
+			if !exists {
+				continue
+			}
+			latestRevisionID = specRevision.RevisionID
+			latestSpecRevID = specRevision.ID
+			latestRevisionSHA = revision.Sha
+			latestBranch = revision.Branch
+		}
+
+		if latestSpecRevID > 0 {
+			item.LastProcessedRevision = &store.APISpecRevisionMetadata{
+				APISpecRevisionID: latestSpecRevID,
+				RevisionID:        latestRevisionID,
+				RevisionSHA:       latestRevisionSHA,
+				RevisionBranch:    latestBranch,
+			}
+		}
+		rows = append(rows, item)
+	}
+
+	return rows, nil
+}
+
 func (s *integrationRevisionStore) MarkAPISpecDeleted(_ context.Context, apiSpecID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -975,9 +1033,15 @@ func (s *integrationRevisionStore) CreateAPISpecRevision(
 		return store.APISpecRevision{}, fmt.Errorf("api spec %d not found", input.APISpecID)
 	}
 
-	s.nextSpecRevID++
+	key := fmt.Sprintf("%d:%d", input.APISpecID, input.RevisionID)
+	specRevisionID, exists := s.apiSpecRevByKey[key]
+	if !exists {
+		s.nextSpecRevID++
+		specRevisionID = s.nextSpecRevID
+		s.apiSpecRevByKey[key] = specRevisionID
+	}
 	revision := store.APISpecRevision{
-		ID:                 s.nextSpecRevID,
+		ID:                 specRevisionID,
 		APISpecID:          input.APISpecID,
 		RevisionID:         input.RevisionID,
 		RootPathAtRevision: spec.RootPath,
@@ -1009,16 +1073,16 @@ func (s *integrationRevisionStore) PersistCanonicalSpec(_ context.Context, input
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.artifacts[input.RevisionID] = store.SpecArtifact{
-		RevisionID: input.RevisionID,
-		SpecJSON:   append([]byte(nil), input.SpecJSON...),
-		SpecYAML:   input.SpecYAML,
-		ETag:       input.ETag,
-		SizeBytes:  input.SizeBytes,
+	s.artifacts[input.APISpecRevisionID] = store.SpecArtifact{
+		APISpecRevisionID: input.APISpecRevisionID,
+		SpecJSON:          append([]byte(nil), input.SpecJSON...),
+		SpecYAML:          input.SpecYAML,
+		ETag:              input.ETag,
+		SizeBytes:         input.SizeBytes,
 	}
 	rows := make([]store.EndpointIndexRecord, len(input.Endpoints))
 	copy(rows, input.Endpoints)
-	s.endpoints[input.RevisionID] = rows
+	s.endpoints[input.APISpecRevisionID] = rows
 	return nil
 }
 
@@ -1051,14 +1115,14 @@ func (s *integrationRevisionStore) GetLatestProcessedOpenAPIRevisionByBranchExcl
 	return latest, true, nil
 }
 
-func (s *integrationRevisionStore) ListEndpointIndexByRevision(
+func (s *integrationRevisionStore) ListEndpointIndexByAPISpecRevision(
 	_ context.Context,
-	revisionID int64,
+	apiSpecRevisionID int64,
 ) ([]store.EndpointIndexRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rows, exists := s.endpoints[revisionID]
+	rows, exists := s.endpoints[apiSpecRevisionID]
 	if !exists {
 		return nil, nil
 	}
@@ -1071,11 +1135,12 @@ func (s *integrationRevisionStore) PersistSpecChange(_ context.Context, input st
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.specChanges[input.ToRevisionID] = store.SpecChange{
-		RepoID:         input.RepoID,
-		FromRevisionID: input.FromRevisionID,
-		ToRevisionID:   input.ToRevisionID,
-		ChangeJSON:     append([]byte(nil), input.ChangeJSON...),
+	key := fmt.Sprintf("%d:%d", input.APISpecID, input.ToAPISpecRevisionID)
+	s.specChanges[key] = store.SpecChange{
+		APISpecID:             input.APISpecID,
+		FromAPISpecRevisionID: input.FromAPISpecRevisionID,
+		ToAPISpecRevisionID:   input.ToAPISpecRevisionID,
+		ChangeJSON:            append([]byte(nil), input.ChangeJSON...),
 	}
 	return nil
 }
@@ -1098,22 +1163,112 @@ func (s *integrationRevisionStore) GetRevisionByID(_ context.Context, revisionID
 	return revision, nil
 }
 
-func (s *integrationRevisionStore) GetSpecArtifactByRevisionID(_ context.Context, revisionID int64) (store.SpecArtifact, error) {
+func (s *integrationRevisionStore) GetSpecArtifactByAPISpecRevisionID(
+	_ context.Context,
+	apiSpecRevisionID int64,
+) (store.SpecArtifact, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	artifact, exists := s.artifacts[revisionID]
+	artifact, exists := s.artifacts[apiSpecRevisionID]
+	if !exists {
+		return store.SpecArtifact{}, fmt.Errorf("%w: api_spec_revision_id=%d", store.ErrSpecArtifactNotFound, apiSpecRevisionID)
+	}
+	return artifact, nil
+}
+
+func (s *integrationRevisionStore) GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
+	_ context.Context,
+	apiSpecID int64,
+	toAPISpecRevisionID int64,
+) (store.SpecChange, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	specChange, exists := s.specChanges[fmt.Sprintf("%d:%d", apiSpecID, toAPISpecRevisionID)]
+	if !exists {
+		return store.SpecChange{}, fmt.Errorf(
+			"spec change not found for api_spec_id=%d to_api_spec_revision_id=%d",
+			apiSpecID,
+			toAPISpecRevisionID,
+		)
+	}
+	return specChange, nil
+}
+
+func (s *integrationRevisionStore) ListEndpointIndexByRevision(
+	_ context.Context,
+	revisionID int64,
+) ([]store.EndpointIndexRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rows := make([]store.EndpointIndexRecord, 0)
+	for apiSpecRevisionID, apiSpecRevision := range s.apiSpecRevs {
+		if apiSpecRevision.RevisionID != revisionID {
+			continue
+		}
+		endpoints := s.endpoints[apiSpecRevisionID]
+		if len(endpoints) == 0 {
+			continue
+		}
+		copied := make([]store.EndpointIndexRecord, len(endpoints))
+		copy(copied, endpoints)
+		rows = append(rows, copied...)
+	}
+	return rows, nil
+}
+
+func (s *integrationRevisionStore) GetSpecArtifactByRevisionID(
+	_ context.Context,
+	revisionID int64,
+) (store.SpecArtifact, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var latestAPISpecRevisionID int64
+	for apiSpecRevisionID, apiSpecRevision := range s.apiSpecRevs {
+		if apiSpecRevision.RevisionID != revisionID {
+			continue
+		}
+		if apiSpecRevisionID > latestAPISpecRevisionID {
+			latestAPISpecRevisionID = apiSpecRevisionID
+		}
+	}
+	if latestAPISpecRevisionID == 0 {
+		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
+	}
+
+	artifact, exists := s.artifacts[latestAPISpecRevisionID]
 	if !exists {
 		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
 	}
 	return artifact, nil
 }
 
-func (s *integrationRevisionStore) GetSpecChangeByToRevision(_ context.Context, toRevisionID int64) (store.SpecChange, error) {
+func (s *integrationRevisionStore) GetSpecChangeByToRevision(
+	_ context.Context,
+	toRevisionID int64,
+) (store.SpecChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	specChange, exists := s.specChanges[toRevisionID]
+	var latestAPISpecRevisionID int64
+	var latestAPISpecID int64
+	for _, apiSpecRevision := range s.apiSpecRevs {
+		if apiSpecRevision.RevisionID != toRevisionID {
+			continue
+		}
+		if apiSpecRevision.ID > latestAPISpecRevisionID {
+			latestAPISpecRevisionID = apiSpecRevision.ID
+			latestAPISpecID = apiSpecRevision.APISpecID
+		}
+	}
+	if latestAPISpecRevisionID == 0 {
+		return store.SpecChange{}, fmt.Errorf("spec change revision %d not found", toRevisionID)
+	}
+
+	specChange, exists := s.specChanges[fmt.Sprintf("%d:%d", latestAPISpecID, latestAPISpecRevisionID)]
 	if !exists {
 		return store.SpecChange{}, fmt.Errorf("spec change revision %d not found", toRevisionID)
 	}
@@ -1172,13 +1327,14 @@ func (s *integrationNotifierStore) ListEnabledSubscriptionsByRepo(
 func (s *integrationNotifierStore) GetLatestDeliveryAttemptByKey(
 	_ context.Context,
 	subscriptionID int64,
+	apiSpecID int64,
 	revisionID int64,
 	eventType string,
 ) (store.DeliveryAttempt, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := fmt.Sprintf("%d:%d:%s", subscriptionID, revisionID, eventType)
+	key := fmt.Sprintf("%d:%d:%d:%s", subscriptionID, apiSpecID, revisionID, eventType)
 	attemptID, exists := s.latest[key]
 	if !exists {
 		return store.DeliveryAttempt{}, false, nil
@@ -1201,6 +1357,7 @@ func (s *integrationNotifierStore) CreateDeliveryAttempt(
 	attempt := store.DeliveryAttempt{
 		ID:             s.nextAttemptID,
 		SubscriptionID: input.SubscriptionID,
+		APISpecID:      input.APISpecID,
 		RevisionID:     input.RevisionID,
 		EventType:      input.EventType,
 		AttemptNo:      input.AttemptNo,
@@ -1208,7 +1365,7 @@ func (s *integrationNotifierStore) CreateDeliveryAttempt(
 		NextRetryAt:    input.NextRetryAt,
 	}
 	s.attempts[attempt.ID] = attempt
-	key := fmt.Sprintf("%d:%d:%s", input.SubscriptionID, input.RevisionID, input.EventType)
+	key := fmt.Sprintf("%d:%d:%d:%s", input.SubscriptionID, input.APISpecID, input.RevisionID, input.EventType)
 	s.latest[key] = attempt.ID
 	return attempt, nil
 }

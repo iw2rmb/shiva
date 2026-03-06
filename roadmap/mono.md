@@ -45,7 +45,7 @@ Legend: [ ] todo, [x] done.
   - Tests: table-driven store tests for per-API isolation and listing semantics
 
 ## Revision Processor Per-API Execution
-- [ ] Move build/persist/diff/notify orchestration to per-API loops — one API failure must not block others
+- [x] Move build/persist/diff/notify orchestration to per-API loops — one API failure must not block others
   - Repository: `shiva`
   - Component: `cmd/shiva/main.go`
   - Scope:

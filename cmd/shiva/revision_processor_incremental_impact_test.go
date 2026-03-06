@@ -118,7 +118,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 			wantMarkedDeletedIDs:    []int64{11},
 			wantPersistCanonical:    0,
 			wantPersistSpecChange:   1,
-			wantCreateSpecRevisions: 0,
+			wantCreateSpecRevisions: 1,
 			wantUpsertRoots:         []string{},
 			wantOpenAPIChanged:      true,
 		},
@@ -490,9 +490,10 @@ type incrementalImpactRevisionStore struct {
 
 	activeSpecs []store.ActiveAPISpecWithLatestDependencies
 
-	nextAPISpecID         int64
-	nextAPISpecRevisionID int64
-	rootByAPISpecID       map[int64]string
+	nextAPISpecID          int64
+	nextAPISpecRevisionID  int64
+	rootByAPISpecID        map[int64]string
+	apiSpecRevisionIDByKey map[string]int64
 
 	upsertRoots                []string
 	markDeletedIDs             []int64
@@ -532,14 +533,15 @@ func newIncrementalImpactRevisionStore(
 			ActiveAPICount: int64(len(activeSpecs)),
 			ForceRescan:    false,
 		},
-		revisionID:            revisionID,
-		activeSpecs:           copiedActiveSpecs,
-		nextAPISpecID:         1000,
-		nextAPISpecRevisionID: 5000,
-		rootByAPISpecID:       rootBySpecID,
-		finalStatusByRoot:     make(map[string]string),
-		finalErrorByRoot:      make(map[string]string),
-		endpoints:             make(map[int64][]store.EndpointIndexRecord),
+		revisionID:             revisionID,
+		activeSpecs:            copiedActiveSpecs,
+		nextAPISpecID:          1000,
+		nextAPISpecRevisionID:  5000,
+		rootByAPISpecID:        rootBySpecID,
+		apiSpecRevisionIDByKey: make(map[string]int64),
+		finalStatusByRoot:      make(map[string]string),
+		finalErrorByRoot:       make(map[string]string),
+		endpoints:              make(map[int64][]store.EndpointIndexRecord),
 	}
 }
 
@@ -627,6 +629,13 @@ func (s *incrementalImpactRevisionStore) ListActiveAPISpecsWithLatestDependencie
 	return rows, nil
 }
 
+func (s *incrementalImpactRevisionStore) ListAPISpecListingByRepo(
+	_ context.Context,
+	_ int64,
+) ([]store.APISpecListing, error) {
+	return nil, nil
+}
+
 func (s *incrementalImpactRevisionStore) MarkAPISpecDeleted(_ context.Context, apiSpecID int64) error {
 	s.markDeletedIDs = append(s.markDeletedIDs, apiSpecID)
 	for i, spec := range s.activeSpecs {
@@ -651,9 +660,16 @@ func (s *incrementalImpactRevisionStore) CreateAPISpecRevision(
 	s.createAPISpecRevisionCalls = append(s.createAPISpecRevisionCalls, input)
 	s.finalStatusByRoot[rootPath] = input.BuildStatus
 	s.finalErrorByRoot[rootPath] = input.Error
-	s.nextAPISpecRevisionID++
+
+	key := fmt.Sprintf("%d:%d", input.APISpecID, input.RevisionID)
+	apiSpecRevisionID, exists := s.apiSpecRevisionIDByKey[key]
+	if !exists {
+		s.nextAPISpecRevisionID++
+		apiSpecRevisionID = s.nextAPISpecRevisionID
+		s.apiSpecRevisionIDByKey[key] = apiSpecRevisionID
+	}
 	return store.APISpecRevision{
-		ID:                 s.nextAPISpecRevisionID,
+		ID:                 apiSpecRevisionID,
 		APISpecID:          input.APISpecID,
 		RevisionID:         input.RevisionID,
 		RootPathAtRevision: rootPath,
@@ -678,24 +694,15 @@ func (s *incrementalImpactRevisionStore) PersistCanonicalSpec(
 
 	rows := make([]store.EndpointIndexRecord, len(input.Endpoints))
 	copy(rows, input.Endpoints)
-	s.endpoints[input.RevisionID] = rows
+	s.endpoints[input.APISpecRevisionID] = rows
 	return nil
 }
 
-func (*incrementalImpactRevisionStore) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+func (s *incrementalImpactRevisionStore) ListEndpointIndexByAPISpecRevision(
 	_ context.Context,
-	_ int64,
-	_ string,
-	_ int64,
-) (store.Revision, bool, error) {
-	return store.Revision{}, false, nil
-}
-
-func (s *incrementalImpactRevisionStore) ListEndpointIndexByRevision(
-	_ context.Context,
-	revisionID int64,
+	apiSpecRevisionID int64,
 ) ([]store.EndpointIndexRecord, error) {
-	rows, exists := s.endpoints[revisionID]
+	rows, exists := s.endpoints[apiSpecRevisionID]
 	if !exists {
 		return nil, nil
 	}
@@ -717,10 +724,17 @@ func (*incrementalImpactRevisionStore) GetRevisionByID(_ context.Context, _ int6
 	return store.Revision{}, errors.New("unexpected GetRevisionByID call")
 }
 
-func (*incrementalImpactRevisionStore) GetSpecArtifactByRevisionID(_ context.Context, _ int64) (store.SpecArtifact, error) {
-	return store.SpecArtifact{}, errors.New("unexpected GetSpecArtifactByRevisionID call")
+func (*incrementalImpactRevisionStore) GetSpecArtifactByAPISpecRevisionID(
+	_ context.Context,
+	_ int64,
+) (store.SpecArtifact, error) {
+	return store.SpecArtifact{}, errors.New("unexpected GetSpecArtifactByAPISpecRevisionID call")
 }
 
-func (*incrementalImpactRevisionStore) GetSpecChangeByToRevision(_ context.Context, _ int64) (store.SpecChange, error) {
-	return store.SpecChange{}, errors.New("unexpected GetSpecChangeByToRevision call")
+func (*incrementalImpactRevisionStore) GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
+	_ context.Context,
+	_ int64,
+	_ int64,
+) (store.SpecChange, error) {
+	return store.SpecChange{}, errors.New("unexpected GetSpecChangeByAPISpecIDAndToAPISpecRevisionID call")
 }

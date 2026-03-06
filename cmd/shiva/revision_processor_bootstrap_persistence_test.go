@@ -392,6 +392,13 @@ func (s *bootstrapPersistenceRevisionStore) ListActiveAPISpecsWithLatestDependen
 	return nil, fmt.Errorf("unexpected ListActiveAPISpecsWithLatestDependencies call")
 }
 
+func (s *bootstrapPersistenceRevisionStore) ListAPISpecListingByRepo(
+	_ context.Context,
+	_ int64,
+) ([]store.APISpecListing, error) {
+	return nil, nil
+}
+
 func (s *bootstrapPersistenceRevisionStore) MarkAPISpecDeleted(_ context.Context, _ int64) error {
 	return fmt.Errorf("unexpected MarkAPISpecDeleted call")
 }
@@ -443,24 +450,15 @@ func (s *bootstrapPersistenceRevisionStore) PersistCanonicalSpec(
 
 	rows := make([]store.EndpointIndexRecord, len(input.Endpoints))
 	copy(rows, input.Endpoints)
-	s.endpoints[input.RevisionID] = rows
+	s.endpoints[input.APISpecRevisionID] = rows
 	return nil
 }
 
-func (s *bootstrapPersistenceRevisionStore) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+func (s *bootstrapPersistenceRevisionStore) ListEndpointIndexByAPISpecRevision(
 	_ context.Context,
-	_ int64,
-	_ string,
-	_ int64,
-) (store.Revision, bool, error) {
-	return store.Revision{}, false, nil
-}
-
-func (s *bootstrapPersistenceRevisionStore) ListEndpointIndexByRevision(
-	_ context.Context,
-	revisionID int64,
+	apiSpecRevisionID int64,
 ) ([]store.EndpointIndexRecord, error) {
-	rows, exists := s.endpoints[revisionID]
+	rows, exists := s.endpoints[apiSpecRevisionID]
 	if !exists {
 		return nil, nil
 	}
@@ -482,10 +480,17 @@ func (s *bootstrapPersistenceRevisionStore) GetRevisionByID(_ context.Context, _
 	return store.Revision{}, fmt.Errorf("unexpected GetRevisionByID call")
 }
 
-func (s *bootstrapPersistenceRevisionStore) GetSpecArtifactByRevisionID(_ context.Context, _ int64) (store.SpecArtifact, error) {
-	return store.SpecArtifact{}, fmt.Errorf("unexpected GetSpecArtifactByRevisionID call")
+func (s *bootstrapPersistenceRevisionStore) GetSpecArtifactByAPISpecRevisionID(
+	_ context.Context,
+	_ int64,
+) (store.SpecArtifact, error) {
+	return store.SpecArtifact{}, fmt.Errorf("unexpected GetSpecArtifactByAPISpecRevisionID call")
 }
 
-func (s *bootstrapPersistenceRevisionStore) GetSpecChangeByToRevision(_ context.Context, _ int64) (store.SpecChange, error) {
-	return store.SpecChange{}, fmt.Errorf("unexpected GetSpecChangeByToRevision call")
+func (s *bootstrapPersistenceRevisionStore) GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
+	_ context.Context,
+	_ int64,
+	_ int64,
+) (store.SpecChange, error) {
+	return store.SpecChange{}, fmt.Errorf("unexpected GetSpecChangeByAPISpecIDAndToAPISpecRevisionID call")
 }

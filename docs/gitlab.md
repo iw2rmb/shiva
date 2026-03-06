@@ -20,7 +20,7 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
      - upsert `api_specs` by `root_path`,
      - write `api_spec_revisions` status rows,
      - replace `api_spec_dependencies`,
-     - build/persist canonical artifact + endpoint index (revision-level storage).
+     - build/persist canonical artifact + endpoint index keyed by `api_spec_revision_id`.
 6. Incremental mode runs:
    - GitLab Compare API (`from=parent_sha`, `to=sha`) once to load changed paths.
    - Normalize changed paths and load active `api_specs` with latest `processed` dependency snapshots.
@@ -32,18 +32,19 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
        - `processed` on success,
        - `failed` on permanent root-local errors (invalid root/`$ref`/cycle/fetch-limit/not-found/GitLab 4xx), while continuing with other APIs.
    - If no impacted APIs are found, run targeted discovery on `new_file` / `renamed_file` candidate paths and create/build newly valid roots.
-7. If at least one API was rebuilt:
+7. For each rebuilt API:
    - build canonical JSON+YAML,
    - extract endpoints,
-   - persist `spec_artifacts` and `endpoint_index`.
-8. If at least one API was rebuilt or deactivated (deleted root):
-   - compute and persist semantic diff (`spec_changes`).
+   - persist `spec_artifacts` and `endpoint_index` for that API spec revision.
+8. For each changed API (rebuilt or deactivated root):
+   - compute and persist semantic diff (`spec_changes`) for that API.
    - mark revision `openapi_changed=true`.
 9. If no API was rebuilt and no API was deactivated:
    - mark revision `openapi_changed=false`.
 10. Emit outbound notifications:
-   - always emit `spec.updated.diff` for `openapi_changed=true`,
-   - emit `spec.updated.full` only when canonical artifact exists for that revision.
+   - emit events per changed API,
+   - always emit `spec.updated.diff` for each changed API,
+   - emit `spec.updated.full` only when canonical artifact exists for that API spec revision.
 11. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
 
 ## Incremental vs Bootstrap Matrix
@@ -54,7 +55,7 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 | Rebuild scope | Every discovered root | Impacted roots only, plus fallback discovery when no impacts and create/rename candidates exist |
 | Dependency use | Replaces `api_spec_dependencies` for each discovered root | Reuses latest `api_spec_dependencies` from processed revisions to detect impact |
 | Root deletion | No deletion pass | Deletes matching impacted roots by setting `api_specs.status='deleted'` |
-| Artifact/diff outputs | `openapi_changed=true` if any root built | `openapi_changed=true` if any API build succeeds or impacted root is deleted; diff is always emitted for changed revisions, full event only when artifact exists |
+| Artifact/diff outputs | `openapi_changed=true` if any root built | `openapi_changed=true` if any API build succeeds or impacted root is deleted; diff is emitted per changed API revision, full is emitted per API revision only when artifact exists |
 
 ## GitLab APIs Used
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`
@@ -92,11 +93,6 @@ Other errors are retried by worker backoff policy.
 Cross-failure behavior:
 - Compare/diff/persist failures in incremental mode are revision-scoped and can fail the whole revision.
 - Per-API/per-root permanent processing errors in incremental mode are scoped to that root and do not block other impacted roots.
-
-## Current Limitation
-Bootstrap now persists per-root API metadata (`api_specs`, `api_spec_revisions`, `api_spec_dependencies`) and isolates root-local permanent build failures so other roots can still build.
-
-Canonical artifact/index/change tables are still keyed by `revision_id`. In multi-root bootstrap, later successful root builds overwrite earlier root artifact/index rows for the same revision.
 
 ## References
 - Setup and envs: `docs/setup.md`

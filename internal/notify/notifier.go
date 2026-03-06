@@ -33,6 +33,7 @@ type Store interface {
 	GetLatestDeliveryAttemptByKey(
 		ctx context.Context,
 		subscriptionID int64,
+		apiSpecID int64,
 		revisionID int64,
 		eventType string,
 	) (store.DeliveryAttempt, bool, error)
@@ -60,19 +61,22 @@ type Notifier struct {
 }
 
 type RevisionNotification struct {
-	TenantID    int64
-	TenantKey   string
-	RepoID      int64
-	RepoPath    string
-	RevisionID  int64
-	DeliveryID  string
-	Sha         string
-	Branch      string
-	ProcessedAt time.Time
-	Artifact    store.SpecArtifact
-	IncludeFull bool
-	SpecChange  store.SpecChange
-	FromSHA     string
+	TenantID          int64
+	TenantKey         string
+	RepoID            int64
+	RepoPath          string
+	APISpecID         int64
+	API               string
+	APISpecRevisionID int64
+	RevisionID        int64
+	DeliveryID        string
+	Sha               string
+	Branch            string
+	ProcessedAt       time.Time
+	Artifact          store.SpecArtifact
+	IncludeFull       bool
+	SpecChange        store.SpecChange
+	FromSHA           string
 }
 
 type eventEnvelope[T any] struct {
@@ -196,6 +200,12 @@ func (n *Notifier) NotifyRevision(ctx context.Context, notification RevisionNoti
 	if notification.RevisionID < 1 {
 		return errors.New("revision id must be positive")
 	}
+	if notification.APISpecID < 1 {
+		return errors.New("api spec id must be positive")
+	}
+	if notification.APISpecRevisionID < 1 {
+		return errors.New("api spec revision id must be positive")
+	}
 	if notification.ProcessedAt.IsZero() {
 		notification.ProcessedAt = n.now().UTC()
 	}
@@ -232,7 +242,7 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 
 	diffEnvelope := eventEnvelope[diffEventPayload]{
 		Type:        store.DeliveryEventTypeSpecUpdatedDiff,
-		EventID:     deterministicEnvelopeEventID(notification.RevisionID, store.DeliveryEventTypeSpecUpdatedDiff),
+		EventID:     deterministicEnvelopeEventID(notification.APISpecID, notification.RevisionID, store.DeliveryEventTypeSpecUpdatedDiff),
 		Tenant:      tenantKey,
 		Repo:        repoPath,
 		RevisionID:  notification.RevisionID,
@@ -240,9 +250,9 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 		Branch:      notification.Branch,
 		ProcessedAt: processedAtText,
 		Payload: diffEventPayload{
-			FromRevisionID: notification.SpecChange.FromRevisionID,
+			FromRevisionID: notification.SpecChange.FromAPISpecRevisionID,
 			FromSHA:        strings.TrimSpace(notification.FromSHA),
-			ToRevisionID:   notification.RevisionID,
+			ToRevisionID:   notification.APISpecRevisionID,
 			ToSHA:          notification.Sha,
 			Changes:        json.RawMessage(notification.SpecChange.ChangeJSON),
 		},
@@ -270,7 +280,7 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 
 	fullEnvelope := eventEnvelope[fullEventPayload]{
 		Type:        store.DeliveryEventTypeSpecUpdatedFull,
-		EventID:     deterministicEnvelopeEventID(notification.RevisionID, store.DeliveryEventTypeSpecUpdatedFull),
+		EventID:     deterministicEnvelopeEventID(notification.APISpecID, notification.RevisionID, store.DeliveryEventTypeSpecUpdatedFull),
 		Tenant:      tenantKey,
 		Repo:        repoPath,
 		RevisionID:  notification.RevisionID,
@@ -314,10 +324,12 @@ func (n *Notifier) dispatchEvent(
 	}
 
 	revisionID := notification.RevisionID
+	apiSpecID := notification.APISpecID
 	dispatchLogger := n.logger
 	if dispatchLogger != nil {
 		dispatchLogger = dispatchLogger.With(
 			"subscription_id", subscription.ID,
+			"api_spec_id", apiSpecID,
 			"event_type", event.eventType,
 			"repo_id", notification.RepoID,
 			"revision_id", revisionID,
@@ -329,6 +341,7 @@ func (n *Notifier) dispatchEvent(
 	latestAttempt, hasAttempt, err := n.store.GetLatestDeliveryAttemptByKey(
 		ctx,
 		subscription.ID,
+		apiSpecID,
 		revisionID,
 		event.eventType,
 	)
@@ -354,6 +367,7 @@ func (n *Notifier) dispatchEvent(
 		attribute.Int64("subscription.id", subscription.ID),
 		attribute.String("event.type", event.eventType),
 		attribute.Int64("repo.id", notification.RepoID),
+		attribute.Int64("api_spec.id", apiSpecID),
 		attribute.Int64("revision.id", revisionID),
 		attribute.String("delivery.id", notification.DeliveryID),
 		attribute.String("revision.sha", notification.Sha),
@@ -398,6 +412,7 @@ func (n *Notifier) dispatchEvent(
 	for ; attemptNo <= maxAttempts; attemptNo++ {
 		createdAttempt, err := n.store.CreateDeliveryAttempt(ctx, store.CreateDeliveryAttemptInput{
 			SubscriptionID: subscription.ID,
+			APISpecID:      apiSpecID,
 			RevisionID:     revisionID,
 			EventType:      event.eventType,
 			AttemptNo:      attemptNo,
@@ -417,7 +432,7 @@ func (n *Notifier) dispatchEvent(
 			)
 		}
 
-		eventID := deterministicEventID(subscription.ID, revisionID, event.eventType)
+		eventID := deterministicEventID(subscription.ID, apiSpecID, revisionID, event.eventType)
 		outcome := n.deliverOnce(ctx, subscription, eventID, event.body)
 		if outcome.success {
 			if _, err := n.store.UpdateDeliveryAttemptResult(ctx, store.UpdateDeliveryAttemptResultInput{
@@ -578,12 +593,12 @@ func isTerminalStatus(status string) bool {
 	return status == store.DeliveryAttemptStatusSucceeded || status == store.DeliveryAttemptStatusFailed
 }
 
-func deterministicEventID(subscriptionID int64, revisionID int64, eventType string) string {
-	return fmt.Sprintf("sub:%d:rev:%d:event:%s", subscriptionID, revisionID, eventType)
+func deterministicEventID(subscriptionID int64, apiSpecID int64, revisionID int64, eventType string) string {
+	return fmt.Sprintf("sub:%d:api:%d:rev:%d:event:%s", subscriptionID, apiSpecID, revisionID, eventType)
 }
 
-func deterministicEnvelopeEventID(revisionID int64, eventType string) string {
-	return fmt.Sprintf("rev:%d:event:%s", revisionID, eventType)
+func deterministicEnvelopeEventID(apiSpecID int64, revisionID int64, eventType string) string {
+	return fmt.Sprintf("api:%d:rev:%d:event:%s", apiSpecID, revisionID, eventType)
 }
 
 func signPayload(secret string, body []byte) string {
