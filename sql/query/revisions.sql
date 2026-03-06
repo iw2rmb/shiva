@@ -22,6 +22,14 @@ FROM revisions
 WHERE repo_id = sqlc.arg(repo_id)
   AND sha = sqlc.arg(sha);
 
+-- name: GetRevisionByRepoSHAPrefix :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
+FROM revisions
+WHERE repo_id = sqlc.arg(repo_id)
+  AND sha LIKE sqlc.arg(sha_prefix) || '%'
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
 -- name: GetRevisionByID :one
 SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
 FROM revisions

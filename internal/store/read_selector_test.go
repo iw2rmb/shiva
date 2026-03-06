@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func TestResolveReadSelector_BranchPrefersLatestProcessedOpenAPIRevision(t *testing.T) {
+func TestResolveReadSelector_NoSelectorDefaultsToMainHead(t *testing.T) {
 	t.Parallel()
 
 	queries := &fakeSelectorResolutionQueries{
@@ -19,21 +19,20 @@ func TestResolveReadSelector_BranchPrefersLatestProcessedOpenAPIRevision(t *test
 			ID:                44,
 			TenantID:          3,
 			PathWithNamespace: "acme/platform-api",
-			DefaultBranch:     "main",
+			DefaultBranch:     "release",
 		},
 		latestByBranch: map[string]sqlc.Revision{
-			"release": newSelectorTestRevision(500, "processed", boolPtr(false), "release", "sha-head"),
+			mainBranchName: newSelectorTestRevision(500, "processed", boolPtr(false), mainBranchName, "main-head"),
 		},
 		openAPIByBranch: map[string]sqlc.Revision{
-			"release": newSelectorTestRevision(490, "processed", boolPtr(true), "release", "sha-artifact"),
+			mainBranchName: newSelectorTestRevision(490, "processed", boolPtr(true), mainBranchName, "main-artifact"),
 		},
 	}
 
 	resolved, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
 		tenantKey: "tenant-a",
 		repoPath:  "acme/platform-api",
-		selector:  "release",
-		kind:      SelectorKindBranch,
+		kind:      SelectorKindNoSelector,
 	})
 	if err != nil {
 		t.Fatalf("resolveReadSelector() unexpected error: %v", err)
@@ -42,12 +41,15 @@ func TestResolveReadSelector_BranchPrefersLatestProcessedOpenAPIRevision(t *test
 	if resolved.Revision.ID != 490 {
 		t.Fatalf("expected artifact revision id=490, got %d", resolved.Revision.ID)
 	}
-	if resolved.SelectorKind != SelectorKindBranch {
-		t.Fatalf("expected selector kind %q, got %q", SelectorKindBranch, resolved.SelectorKind)
+	if resolved.SelectorKind != SelectorKindNoSelector {
+		t.Fatalf("expected selector kind %q, got %q", SelectorKindNoSelector, resolved.SelectorKind)
+	}
+	if queries.lastHeadBranch != mainBranchName {
+		t.Fatalf("expected no-selector to resolve using branch %q, got %q", mainBranchName, queries.lastHeadBranch)
 	}
 }
 
-func TestResolveReadSelector_BranchHeadUnprocessedReturnsConflict(t *testing.T) {
+func TestResolveReadSelector_NoSelectorHeadUnprocessedReturnsConflict(t *testing.T) {
 	t.Parallel()
 
 	queries := &fakeSelectorResolutionQueries{
@@ -59,15 +61,14 @@ func TestResolveReadSelector_BranchHeadUnprocessedReturnsConflict(t *testing.T) 
 			DefaultBranch:     "main",
 		},
 		latestByBranch: map[string]sqlc.Revision{
-			"main": newSelectorTestRevision(501, "pending", nil, "main", "sha-head"),
+			mainBranchName: newSelectorTestRevision(501, "pending", nil, mainBranchName, "main-head"),
 		},
 	}
 
 	_, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
 		tenantKey: "tenant-a",
 		repoPath:  "acme/platform-api",
-		selector:  "main",
-		kind:      SelectorKindBranch,
+		kind:      SelectorKindNoSelector,
 	})
 	if err == nil {
 		t.Fatalf("expected unprocessed selector error")
@@ -96,8 +97,8 @@ func TestResolveReadSelector_SHAProcessedWithoutOpenAPIArtifactReturnsNotFound(t
 			PathWithNamespace: "acme/platform-api",
 			DefaultBranch:     "main",
 		},
-		bySHA: map[string]sqlc.Revision{
-			"1111111111111111111111111111111111111111": newSelectorTestRevision(
+		bySHAPrefix: map[string]sqlc.Revision{
+			"11111111": newSelectorTestRevision(
 				700,
 				"processed",
 				boolPtr(false),
@@ -110,7 +111,7 @@ func TestResolveReadSelector_SHAProcessedWithoutOpenAPIArtifactReturnsNotFound(t
 	_, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
 		tenantKey: "tenant-a",
 		repoPath:  "acme/platform-api",
-		selector:  "1111111111111111111111111111111111111111",
+		selector:  "11111111",
 		kind:      SelectorKindSHA,
 	})
 	if err == nil {
@@ -121,7 +122,7 @@ func TestResolveReadSelector_SHAProcessedWithoutOpenAPIArtifactReturnsNotFound(t
 	}
 }
 
-func TestResolveReadSelector_LatestUsesRepoDefaultBranch(t *testing.T) {
+func TestResolveReadSelector_NotFoundShortSHA(t *testing.T) {
 	t.Parallel()
 
 	queries := &fakeSelectorResolutionQueries{
@@ -130,31 +131,21 @@ func TestResolveReadSelector_LatestUsesRepoDefaultBranch(t *testing.T) {
 			ID:                44,
 			TenantID:          3,
 			PathWithNamespace: "acme/platform-api",
-			DefaultBranch:     "release",
-		},
-		latestByBranch: map[string]sqlc.Revision{
-			"release": newSelectorTestRevision(800, "processed", boolPtr(true), "release", "sha-head"),
-		},
-		openAPIByBranch: map[string]sqlc.Revision{
-			"release": newSelectorTestRevision(800, "processed", boolPtr(true), "release", "sha-head"),
+			DefaultBranch:     "main",
 		},
 	}
 
-	resolved, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
+	_, err := resolveReadSelector(context.Background(), queries, normalizedResolveReadSelectorInput{
 		tenantKey: "tenant-a",
 		repoPath:  "acme/platform-api",
-		selector:  "latest",
-		kind:      SelectorKindLatest,
+		selector:  "deadbeef",
+		kind:      SelectorKindSHA,
 	})
-	if err != nil {
-		t.Fatalf("resolveReadSelector() unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("expected not found selector error")
 	}
-
-	if resolved.Revision.ID != 800 {
-		t.Fatalf("expected revision id=800, got %d", resolved.Revision.ID)
-	}
-	if queries.lastHeadBranch != "release" {
-		t.Fatalf("expected latest to resolve against repo default branch release, got %q", queries.lastHeadBranch)
+	if !errors.Is(err, ErrSelectorNotFound) {
+		t.Fatalf("expected ErrSelectorNotFound, got %v", err)
 	}
 }
 
@@ -173,7 +164,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 			input: ResolveReadSelectorInput{
 				TenantKey: "",
 				RepoPath:  "acme/platform-api",
-				Selector:  "main",
+				Selector:  "a1b2c3d4",
 			},
 			expectError: true,
 		},
@@ -182,39 +173,46 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 			input: ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "   ",
-				Selector:  "main",
+				Selector:  "a1b2c3d4",
 			},
 			expectError: true,
 		},
 		{
-			name: "sha selector normalized to lower-case",
+			name: "short selector normalized to lower-case",
 			input: ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
-				Selector:  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+				Selector:  "a1b2c3d4",
 			},
 			kind:     SelectorKindSHA,
-			selector: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			selector: "a1b2c3d4",
 		},
 		{
-			name: "latest selector is case-insensitive",
+			name: "invalid short SHA length",
 			input: ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
-				Selector:  "LaTeSt",
+				Selector:  "1234567",
 			},
-			kind:     SelectorKindLatest,
-			selector: "latest",
+			expectError: true,
 		},
 		{
-			name: "branch selector keeps value",
+			name: "invalid short SHA charset",
 			input: ResolveReadSelectorInput{
 				TenantKey: "tenant-a",
 				RepoPath:  "acme/platform-api",
-				Selector:  "release/v1",
+				Selector:  "g1b2c3d4",
 			},
-			kind:     SelectorKindBranch,
-			selector: "release/v1",
+			expectError: true,
+		},
+		{
+			name: "upper-case short SHA rejected",
+			input: ResolveReadSelectorInput{
+				TenantKey: "tenant-a",
+				RepoPath:  "acme/platform-api",
+				Selector:  "A1B2C3D4",
+			},
+			expectError: true,
 		},
 		{
 			name: "no selector mode",
@@ -230,7 +228,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 			input: ResolveReadSelectorInput{
 				TenantKey:  "tenant-a",
 				RepoPath:   "acme/platform-api",
-				Selector:   "main",
+				Selector:   "a1b2c3d4",
 				NoSelector: true,
 			},
 			expectError: true,
@@ -242,16 +240,6 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 				RepoPath:  "acme/platform-api",
 			},
 			expectError: true,
-		},
-		{
-			name: "40-char non-hex selector is treated as branch",
-			input: ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
-				Selector:  "gggggggggggggggggggggggggggggggggggggggg",
-			},
-			kind:     SelectorKindBranch,
-			selector: "gggggggggggggggggggggggggggggggggggggggg",
 		},
 	}
 
@@ -285,7 +273,7 @@ type fakeSelectorResolutionQueries struct {
 	tenant sqlc.Tenant
 	repo   sqlc.Repo
 
-	bySHA           map[string]sqlc.Revision
+	bySHAPrefix     map[string]sqlc.Revision
 	latestByBranch  map[string]sqlc.Revision
 	openAPIByBranch map[string]sqlc.Revision
 
@@ -309,14 +297,14 @@ func (f *fakeSelectorResolutionQueries) GetRepoByTenantAndPath(
 	return f.repo, nil
 }
 
-func (f *fakeSelectorResolutionQueries) GetRevisionByRepoSHA(
+func (f *fakeSelectorResolutionQueries) GetRevisionByRepoSHAPrefix(
 	_ context.Context,
-	arg sqlc.GetRevisionByRepoSHAParams,
+	arg sqlc.GetRevisionByRepoSHAPrefixParams,
 ) (sqlc.Revision, error) {
-	if f.bySHA == nil {
+	if f.bySHAPrefix == nil {
 		return sqlc.Revision{}, pgx.ErrNoRows
 	}
-	revision, ok := f.bySHA[arg.Sha]
+	revision, ok := f.bySHAPrefix[arg.ShaPrefix.String]
 	if !ok {
 		return sqlc.Revision{}, pgx.ErrNoRows
 	}

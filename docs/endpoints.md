@@ -45,8 +45,8 @@ Malformed delimiter shapes are rejected as `400`:
 Route method is the endpoint method selector.
 
 ## Selector Semantics
-- selector can be commit SHA, branch, or `latest`.
-- no-selector routes resolve to latest processed revision on `main`.
+- selector can only be an 8-character lowercase commit SHA (short SHA prefix).
+- no-selector routes resolve to latest processed `HEAD` on `main`.
 - selector operation route is attempted first; if selector is not found it falls through to no-selector operation route.
 
 ## Path Normalization on Reads

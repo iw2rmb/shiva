@@ -215,6 +215,38 @@ func (q *Queries) GetRevisionByRepoSHA(ctx context.Context, arg GetRevisionByRep
 	return i, err
 }
 
+const getRevisionByRepoSHAPrefix = `-- name: GetRevisionByRepoSHAPrefix :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
+FROM revisions
+WHERE repo_id = $1
+  AND sha LIKE $2 || '%'
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetRevisionByRepoSHAPrefixParams struct {
+	RepoID    int64       `json:"repo_id"`
+	ShaPrefix pgtype.Text `json:"sha_prefix"`
+}
+
+func (q *Queries) GetRevisionByRepoSHAPrefix(ctx context.Context, arg GetRevisionByRepoSHAPrefixParams) (Revision, error) {
+	row := q.db.QueryRow(ctx, getRevisionByRepoSHAPrefix, arg.RepoID, arg.ShaPrefix)
+	var i Revision
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
+		&i.Status,
+		&i.Error,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const markRevisionFailed = `-- name: MarkRevisionFailed :one
 UPDATE revisions
 SET processed_at = NOW(),

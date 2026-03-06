@@ -74,7 +74,7 @@ Legend: [ ] todo, [x] done.
   - Tests: HTTP route tests for delimiter handling, ambiguous path rejection, and mono/single-spec route separation
 
 ## Selector Simplification
-- [ ] Replace branch/latest selector routing with optional short-SHA selector — stabilize external contract on `HEAD` default
+- [x] Replace branch/latest selector routing with optional short-SHA selector — stabilize external contract on `HEAD` default
   - Repository: `shiva`
   - Component: `internal/http`, `internal/store/read_selector.go`
   - Scope:

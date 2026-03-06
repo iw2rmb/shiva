@@ -8,20 +8,19 @@ import (
 
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const (
-	selectorLatestToken = "latest"
-	mainBranchName      = "main"
-	revisionProcessed   = "processed"
+	shortSHASelectorLength = 8
+	mainBranchName         = "main"
+	revisionProcessed      = "processed"
 )
 
 type SelectorKind string
 
 const (
 	SelectorKindSHA        SelectorKind = "sha"
-	SelectorKindBranch     SelectorKind = "branch"
-	SelectorKindLatest     SelectorKind = "latest"
 	SelectorKindNoSelector SelectorKind = "no_selector"
 )
 
@@ -121,7 +120,7 @@ type normalizedResolveReadSelectorInput struct {
 type selectorResolutionQueries interface {
 	GetTenantByKey(ctx context.Context, key string) (sqlc.Tenant, error)
 	GetRepoByTenantAndPath(ctx context.Context, arg sqlc.GetRepoByTenantAndPathParams) (sqlc.Repo, error)
-	GetRevisionByRepoSHA(ctx context.Context, arg sqlc.GetRevisionByRepoSHAParams) (sqlc.Revision, error)
+	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.Revision, error)
 	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.Revision, error)
 	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 		ctx context.Context,
@@ -183,18 +182,6 @@ func resolveReadSelector(
 	switch input.kind {
 	case SelectorKindSHA:
 		return resolveReadSelectorBySHA(ctx, queries, tenant.ID, repo, input)
-	case SelectorKindBranch:
-		return resolveReadSelectorByBranch(ctx, queries, tenant.ID, repo, input, input.selector)
-	case SelectorKindLatest:
-		defaultBranch := strings.TrimSpace(repo.DefaultBranch)
-		if defaultBranch == "" {
-			return ResolvedReadSelector{}, fmt.Errorf(
-				"resolve selector %q: repo %q has empty default branch",
-				input.selector,
-				input.repoPath,
-			)
-		}
-		return resolveReadSelectorByBranch(ctx, queries, tenant.ID, repo, input, defaultBranch)
 	case SelectorKindNoSelector:
 		return resolveReadSelectorByBranch(ctx, queries, tenant.ID, repo, input, mainBranchName)
 	default:
@@ -215,9 +202,12 @@ func resolveReadSelectorBySHA(
 	repo sqlc.Repo,
 	input normalizedResolveReadSelectorInput,
 ) (ResolvedReadSelector, error) {
-	revision, err := queries.GetRevisionByRepoSHA(ctx, sqlc.GetRevisionByRepoSHAParams{
+	revision, err := queries.GetRevisionByRepoSHAPrefix(ctx, sqlc.GetRevisionByRepoSHAPrefixParams{
 		RepoID: repo.ID,
-		Sha:    input.selector,
+		ShaPrefix: pgtype.Text{
+			String: input.selector,
+			Valid:  true,
+		},
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -388,24 +378,22 @@ func normalizeResolveReadSelectorInput(input ResolveReadSelectorInput) (normaliz
 		}
 	}
 
-	if strings.EqualFold(normalized.selector, selectorLatestToken) {
-		normalized.kind = SelectorKindLatest
-		normalized.selector = selectorLatestToken
-		return normalized, nil
+	if !isShortSHA(normalized.selector) {
+		return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
+			Code:      SelectorResolutionInvalidInput,
+			TenantKey: normalized.tenantKey,
+			RepoPath:  normalized.repoPath,
+			Selector:  normalized.selector,
+			Err:       errors.New("selector must be exactly 8 lowercase hex characters"),
+		}
 	}
 
-	if isFullLengthSHA(normalized.selector) {
-		normalized.kind = SelectorKindSHA
-		normalized.selector = strings.ToLower(normalized.selector)
-		return normalized, nil
-	}
-
-	normalized.kind = SelectorKindBranch
+	normalized.kind = SelectorKindSHA
 	return normalized, nil
 }
 
-func isFullLengthSHA(value string) bool {
-	if len(value) != 40 {
+func isShortSHA(value string) bool {
+	if len(value) != shortSHASelectorLength {
 		return false
 	}
 	for _, character := range value {
@@ -413,8 +401,6 @@ func isFullLengthSHA(value string) bool {
 		case character >= '0' && character <= '9':
 			continue
 		case character >= 'a' && character <= 'f':
-			continue
-		case character >= 'A' && character <= 'F':
 			continue
 		default:
 			return false
