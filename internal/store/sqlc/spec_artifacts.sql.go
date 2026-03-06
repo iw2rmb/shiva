@@ -9,18 +9,18 @@ import (
 	"context"
 )
 
-const getSpecArtifactByRevisionID = `-- name: GetSpecArtifactByRevisionID :one
-SELECT id, revision_id, spec_json, spec_yaml, etag, size_bytes, created_at
+const getSpecArtifactByAPISpecRevisionID = `-- name: GetSpecArtifactByAPISpecRevisionID :one
+SELECT id, api_spec_revision_id, spec_json, spec_yaml, etag, size_bytes, created_at
 FROM spec_artifacts
-WHERE revision_id = $1
+WHERE api_spec_revision_id = $1
 `
 
-func (q *Queries) GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (SpecArtifact, error) {
-	row := q.db.QueryRow(ctx, getSpecArtifactByRevisionID, revisionID)
+func (q *Queries) GetSpecArtifactByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) (SpecArtifact, error) {
+	row := q.db.QueryRow(ctx, getSpecArtifactByAPISpecRevisionID, apiSpecRevisionID)
 	var i SpecArtifact
 	err := row.Scan(
 		&i.ID,
-		&i.RevisionID,
+		&i.ApiSpecRevisionID,
 		&i.SpecJson,
 		&i.SpecYaml,
 		&i.Etag,
@@ -32,7 +32,7 @@ func (q *Queries) GetSpecArtifactByRevisionID(ctx context.Context, revisionID in
 
 const upsertSpecArtifact = `-- name: UpsertSpecArtifact :one
 INSERT INTO spec_artifacts (
-    revision_id,
+    api_spec_revision_id,
     spec_json,
     spec_yaml,
     etag,
@@ -45,25 +45,25 @@ VALUES (
     $4,
     $5
 )
-ON CONFLICT (revision_id) DO UPDATE
+ON CONFLICT (api_spec_revision_id) DO UPDATE
 SET spec_json = EXCLUDED.spec_json,
     spec_yaml = EXCLUDED.spec_yaml,
     etag = EXCLUDED.etag,
     size_bytes = EXCLUDED.size_bytes
-RETURNING id, revision_id, spec_json, spec_yaml, etag, size_bytes, created_at
+RETURNING id, api_spec_revision_id, spec_json, spec_yaml, etag, size_bytes, created_at
 `
 
 type UpsertSpecArtifactParams struct {
-	RevisionID int64  `json:"revision_id"`
-	SpecJson   []byte `json:"spec_json"`
-	SpecYaml   string `json:"spec_yaml"`
-	Etag       string `json:"etag"`
-	SizeBytes  int64  `json:"size_bytes"`
+	ApiSpecRevisionID int64  `json:"api_spec_revision_id"`
+	SpecJson          []byte `json:"spec_json"`
+	SpecYaml          string `json:"spec_yaml"`
+	Etag              string `json:"etag"`
+	SizeBytes         int64  `json:"size_bytes"`
 }
 
 func (q *Queries) UpsertSpecArtifact(ctx context.Context, arg UpsertSpecArtifactParams) (SpecArtifact, error) {
 	row := q.db.QueryRow(ctx, upsertSpecArtifact,
-		arg.RevisionID,
+		arg.ApiSpecRevisionID,
 		arg.SpecJson,
 		arg.SpecYaml,
 		arg.Etag,
@@ -72,7 +72,7 @@ func (q *Queries) UpsertSpecArtifact(ctx context.Context, arg UpsertSpecArtifact
 	var i SpecArtifact
 	err := row.Scan(
 		&i.ID,
-		&i.RevisionID,
+		&i.ApiSpecRevisionID,
 		&i.SpecJson,
 		&i.SpecYaml,
 		&i.Etag,

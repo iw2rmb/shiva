@@ -10,17 +10,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) ListEndpointIndexByRevision(ctx context.Context, revisionID int64) ([]EndpointIndexRecord, error) {
+func (s *Store) ListEndpointIndexByAPISpecRevision(ctx context.Context, apiSpecRevisionID int64) ([]EndpointIndexRecord, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return nil, ErrStoreNotConfigured
 	}
-	if revisionID < 1 {
-		return nil, errors.New("revision id must be positive")
+	if apiSpecRevisionID < 1 {
+		return nil, errors.New("api spec revision id must be positive")
 	}
 
-	rows, err := sqlc.New(s.pool).ListEndpointIndexByRevision(ctx, revisionID)
+	rows, err := sqlc.New(s.pool).ListEndpointIndexByAPISpecRevision(ctx, apiSpecRevisionID)
 	if err != nil {
-		return nil, fmt.Errorf("list endpoint index for revision %d: %w", revisionID, err)
+		return nil, fmt.Errorf("list endpoint index for api_spec_revision_id=%d: %w", apiSpecRevisionID, err)
 	}
 
 	endpoints := make([]EndpointIndexRecord, 0, len(rows))
@@ -43,17 +43,17 @@ func (s *Store) ListEndpointIndexByRevision(ctx context.Context, revisionID int6
 	return endpoints, nil
 }
 
-func (s *Store) GetEndpointIndexByMethodPath(
+func (s *Store) GetEndpointIndexByMethodPathForAPISpecRevision(
 	ctx context.Context,
-	revisionID int64,
+	apiSpecRevisionID int64,
 	method string,
 	path string,
 ) (EndpointIndexRecord, bool, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return EndpointIndexRecord{}, false, ErrStoreNotConfigured
 	}
-	if revisionID < 1 {
-		return EndpointIndexRecord{}, false, errors.New("revision id must be positive")
+	if apiSpecRevisionID < 1 {
+		return EndpointIndexRecord{}, false, errors.New("api spec revision id must be positive")
 	}
 
 	method = strings.ToLower(strings.TrimSpace(method))
@@ -65,18 +65,18 @@ func (s *Store) GetEndpointIndexByMethodPath(
 		return EndpointIndexRecord{}, false, errors.New("path must not be empty")
 	}
 
-	row, err := sqlc.New(s.pool).GetEndpointByMethodPath(ctx, sqlc.GetEndpointByMethodPathParams{
-		RevisionID: revisionID,
-		Method:     method,
-		Path:       path,
+	row, err := sqlc.New(s.pool).GetEndpointByMethodPathForAPISpecRevision(ctx, sqlc.GetEndpointByMethodPathForAPISpecRevisionParams{
+		ApiSpecRevisionID: apiSpecRevisionID,
+		Method:            method,
+		Path:              path,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return EndpointIndexRecord{}, false, nil
 		}
 		return EndpointIndexRecord{}, false, fmt.Errorf(
-			"get endpoint index for revision %d method=%s path=%s: %w",
-			revisionID,
+			"get endpoint index for api_spec_revision_id=%d method=%s path=%s: %w",
+			apiSpecRevisionID,
 			method,
 			path,
 			err,

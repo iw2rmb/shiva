@@ -37,6 +37,7 @@ type ApiSpecRevision struct {
 type DeliveryAttempt struct {
 	ID             int64              `json:"id"`
 	SubscriptionID int64              `json:"subscription_id"`
+	ApiSpecID      int64              `json:"api_spec_id"`
 	RevisionID     int64              `json:"revision_id"`
 	EventType      string             `json:"event_type"`
 	AttemptNo      int32              `json:"attempt_no"`
@@ -49,15 +50,15 @@ type DeliveryAttempt struct {
 }
 
 type EndpointIndex struct {
-	ID          int64              `json:"id"`
-	RevisionID  int64              `json:"revision_id"`
-	Method      string             `json:"method"`
-	Path        string             `json:"path"`
-	OperationID pgtype.Text        `json:"operation_id"`
-	Summary     pgtype.Text        `json:"summary"`
-	Deprecated  bool               `json:"deprecated"`
-	RawJson     []byte             `json:"raw_json"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID                int64              `json:"id"`
+	ApiSpecRevisionID int64              `json:"api_spec_revision_id"`
+	Method            string             `json:"method"`
+	Path              string             `json:"path"`
+	OperationID       pgtype.Text        `json:"operation_id"`
+	Summary           pgtype.Text        `json:"summary"`
+	Deprecated        bool               `json:"deprecated"`
+	RawJson           []byte             `json:"raw_json"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 type IngestEvent struct {
@@ -102,22 +103,22 @@ type Revision struct {
 }
 
 type SpecArtifact struct {
-	ID         int64              `json:"id"`
-	RevisionID int64              `json:"revision_id"`
-	SpecJson   []byte             `json:"spec_json"`
-	SpecYaml   string             `json:"spec_yaml"`
-	Etag       string             `json:"etag"`
-	SizeBytes  int64              `json:"size_bytes"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID                int64              `json:"id"`
+	ApiSpecRevisionID int64              `json:"api_spec_revision_id"`
+	SpecJson          []byte             `json:"spec_json"`
+	SpecYaml          string             `json:"spec_yaml"`
+	Etag              string             `json:"etag"`
+	SizeBytes         int64              `json:"size_bytes"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 type SpecChange struct {
-	ID             int64              `json:"id"`
-	RepoID         int64              `json:"repo_id"`
-	FromRevisionID pgtype.Int8        `json:"from_revision_id"`
-	ToRevisionID   int64              `json:"to_revision_id"`
-	ChangeJson     []byte             `json:"change_json"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                    int64              `json:"id"`
+	ApiSpecID             int64              `json:"api_spec_id"`
+	FromApiSpecRevisionID pgtype.Int8        `json:"from_api_spec_revision_id"`
+	ToApiSpecRevisionID   int64              `json:"to_api_spec_revision_id"`
+	ChangeJson            []byte             `json:"change_json"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 }
 
 type Subscription struct {

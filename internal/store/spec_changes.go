@@ -12,53 +12,53 @@ import (
 )
 
 type SpecChange struct {
-	RepoID         int64
-	FromRevisionID *int64
-	ToRevisionID   int64
-	ChangeJSON     []byte
+	APISpecID             int64
+	FromAPISpecRevisionID *int64
+	ToAPISpecRevisionID   int64
+	ChangeJSON            []byte
 }
 
 type PersistSpecChangeInput struct {
-	RepoID         int64
-	FromRevisionID *int64
-	ToRevisionID   int64
-	ChangeJSON     []byte
+	APISpecID             int64
+	FromAPISpecRevisionID *int64
+	ToAPISpecRevisionID   int64
+	ChangeJSON            []byte
 }
 
 type normalizedPersistSpecChangeInput struct {
-	RepoID         int64
-	FromRevisionID pgtype.Int8
-	ToRevisionID   int64
-	ChangeJSON     []byte
+	APISpecID             int64
+	FromAPISpecRevisionID pgtype.Int8
+	ToAPISpecRevisionID   int64
+	ChangeJSON            []byte
 }
 
-func (s *Store) GetSpecChangeByToRevision(ctx context.Context, toRevisionID int64) (SpecChange, error) {
+func (s *Store) GetSpecChangeByToAPISpecRevision(ctx context.Context, toAPISpecRevisionID int64) (SpecChange, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return SpecChange{}, ErrStoreNotConfigured
 	}
-	if toRevisionID < 1 {
-		return SpecChange{}, errors.New("to revision id must be positive")
+	if toAPISpecRevisionID < 1 {
+		return SpecChange{}, errors.New("to api spec revision id must be positive")
 	}
 
-	row, err := sqlc.New(s.pool).GetSpecChangeByToRevision(ctx, toRevisionID)
+	row, err := sqlc.New(s.pool).GetSpecChangeByToAPISpecRevision(ctx, toAPISpecRevisionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return SpecChange{}, fmt.Errorf("spec change not found for revision %d", toRevisionID)
+			return SpecChange{}, fmt.Errorf("spec change not found for api_spec_revision_id=%d", toAPISpecRevisionID)
 		}
-		return SpecChange{}, fmt.Errorf("get spec change for revision %d: %w", toRevisionID, err)
+		return SpecChange{}, fmt.Errorf("get spec change for api_spec_revision_id=%d: %w", toAPISpecRevisionID, err)
 	}
 
-	var fromRevisionID *int64
-	if row.FromRevisionID.Valid {
-		value := row.FromRevisionID.Int64
-		fromRevisionID = &value
+	var fromAPISpecRevisionID *int64
+	if row.FromApiSpecRevisionID.Valid {
+		value := row.FromApiSpecRevisionID.Int64
+		fromAPISpecRevisionID = &value
 	}
 
 	return SpecChange{
-		RepoID:         row.RepoID,
-		FromRevisionID: fromRevisionID,
-		ToRevisionID:   row.ToRevisionID,
-		ChangeJSON:     bytesCopy(row.ChangeJson),
+		APISpecID:             row.ApiSpecID,
+		FromAPISpecRevisionID: fromAPISpecRevisionID,
+		ToAPISpecRevisionID:   row.ToApiSpecRevisionID,
+		ChangeJSON:            bytesCopy(row.ChangeJson),
 	}, nil
 }
 
@@ -88,31 +88,31 @@ func persistSpecChange(
 	input normalizedPersistSpecChangeInput,
 ) error {
 	if _, err := queries.CreateSpecChange(ctx, sqlc.CreateSpecChangeParams{
-		RepoID:         input.RepoID,
-		FromRevisionID: input.FromRevisionID,
-		ToRevisionID:   input.ToRevisionID,
-		ChangeJson:     input.ChangeJSON,
+		ApiSpecID:             input.APISpecID,
+		FromApiSpecRevisionID: input.FromAPISpecRevisionID,
+		ToApiSpecRevisionID:   input.ToAPISpecRevisionID,
+		ChangeJson:            input.ChangeJSON,
 	}); err != nil {
-		return fmt.Errorf("persist spec change for revision %d: %w", input.ToRevisionID, err)
+		return fmt.Errorf("persist spec change for to_api_spec_revision_id=%d: %w", input.ToAPISpecRevisionID, err)
 	}
 	return nil
 }
 
 func normalizePersistSpecChangeInput(input PersistSpecChangeInput) (normalizedPersistSpecChangeInput, error) {
-	if input.RepoID < 1 {
-		return normalizedPersistSpecChangeInput{}, errors.New("repo id must be positive")
+	if input.APISpecID < 1 {
+		return normalizedPersistSpecChangeInput{}, errors.New("api spec id must be positive")
 	}
-	if input.ToRevisionID < 1 {
-		return normalizedPersistSpecChangeInput{}, errors.New("to revision id must be positive")
+	if input.ToAPISpecRevisionID < 1 {
+		return normalizedPersistSpecChangeInput{}, errors.New("to api spec revision id must be positive")
 	}
 
 	fromRevision := pgtype.Int8{}
-	if input.FromRevisionID != nil {
-		if *input.FromRevisionID < 1 {
-			return normalizedPersistSpecChangeInput{}, errors.New("from revision id must be positive when set")
+	if input.FromAPISpecRevisionID != nil {
+		if *input.FromAPISpecRevisionID < 1 {
+			return normalizedPersistSpecChangeInput{}, errors.New("from api spec revision id must be positive when set")
 		}
 		fromRevision = pgtype.Int8{
-			Int64: *input.FromRevisionID,
+			Int64: *input.FromAPISpecRevisionID,
 			Valid: true,
 		}
 	}
@@ -132,9 +132,9 @@ func normalizePersistSpecChangeInput(input PersistSpecChangeInput) (normalizedPe
 	}
 
 	return normalizedPersistSpecChangeInput{
-		RepoID:         input.RepoID,
-		FromRevisionID: fromRevision,
-		ToRevisionID:   input.ToRevisionID,
-		ChangeJSON:     canonicalChangeJSON,
+		APISpecID:             input.APISpecID,
+		FromAPISpecRevisionID: fromRevision,
+		ToAPISpecRevisionID:   input.ToAPISpecRevisionID,
+		ChangeJSON:            canonicalChangeJSON,
 	}, nil
 }

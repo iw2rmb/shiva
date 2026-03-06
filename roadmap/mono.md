@@ -20,7 +20,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./...` baseline must pass before refactor
 
 ## Schema and Query Refactor
-- [ ] Refactor persistence keys from revision-scoped to API-scoped entities — monorepo correctness requires per-API history boundaries
+- [x] Refactor persistence keys from revision-scoped to API-scoped entities — monorepo correctness requires per-API history boundaries
   - Repository: `shiva`
   - Component: `sql/schema/000001_initial.sql`, `sql/query`, `internal/store/sqlc`
   - Scope:

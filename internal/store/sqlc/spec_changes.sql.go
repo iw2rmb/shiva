@@ -13,9 +13,9 @@ import (
 
 const createSpecChange = `-- name: CreateSpecChange :one
 INSERT INTO spec_changes (
-    repo_id,
-    from_revision_id,
-    to_revision_id,
+    api_spec_id,
+    from_api_spec_revision_id,
+    to_api_spec_revision_id,
     change_json
 )
 VALUES (
@@ -24,53 +24,53 @@ VALUES (
     $3,
     $4
 )
-ON CONFLICT (to_revision_id) DO UPDATE
-SET repo_id = EXCLUDED.repo_id,
-    from_revision_id = EXCLUDED.from_revision_id,
+ON CONFLICT (to_api_spec_revision_id) DO UPDATE
+SET api_spec_id = EXCLUDED.api_spec_id,
+    from_api_spec_revision_id = EXCLUDED.from_api_spec_revision_id,
     change_json = EXCLUDED.change_json
-RETURNING id, repo_id, from_revision_id, to_revision_id, change_json, created_at
+RETURNING id, api_spec_id, from_api_spec_revision_id, to_api_spec_revision_id, change_json, created_at
 `
 
 type CreateSpecChangeParams struct {
-	RepoID         int64       `json:"repo_id"`
-	FromRevisionID pgtype.Int8 `json:"from_revision_id"`
-	ToRevisionID   int64       `json:"to_revision_id"`
-	ChangeJson     []byte      `json:"change_json"`
+	ApiSpecID             int64       `json:"api_spec_id"`
+	FromApiSpecRevisionID pgtype.Int8 `json:"from_api_spec_revision_id"`
+	ToApiSpecRevisionID   int64       `json:"to_api_spec_revision_id"`
+	ChangeJson            []byte      `json:"change_json"`
 }
 
 func (q *Queries) CreateSpecChange(ctx context.Context, arg CreateSpecChangeParams) (SpecChange, error) {
 	row := q.db.QueryRow(ctx, createSpecChange,
-		arg.RepoID,
-		arg.FromRevisionID,
-		arg.ToRevisionID,
+		arg.ApiSpecID,
+		arg.FromApiSpecRevisionID,
+		arg.ToApiSpecRevisionID,
 		arg.ChangeJson,
 	)
 	var i SpecChange
 	err := row.Scan(
 		&i.ID,
-		&i.RepoID,
-		&i.FromRevisionID,
-		&i.ToRevisionID,
+		&i.ApiSpecID,
+		&i.FromApiSpecRevisionID,
+		&i.ToApiSpecRevisionID,
 		&i.ChangeJson,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
-const getSpecChangeByToRevision = `-- name: GetSpecChangeByToRevision :one
-SELECT id, repo_id, from_revision_id, to_revision_id, change_json, created_at
+const getSpecChangeByToAPISpecRevision = `-- name: GetSpecChangeByToAPISpecRevision :one
+SELECT id, api_spec_id, from_api_spec_revision_id, to_api_spec_revision_id, change_json, created_at
 FROM spec_changes
-WHERE to_revision_id = $1
+WHERE to_api_spec_revision_id = $1
 `
 
-func (q *Queries) GetSpecChangeByToRevision(ctx context.Context, toRevisionID int64) (SpecChange, error) {
-	row := q.db.QueryRow(ctx, getSpecChangeByToRevision, toRevisionID)
+func (q *Queries) GetSpecChangeByToAPISpecRevision(ctx context.Context, toApiSpecRevisionID int64) (SpecChange, error) {
+	row := q.db.QueryRow(ctx, getSpecChangeByToAPISpecRevision, toApiSpecRevisionID)
 	var i SpecChange
 	err := row.Scan(
 		&i.ID,
-		&i.RepoID,
-		&i.FromRevisionID,
-		&i.ToRevisionID,
+		&i.ApiSpecID,
+		&i.FromApiSpecRevisionID,
+		&i.ToApiSpecRevisionID,
 		&i.ChangeJson,
 		&i.CreatedAt,
 	)

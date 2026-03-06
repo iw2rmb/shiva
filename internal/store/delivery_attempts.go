@@ -27,6 +27,7 @@ const (
 type DeliveryAttempt struct {
 	ID             int64
 	SubscriptionID int64
+	APISpecID      int64
 	RevisionID     int64
 	EventType      string
 	AttemptNo      int32
@@ -38,6 +39,7 @@ type DeliveryAttempt struct {
 
 type CreateDeliveryAttemptInput struct {
 	SubscriptionID int64
+	APISpecID      int64
 	RevisionID     int64
 	EventType      string
 	AttemptNo      int32
@@ -60,6 +62,9 @@ func (s *Store) CreateDeliveryAttempt(ctx context.Context, input CreateDeliveryA
 	if input.SubscriptionID < 1 {
 		return DeliveryAttempt{}, errors.New("subscription id must be positive")
 	}
+	if input.APISpecID < 1 {
+		return DeliveryAttempt{}, errors.New("api spec id must be positive")
+	}
 	if input.RevisionID < 1 {
 		return DeliveryAttempt{}, errors.New("revision id must be positive")
 	}
@@ -69,6 +74,7 @@ func (s *Store) CreateDeliveryAttempt(ctx context.Context, input CreateDeliveryA
 
 	row, err := sqlc.New(s.pool).CreateDeliveryAttempt(ctx, sqlc.CreateDeliveryAttemptParams{
 		SubscriptionID: input.SubscriptionID,
+		ApiSpecID:      input.APISpecID,
 		RevisionID:     input.RevisionID,
 		EventType:      strings.TrimSpace(input.EventType),
 		AttemptNo:      input.AttemptNo,
@@ -77,8 +83,9 @@ func (s *Store) CreateDeliveryAttempt(ctx context.Context, input CreateDeliveryA
 	})
 	if err != nil {
 		return DeliveryAttempt{}, fmt.Errorf(
-			"create delivery attempt for subscription %d revision %d event %q attempt_no=%d: %w",
+			"create delivery attempt for subscription %d api_spec_id=%d revision %d event %q attempt_no=%d: %w",
 			input.SubscriptionID,
+			input.APISpecID,
 			input.RevisionID,
 			input.EventType,
 			input.AttemptNo,
@@ -122,6 +129,7 @@ func (s *Store) UpdateDeliveryAttemptResult(
 func (s *Store) GetLatestDeliveryAttemptByKey(
 	ctx context.Context,
 	subscriptionID int64,
+	apiSpecID int64,
 	revisionID int64,
 	eventType string,
 ) (DeliveryAttempt, bool, error) {
@@ -130,6 +138,9 @@ func (s *Store) GetLatestDeliveryAttemptByKey(
 	}
 	if subscriptionID < 1 {
 		return DeliveryAttempt{}, false, errors.New("subscription id must be positive")
+	}
+	if apiSpecID < 1 {
+		return DeliveryAttempt{}, false, errors.New("api spec id must be positive")
 	}
 	if revisionID < 1 {
 		return DeliveryAttempt{}, false, errors.New("revision id must be positive")
@@ -141,6 +152,7 @@ func (s *Store) GetLatestDeliveryAttemptByKey(
 
 	row, err := sqlc.New(s.pool).GetLatestDeliveryAttemptByKey(ctx, sqlc.GetLatestDeliveryAttemptByKeyParams{
 		SubscriptionID: subscriptionID,
+		ApiSpecID:      apiSpecID,
 		RevisionID:     revisionID,
 		EventType:      eventType,
 	})
@@ -149,8 +161,9 @@ func (s *Store) GetLatestDeliveryAttemptByKey(
 			return DeliveryAttempt{}, false, nil
 		}
 		return DeliveryAttempt{}, false, fmt.Errorf(
-			"get latest delivery attempt for subscription %d revision %d event %q: %w",
+			"get latest delivery attempt for subscription %d api_spec_id=%d revision %d event %q: %w",
 			subscriptionID,
+			apiSpecID,
 			revisionID,
 			eventType,
 			err,
@@ -164,6 +177,7 @@ func mapDeliveryAttempt(row sqlc.DeliveryAttempt) DeliveryAttempt {
 	mapped := DeliveryAttempt{
 		ID:             row.ID,
 		SubscriptionID: row.SubscriptionID,
+		APISpecID:      row.ApiSpecID,
 		RevisionID:     row.RevisionID,
 		EventType:      row.EventType,
 		AttemptNo:      row.AttemptNo,

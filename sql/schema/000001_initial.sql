@@ -114,7 +114,7 @@ CREATE TABLE api_spec_dependencies (
 
 CREATE TABLE spec_artifacts (
     id BIGSERIAL PRIMARY KEY,
-    revision_id BIGINT NOT NULL UNIQUE REFERENCES revisions(id) ON DELETE CASCADE,
+    api_spec_revision_id BIGINT NOT NULL UNIQUE REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
     spec_json JSONB NOT NULL,
     spec_yaml TEXT NOT NULL,
     etag TEXT NOT NULL,
@@ -124,7 +124,7 @@ CREATE TABLE spec_artifacts (
 
 CREATE TABLE endpoint_index (
     id BIGSERIAL PRIMARY KEY,
-    revision_id BIGINT NOT NULL REFERENCES revisions(id) ON DELETE CASCADE,
+    api_spec_revision_id BIGINT NOT NULL REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
     method TEXT NOT NULL,
     path TEXT NOT NULL,
     operation_id TEXT,
@@ -132,26 +132,27 @@ CREATE TABLE endpoint_index (
     deprecated BOOLEAN NOT NULL DEFAULT FALSE,
     raw_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (revision_id, method, path)
+    UNIQUE (api_spec_revision_id, method, path)
 );
 
-CREATE INDEX endpoint_index_revision_idx ON endpoint_index(revision_id);
-CREATE INDEX endpoint_index_lookup_idx ON endpoint_index(revision_id, method, path);
+CREATE INDEX endpoint_index_api_spec_revision_idx ON endpoint_index(api_spec_revision_id);
+CREATE INDEX endpoint_index_lookup_idx ON endpoint_index(api_spec_revision_id, method, path);
 
 CREATE TABLE spec_changes (
     id BIGSERIAL PRIMARY KEY,
-    repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
-    from_revision_id BIGINT REFERENCES revisions(id) ON DELETE SET NULL,
-    to_revision_id BIGINT NOT NULL UNIQUE REFERENCES revisions(id) ON DELETE CASCADE,
+    api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
+    from_api_spec_revision_id BIGINT REFERENCES api_spec_revisions(id) ON DELETE SET NULL,
+    to_api_spec_revision_id BIGINT NOT NULL UNIQUE REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
     change_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX spec_changes_repo_created_idx ON spec_changes(repo_id, created_at DESC);
+CREATE INDEX spec_changes_api_spec_created_idx ON spec_changes(api_spec_id, created_at DESC);
 
 CREATE TABLE delivery_attempts (
     id BIGSERIAL PRIMARY KEY,
     subscription_id BIGINT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+    api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
     revision_id BIGINT NOT NULL REFERENCES revisions(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL CHECK (event_type IN ('spec.updated.full', 'spec.updated.diff')),
     attempt_no INTEGER NOT NULL CHECK (attempt_no > 0),
@@ -161,7 +162,7 @@ CREATE TABLE delivery_attempts (
     next_retry_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (subscription_id, revision_id, event_type, attempt_no)
+    UNIQUE (subscription_id, api_spec_id, revision_id, event_type, attempt_no)
 );
 
 CREATE INDEX delivery_attempts_retry_idx ON delivery_attempts(status, next_retry_at);

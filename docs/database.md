@@ -17,10 +17,10 @@ This document describes current schema layout and SQL code generation workflow.
 - `api_specs`: durable API root identity per repo (`root_path`, `status`, optional `display_name`).
 - `api_spec_revisions`: per-API per-revision build record (`root_path_at_revision`, `build_status`, `error`) used for both bootstrap and incremental workflows.
 - `api_spec_dependencies`: per API-spec revision dependency file set (`api_spec_revision_id`, `file_path`).
-- `spec_artifacts`: canonical JSON/YAML artifact per revision.
-- `endpoint_index`: `(revision_id, method, path)` operation index.
-- `spec_changes`: semantic diff payload per `to_revision_id`.
-- `delivery_attempts`: outbound event attempt lifecycle.
+- `spec_artifacts`: canonical JSON/YAML artifact per `api_spec_revision_id`.
+- `endpoint_index`: `(api_spec_revision_id, method, path)` operation index.
+- `spec_changes`: semantic diff payload per API (`api_spec_id`) keyed by `to_api_spec_revision_id`, with optional `from_api_spec_revision_id`.
+- `delivery_attempts`: outbound event attempt lifecycle keyed by subscription + API + revision + event + attempt (`subscription_id`, `api_spec_id`, `revision_id`, `event_type`, `attempt_no`).
 
 ## Processing State Fields
 - `ingest_events.status`: `pending | processing | processed | failed`
@@ -34,6 +34,9 @@ This document describes current schema layout and SQL code generation workflow.
 - `ListActiveAPISpecsWithLatestDependencies(repo_id)`: returns active `api_specs` in `root_path` order with dependency file paths from each spec's latest `api_spec_revisions` row where `build_status='processed'` (ties resolved by `revision_id DESC, id DESC`); specs without processed revisions return an empty dependency list.
 - `MarkAPISpecDeleted(api_spec_id)`: sets `api_specs.status='deleted'` for root deactivation flows.
 - `api_spec_dependencies` are revision-scoped and only latest-processed rows feed incremental impact intersection.
+- `spec_artifacts` and `endpoint_index` read/write contracts are `api_spec_revision_id`-scoped.
+- `spec_changes` read/write contracts are `api_spec_id` + API-spec revision pair scoped.
+- `delivery_attempts` read/write contracts include `api_spec_id` in the dedupe/lookup identity.
 
 ## Generation
 sqlc config:

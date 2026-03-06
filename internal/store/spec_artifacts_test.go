@@ -13,11 +13,11 @@ func TestPersistCanonicalSpec_UpsertsArtifactAndReplacesEndpointIndex(t *testing
 	t.Parallel()
 
 	input, err := normalizePersistCanonicalSpecInput(PersistCanonicalSpecInput{
-		RevisionID: 42,
-		SpecJSON:   []byte(`{"openapi":"3.1.0","paths":{}}`),
-		SpecYAML:   "openapi: 3.1.0\npaths: {}\n",
-		ETag:       "\"etag-value\"",
-		SizeBytes:  1234,
+		APISpecRevisionID: 42,
+		SpecJSON:          []byte(`{"openapi":"3.1.0","paths":{}}`),
+		SpecYAML:          "openapi: 3.1.0\npaths: {}\n",
+		ETag:              "\"etag-value\"",
+		SizeBytes:         1234,
 		Endpoints: []EndpointIndexRecord{
 			{
 				Method:      "GET",
@@ -49,8 +49,8 @@ func TestPersistCanonicalSpec_UpsertsArtifactAndReplacesEndpointIndex(t *testing
 		t.Fatalf("unexpected query call order: expected %v, got %v", expectedCalls, queries.calls)
 	}
 
-	if queries.upsert.RevisionID != 42 {
-		t.Fatalf("expected artifact revision_id=42, got %d", queries.upsert.RevisionID)
+	if queries.upsert.ApiSpecRevisionID != 42 {
+		t.Fatalf("expected artifact api_spec_revision_id=42, got %d", queries.upsert.ApiSpecRevisionID)
 	}
 	if string(queries.upsert.SpecJson) != `{"openapi":"3.1.0","paths":{}}` {
 		t.Fatalf("unexpected spec_json: %s", string(queries.upsert.SpecJson))
@@ -58,8 +58,8 @@ func TestPersistCanonicalSpec_UpsertsArtifactAndReplacesEndpointIndex(t *testing
 	if queries.upsert.Etag != "\"etag-value\"" {
 		t.Fatalf("unexpected etag: %s", queries.upsert.Etag)
 	}
-	if queries.deletedRevisionID != 42 {
-		t.Fatalf("expected delete endpoint index revision_id=42, got %d", queries.deletedRevisionID)
+	if queries.deletedAPISpecRevisionID != 42 {
+		t.Fatalf("expected delete endpoint index api_spec_revision_id=42, got %d", queries.deletedAPISpecRevisionID)
 	}
 
 	if len(queries.inserted) != 2 {
@@ -93,11 +93,11 @@ func TestNormalizePersistCanonicalSpecInput_DuplicateEndpointFails(t *testing.T)
 	t.Parallel()
 
 	_, err := normalizePersistCanonicalSpecInput(PersistCanonicalSpecInput{
-		RevisionID: 8,
-		SpecJSON:   []byte(`{"openapi":"3.0.3"}`),
-		SpecYAML:   "openapi: 3.0.3\n",
-		ETag:       "\"abc\"",
-		SizeBytes:  5,
+		APISpecRevisionID: 8,
+		SpecJSON:          []byte(`{"openapi":"3.0.3"}`),
+		SpecYAML:          "openapi: 3.0.3\n",
+		ETag:              "\"abc\"",
+		SizeBytes:         5,
 		Endpoints: []EndpointIndexRecord{
 			{
 				Method:  "get",
@@ -117,10 +117,10 @@ func TestNormalizePersistCanonicalSpecInput_DuplicateEndpointFails(t *testing.T)
 }
 
 type fakeSpecPersistenceQueries struct {
-	calls             []string
-	upsert            sqlc.UpsertSpecArtifactParams
-	deletedRevisionID int64
-	inserted          []sqlc.InsertEndpointIndexParams
+	calls                    []string
+	upsert                   sqlc.UpsertSpecArtifactParams
+	deletedAPISpecRevisionID int64
+	inserted                 []sqlc.InsertEndpointIndexParams
 }
 
 func (f *fakeSpecPersistenceQueries) UpsertSpecArtifact(
@@ -132,9 +132,9 @@ func (f *fakeSpecPersistenceQueries) UpsertSpecArtifact(
 	return sqlc.SpecArtifact{}, nil
 }
 
-func (f *fakeSpecPersistenceQueries) DeleteEndpointIndexByRevision(_ context.Context, revisionID int64) error {
+func (f *fakeSpecPersistenceQueries) DeleteEndpointIndexByAPISpecRevision(_ context.Context, apiSpecRevisionID int64) error {
 	f.calls = append(f.calls, "delete_endpoint_index")
-	f.deletedRevisionID = revisionID
+	f.deletedAPISpecRevisionID = apiSpecRevisionID
 	return nil
 }
 
@@ -145,13 +145,13 @@ func (f *fakeSpecPersistenceQueries) InsertEndpointIndex(
 	f.calls = append(f.calls, "insert_endpoint_index")
 	f.inserted = append(f.inserted, arg)
 	return sqlc.EndpointIndex{
-		ID:          int64(len(f.inserted)),
-		RevisionID:  arg.RevisionID,
-		Method:      arg.Method,
-		Path:        arg.Path,
-		OperationID: pgtype.Text{String: arg.OperationID.String, Valid: arg.OperationID.Valid},
-		Summary:     pgtype.Text{String: arg.Summary.String, Valid: arg.Summary.Valid},
-		Deprecated:  arg.Deprecated,
-		RawJson:     arg.RawJson,
+		ID:                int64(len(f.inserted)),
+		ApiSpecRevisionID: arg.ApiSpecRevisionID,
+		Method:            arg.Method,
+		Path:              arg.Path,
+		OperationID:       pgtype.Text{String: arg.OperationID.String, Valid: arg.OperationID.Valid},
+		Summary:           pgtype.Text{String: arg.Summary.String, Valid: arg.Summary.Valid},
+		Deprecated:        arg.Deprecated,
+		RawJson:           arg.RawJson,
 	}, nil
 }

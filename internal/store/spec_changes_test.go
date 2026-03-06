@@ -13,11 +13,11 @@ import (
 func TestPersistSpecChange(t *testing.T) {
 	t.Parallel()
 
-	fromRevisionID := int64(12)
+	fromAPISpecRevisionID := int64(12)
 	input, err := normalizePersistSpecChangeInput(PersistSpecChangeInput{
-		RepoID:         7,
-		FromRevisionID: &fromRevisionID,
-		ToRevisionID:   13,
+		APISpecID:             7,
+		FromAPISpecRevisionID: &fromAPISpecRevisionID,
+		ToAPISpecRevisionID:   13,
 		ChangeJSON: []byte(`{
 			"summary":{"changed_endpoints":1},
 			"version":1,
@@ -37,14 +37,14 @@ func TestPersistSpecChange(t *testing.T) {
 		t.Fatalf("unexpected query calls: %v", queries.calls)
 	}
 
-	if queries.arg.RepoID != 7 {
-		t.Fatalf("expected repo_id=7, got %d", queries.arg.RepoID)
+	if queries.arg.ApiSpecID != 7 {
+		t.Fatalf("expected api_spec_id=7, got %d", queries.arg.ApiSpecID)
 	}
-	if !queries.arg.FromRevisionID.Valid || queries.arg.FromRevisionID.Int64 != 12 {
-		t.Fatalf("unexpected from_revision_id: %+v", queries.arg.FromRevisionID)
+	if !queries.arg.FromApiSpecRevisionID.Valid || queries.arg.FromApiSpecRevisionID.Int64 != 12 {
+		t.Fatalf("unexpected from_api_spec_revision_id: %+v", queries.arg.FromApiSpecRevisionID)
 	}
-	if queries.arg.ToRevisionID != 13 {
-		t.Fatalf("expected to_revision_id=13, got %d", queries.arg.ToRevisionID)
+	if queries.arg.ToApiSpecRevisionID != 13 {
+		t.Fatalf("expected to_api_spec_revision_id=13, got %d", queries.arg.ToApiSpecRevisionID)
 	}
 	expectedJSON := `{"endpoints":{"added":[],"changed":[{"method":"get","path":"/pets"}],"removed":[]},"summary":{"changed_endpoints":1},"version":1}`
 	if string(queries.arg.ChangeJson) != expectedJSON {
@@ -56,10 +56,10 @@ func TestNormalizePersistSpecChangeInput(t *testing.T) {
 	t.Parallel()
 
 	type expected struct {
-		repoID         int64
-		fromRevisionID pgtype.Int8
-		toRevisionID   int64
-		changeJSON     string
+		apiSpecID             int64
+		fromAPISpecRevisionID pgtype.Int8
+		toAPISpecRevisionID   int64
+		changeJSON            string
 	}
 
 	testCases := []struct {
@@ -71,35 +71,35 @@ func TestNormalizePersistSpecChangeInput(t *testing.T) {
 		{
 			name: "null from revision is valid",
 			input: PersistSpecChangeInput{
-				RepoID:       2,
-				ToRevisionID: 9,
-				ChangeJSON:   []byte(`{"version":1,"endpoints":{"added":[{"method":"get","path":"/a"}]}}`),
+				APISpecID:           2,
+				ToAPISpecRevisionID: 9,
+				ChangeJSON:          []byte(`{"version":1,"endpoints":{"added":[{"method":"get","path":"/a"}]}}`),
 			},
 			expected: expected{
-				repoID:         2,
-				fromRevisionID: pgtype.Int8{},
-				toRevisionID:   9,
-				changeJSON:     `{"endpoints":{"added":[{"method":"get","path":"/a"}]},"version":1}`,
+				apiSpecID:             2,
+				fromAPISpecRevisionID: pgtype.Int8{},
+				toAPISpecRevisionID:   9,
+				changeJSON:            `{"endpoints":{"added":[{"method":"get","path":"/a"}]},"version":1}`,
 			},
 		},
 		{
 			name: "invalid json rejected",
 			input: PersistSpecChangeInput{
-				RepoID:       2,
-				ToRevisionID: 9,
-				ChangeJSON:   []byte(`{`),
+				APISpecID:           2,
+				ToAPISpecRevisionID: 9,
+				ChangeJSON:          []byte(`{`),
 			},
 			expectedError: "spec change json is invalid",
 		},
 		{
 			name: "non-positive from revision rejected",
 			input: PersistSpecChangeInput{
-				RepoID:         2,
-				FromRevisionID: int64Pointer(0),
-				ToRevisionID:   9,
-				ChangeJSON:     []byte(`{"version":1}`),
+				APISpecID:             2,
+				FromAPISpecRevisionID: int64Pointer(0),
+				ToAPISpecRevisionID:   9,
+				ChangeJSON:            []byte(`{"version":1}`),
 			},
-			expectedError: "from revision id must be positive",
+			expectedError: "from api spec revision id must be positive",
 		},
 	}
 
@@ -122,18 +122,18 @@ func TestNormalizePersistSpecChangeInput(t *testing.T) {
 				t.Fatalf("normalizePersistSpecChangeInput() unexpected error: %v", err)
 			}
 
-			if actual.RepoID != testCase.expected.repoID {
-				t.Fatalf("expected repo_id=%d, got %d", testCase.expected.repoID, actual.RepoID)
+			if actual.APISpecID != testCase.expected.apiSpecID {
+				t.Fatalf("expected api_spec_id=%d, got %d", testCase.expected.apiSpecID, actual.APISpecID)
 			}
-			if !reflect.DeepEqual(actual.FromRevisionID, testCase.expected.fromRevisionID) {
+			if !reflect.DeepEqual(actual.FromAPISpecRevisionID, testCase.expected.fromAPISpecRevisionID) {
 				t.Fatalf(
-					"unexpected from_revision_id: expected %+v, got %+v",
-					testCase.expected.fromRevisionID,
-					actual.FromRevisionID,
+					"unexpected from_api_spec_revision_id: expected %+v, got %+v",
+					testCase.expected.fromAPISpecRevisionID,
+					actual.FromAPISpecRevisionID,
 				)
 			}
-			if actual.ToRevisionID != testCase.expected.toRevisionID {
-				t.Fatalf("expected to_revision_id=%d, got %d", testCase.expected.toRevisionID, actual.ToRevisionID)
+			if actual.ToAPISpecRevisionID != testCase.expected.toAPISpecRevisionID {
+				t.Fatalf("expected to_api_spec_revision_id=%d, got %d", testCase.expected.toAPISpecRevisionID, actual.ToAPISpecRevisionID)
 			}
 			if string(actual.ChangeJSON) != testCase.expected.changeJSON {
 				t.Fatalf("unexpected change_json: %s", string(actual.ChangeJSON))

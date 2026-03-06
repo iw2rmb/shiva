@@ -1,10 +1,10 @@
--- name: DeleteEndpointIndexByRevision :exec
+-- name: DeleteEndpointIndexByAPISpecRevision :exec
 DELETE FROM endpoint_index
-WHERE revision_id = sqlc.arg(revision_id);
+WHERE api_spec_revision_id = sqlc.arg(api_spec_revision_id);
 
 -- name: InsertEndpointIndex :one
 INSERT INTO endpoint_index (
-    revision_id,
+    api_spec_revision_id,
     method,
     path,
     operation_id,
@@ -13,7 +13,7 @@ INSERT INTO endpoint_index (
     raw_json
 )
 VALUES (
-    sqlc.arg(revision_id),
+    sqlc.arg(api_spec_revision_id),
     sqlc.arg(method),
     sqlc.arg(path),
     sqlc.narg(operation_id),
@@ -21,17 +21,17 @@ VALUES (
     sqlc.arg(deprecated),
     sqlc.arg(raw_json)
 )
-RETURNING id, revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at;
+RETURNING id, api_spec_revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at;
 
--- name: ListEndpointIndexByRevision :many
-SELECT id, revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
+-- name: ListEndpointIndexByAPISpecRevision :many
+SELECT id, api_spec_revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
 FROM endpoint_index
-WHERE revision_id = sqlc.arg(revision_id)
+WHERE api_spec_revision_id = sqlc.arg(api_spec_revision_id)
 ORDER BY method, path;
 
--- name: GetEndpointByMethodPath :one
-SELECT id, revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
+-- name: GetEndpointByMethodPathForAPISpecRevision :one
+SELECT id, api_spec_revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
 FROM endpoint_index
-WHERE revision_id = sqlc.arg(revision_id)
+WHERE api_spec_revision_id = sqlc.arg(api_spec_revision_id)
   AND method = sqlc.arg(method)
   AND path = sqlc.arg(path);

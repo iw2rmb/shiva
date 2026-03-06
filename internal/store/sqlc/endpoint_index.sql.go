@@ -11,36 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteEndpointIndexByRevision = `-- name: DeleteEndpointIndexByRevision :exec
+const deleteEndpointIndexByAPISpecRevision = `-- name: DeleteEndpointIndexByAPISpecRevision :exec
 DELETE FROM endpoint_index
-WHERE revision_id = $1
+WHERE api_spec_revision_id = $1
 `
 
-func (q *Queries) DeleteEndpointIndexByRevision(ctx context.Context, revisionID int64) error {
-	_, err := q.db.Exec(ctx, deleteEndpointIndexByRevision, revisionID)
+func (q *Queries) DeleteEndpointIndexByAPISpecRevision(ctx context.Context, apiSpecRevisionID int64) error {
+	_, err := q.db.Exec(ctx, deleteEndpointIndexByAPISpecRevision, apiSpecRevisionID)
 	return err
 }
 
-const getEndpointByMethodPath = `-- name: GetEndpointByMethodPath :one
-SELECT id, revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
+const getEndpointByMethodPathForAPISpecRevision = `-- name: GetEndpointByMethodPathForAPISpecRevision :one
+SELECT id, api_spec_revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
 FROM endpoint_index
-WHERE revision_id = $1
+WHERE api_spec_revision_id = $1
   AND method = $2
   AND path = $3
 `
 
-type GetEndpointByMethodPathParams struct {
-	RevisionID int64  `json:"revision_id"`
-	Method     string `json:"method"`
-	Path       string `json:"path"`
+type GetEndpointByMethodPathForAPISpecRevisionParams struct {
+	ApiSpecRevisionID int64  `json:"api_spec_revision_id"`
+	Method            string `json:"method"`
+	Path              string `json:"path"`
 }
 
-func (q *Queries) GetEndpointByMethodPath(ctx context.Context, arg GetEndpointByMethodPathParams) (EndpointIndex, error) {
-	row := q.db.QueryRow(ctx, getEndpointByMethodPath, arg.RevisionID, arg.Method, arg.Path)
+func (q *Queries) GetEndpointByMethodPathForAPISpecRevision(ctx context.Context, arg GetEndpointByMethodPathForAPISpecRevisionParams) (EndpointIndex, error) {
+	row := q.db.QueryRow(ctx, getEndpointByMethodPathForAPISpecRevision, arg.ApiSpecRevisionID, arg.Method, arg.Path)
 	var i EndpointIndex
 	err := row.Scan(
 		&i.ID,
-		&i.RevisionID,
+		&i.ApiSpecRevisionID,
 		&i.Method,
 		&i.Path,
 		&i.OperationID,
@@ -54,7 +54,7 @@ func (q *Queries) GetEndpointByMethodPath(ctx context.Context, arg GetEndpointBy
 
 const insertEndpointIndex = `-- name: InsertEndpointIndex :one
 INSERT INTO endpoint_index (
-    revision_id,
+    api_spec_revision_id,
     method,
     path,
     operation_id,
@@ -71,22 +71,22 @@ VALUES (
     $6,
     $7
 )
-RETURNING id, revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
+RETURNING id, api_spec_revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
 `
 
 type InsertEndpointIndexParams struct {
-	RevisionID  int64       `json:"revision_id"`
-	Method      string      `json:"method"`
-	Path        string      `json:"path"`
-	OperationID pgtype.Text `json:"operation_id"`
-	Summary     pgtype.Text `json:"summary"`
-	Deprecated  bool        `json:"deprecated"`
-	RawJson     []byte      `json:"raw_json"`
+	ApiSpecRevisionID int64       `json:"api_spec_revision_id"`
+	Method            string      `json:"method"`
+	Path              string      `json:"path"`
+	OperationID       pgtype.Text `json:"operation_id"`
+	Summary           pgtype.Text `json:"summary"`
+	Deprecated        bool        `json:"deprecated"`
+	RawJson           []byte      `json:"raw_json"`
 }
 
 func (q *Queries) InsertEndpointIndex(ctx context.Context, arg InsertEndpointIndexParams) (EndpointIndex, error) {
 	row := q.db.QueryRow(ctx, insertEndpointIndex,
-		arg.RevisionID,
+		arg.ApiSpecRevisionID,
 		arg.Method,
 		arg.Path,
 		arg.OperationID,
@@ -97,7 +97,7 @@ func (q *Queries) InsertEndpointIndex(ctx context.Context, arg InsertEndpointInd
 	var i EndpointIndex
 	err := row.Scan(
 		&i.ID,
-		&i.RevisionID,
+		&i.ApiSpecRevisionID,
 		&i.Method,
 		&i.Path,
 		&i.OperationID,
@@ -109,15 +109,15 @@ func (q *Queries) InsertEndpointIndex(ctx context.Context, arg InsertEndpointInd
 	return i, err
 }
 
-const listEndpointIndexByRevision = `-- name: ListEndpointIndexByRevision :many
-SELECT id, revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
+const listEndpointIndexByAPISpecRevision = `-- name: ListEndpointIndexByAPISpecRevision :many
+SELECT id, api_spec_revision_id, method, path, operation_id, summary, deprecated, raw_json, created_at
 FROM endpoint_index
-WHERE revision_id = $1
+WHERE api_spec_revision_id = $1
 ORDER BY method, path
 `
 
-func (q *Queries) ListEndpointIndexByRevision(ctx context.Context, revisionID int64) ([]EndpointIndex, error) {
-	rows, err := q.db.Query(ctx, listEndpointIndexByRevision, revisionID)
+func (q *Queries) ListEndpointIndexByAPISpecRevision(ctx context.Context, apiSpecRevisionID int64) ([]EndpointIndex, error) {
+	rows, err := q.db.Query(ctx, listEndpointIndexByAPISpecRevision, apiSpecRevisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (q *Queries) ListEndpointIndexByRevision(ctx context.Context, revisionID in
 		var i EndpointIndex
 		if err := rows.Scan(
 			&i.ID,
-			&i.RevisionID,
+			&i.ApiSpecRevisionID,
 			&i.Method,
 			&i.Path,
 			&i.OperationID,

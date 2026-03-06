@@ -24,53 +24,53 @@ type EndpointIndexRecord struct {
 }
 
 type SpecArtifact struct {
-	RevisionID int64
-	SpecJSON   []byte
-	SpecYAML   string
-	ETag       string
-	SizeBytes  int64
+	APISpecRevisionID int64
+	SpecJSON          []byte
+	SpecYAML          string
+	ETag              string
+	SizeBytes         int64
 }
 
 type PersistCanonicalSpecInput struct {
-	RevisionID int64
-	SpecJSON   []byte
-	SpecYAML   string
-	ETag       string
-	SizeBytes  int64
-	Endpoints  []EndpointIndexRecord
+	APISpecRevisionID int64
+	SpecJSON          []byte
+	SpecYAML          string
+	ETag              string
+	SizeBytes         int64
+	Endpoints         []EndpointIndexRecord
 }
 
 type normalizedPersistCanonicalSpecInput struct {
-	RevisionID int64
-	SpecJSON   []byte
-	SpecYAML   string
-	ETag       string
-	SizeBytes  int64
-	Endpoints  []EndpointIndexRecord
+	APISpecRevisionID int64
+	SpecJSON          []byte
+	SpecYAML          string
+	ETag              string
+	SizeBytes         int64
+	Endpoints         []EndpointIndexRecord
 }
 
-func (s *Store) GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (SpecArtifact, error) {
+func (s *Store) GetSpecArtifactByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) (SpecArtifact, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return SpecArtifact{}, ErrStoreNotConfigured
 	}
-	if revisionID < 1 {
-		return SpecArtifact{}, errors.New("revision id must be positive")
+	if apiSpecRevisionID < 1 {
+		return SpecArtifact{}, errors.New("api spec revision id must be positive")
 	}
 
-	artifact, err := sqlc.New(s.pool).GetSpecArtifactByRevisionID(ctx, revisionID)
+	artifact, err := sqlc.New(s.pool).GetSpecArtifactByAPISpecRevisionID(ctx, apiSpecRevisionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", ErrSpecArtifactNotFound, revisionID)
+			return SpecArtifact{}, fmt.Errorf("%w: api_spec_revision_id=%d", ErrSpecArtifactNotFound, apiSpecRevisionID)
 		}
-		return SpecArtifact{}, fmt.Errorf("get spec artifact by revision %d: %w", revisionID, err)
+		return SpecArtifact{}, fmt.Errorf("get spec artifact by api_spec_revision_id=%d: %w", apiSpecRevisionID, err)
 	}
 
 	return SpecArtifact{
-		RevisionID: artifact.RevisionID,
-		SpecJSON:   bytesCopy(artifact.SpecJson),
-		SpecYAML:   artifact.SpecYaml,
-		ETag:       artifact.Etag,
-		SizeBytes:  artifact.SizeBytes,
+		APISpecRevisionID: artifact.ApiSpecRevisionID,
+		SpecJSON:          bytesCopy(artifact.SpecJson),
+		SpecYAML:          artifact.SpecYaml,
+		ETag:              artifact.Etag,
+		SizeBytes:         artifact.SizeBytes,
 	}, nil
 }
 
@@ -102,7 +102,7 @@ func (s *Store) PersistCanonicalSpec(ctx context.Context, input PersistCanonical
 
 type specPersistenceQueries interface {
 	UpsertSpecArtifact(ctx context.Context, arg sqlc.UpsertSpecArtifactParams) (sqlc.SpecArtifact, error)
-	DeleteEndpointIndexByRevision(ctx context.Context, revisionID int64) error
+	DeleteEndpointIndexByAPISpecRevision(ctx context.Context, apiSpecRevisionID int64) error
 	InsertEndpointIndex(ctx context.Context, arg sqlc.InsertEndpointIndexParams) (sqlc.EndpointIndex, error)
 }
 
@@ -112,32 +112,32 @@ func persistCanonicalSpec(
 	input normalizedPersistCanonicalSpecInput,
 ) error {
 	if _, err := queries.UpsertSpecArtifact(ctx, sqlc.UpsertSpecArtifactParams{
-		RevisionID: input.RevisionID,
-		SpecJson:   input.SpecJSON,
-		SpecYaml:   input.SpecYAML,
-		Etag:       input.ETag,
-		SizeBytes:  input.SizeBytes,
+		ApiSpecRevisionID: input.APISpecRevisionID,
+		SpecJson:          input.SpecJSON,
+		SpecYaml:          input.SpecYAML,
+		Etag:              input.ETag,
+		SizeBytes:         input.SizeBytes,
 	}); err != nil {
-		return fmt.Errorf("upsert spec artifact for revision %d: %w", input.RevisionID, err)
+		return fmt.Errorf("upsert spec artifact for api_spec_revision_id=%d: %w", input.APISpecRevisionID, err)
 	}
 
-	if err := queries.DeleteEndpointIndexByRevision(ctx, input.RevisionID); err != nil {
-		return fmt.Errorf("delete endpoint index for revision %d: %w", input.RevisionID, err)
+	if err := queries.DeleteEndpointIndexByAPISpecRevision(ctx, input.APISpecRevisionID); err != nil {
+		return fmt.Errorf("delete endpoint index for api_spec_revision_id=%d: %w", input.APISpecRevisionID, err)
 	}
 
 	for _, endpoint := range input.Endpoints {
 		if _, err := queries.InsertEndpointIndex(ctx, sqlc.InsertEndpointIndexParams{
-			RevisionID:  input.RevisionID,
-			Method:      endpoint.Method,
-			Path:        endpoint.Path,
-			OperationID: nullableText(endpoint.OperationID),
-			Summary:     nullableText(endpoint.Summary),
-			Deprecated:  endpoint.Deprecated,
-			RawJson:     endpoint.RawJSON,
+			ApiSpecRevisionID: input.APISpecRevisionID,
+			Method:            endpoint.Method,
+			Path:              endpoint.Path,
+			OperationID:       nullableText(endpoint.OperationID),
+			Summary:           nullableText(endpoint.Summary),
+			Deprecated:        endpoint.Deprecated,
+			RawJson:           endpoint.RawJSON,
 		}); err != nil {
 			return fmt.Errorf(
-				"insert endpoint index for revision %d method=%s path=%s: %w",
-				input.RevisionID,
+				"insert endpoint index for api_spec_revision_id=%d method=%s path=%s: %w",
+				input.APISpecRevisionID,
 				endpoint.Method,
 				endpoint.Path,
 				err,
@@ -149,8 +149,8 @@ func persistCanonicalSpec(
 }
 
 func normalizePersistCanonicalSpecInput(input PersistCanonicalSpecInput) (normalizedPersistCanonicalSpecInput, error) {
-	if input.RevisionID < 1 {
-		return normalizedPersistCanonicalSpecInput{}, errors.New("revision id must be positive")
+	if input.APISpecRevisionID < 1 {
+		return normalizedPersistCanonicalSpecInput{}, errors.New("api spec revision id must be positive")
 	}
 
 	specJSON := bytesCopy(input.SpecJSON)
@@ -235,12 +235,12 @@ func normalizePersistCanonicalSpecInput(input PersistCanonicalSpecInput) (normal
 	})
 
 	return normalizedPersistCanonicalSpecInput{
-		RevisionID: input.RevisionID,
-		SpecJSON:   specJSON,
-		SpecYAML:   specYAML,
-		ETag:       etag,
-		SizeBytes:  input.SizeBytes,
-		Endpoints:  normalizedEndpoints,
+		APISpecRevisionID: input.APISpecRevisionID,
+		SpecJSON:          specJSON,
+		SpecYAML:          specYAML,
+		ETag:              etag,
+		SizeBytes:         input.SizeBytes,
+		Endpoints:         normalizedEndpoints,
 	}, nil
 }
 
