@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ type Store struct {
 func New(ctx context.Context, databaseURL string) (*Store, error) {
 	databaseURL = strings.TrimSpace(databaseURL)
 	if databaseURL == "" {
-		return &Store{configured: false}, nil
+		return nil, errors.New("SHIVA_DATABASE_URL must not be empty")
 	}
 
 	pool, err := pgxpool.New(ctx, databaseURL)
@@ -42,13 +43,9 @@ func (s *Store) Close() {
 	}
 }
 
-func (s *Store) IsConfigured() bool {
-	return s != nil && s.configured && s.pool != nil
-}
-
 func (s *Store) Health(ctx context.Context) Health {
 	if s == nil || !s.configured || s.pool == nil {
-		return Health{Status: "not_configured"}
+		return Health{Status: "unreachable", Details: "database connection is not configured"}
 	}
 
 	testCtx, cancel := context.WithTimeout(ctx, 1*time.Second)

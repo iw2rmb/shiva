@@ -9,9 +9,12 @@ import (
 )
 
 func TestLoad_DefaultValues(t *testing.T) {
+	setRequiredConfigEnv(t)
+
 	t.Cleanup(func() {
 		for _, name := range []string{
 			"SHIVA_HTTP_ADDR",
+			"SHIVA_DATABASE_URL",
 			"SHIVA_LOG_LEVEL",
 			"SHIVA_WORKER_CONCURRENCY",
 			"SHIVA_SHUTDOWN_TIMEOUT_SECONDS",
@@ -96,6 +99,8 @@ func TestLoad_DefaultValues(t *testing.T) {
 }
 
 func TestLoad_InvalidWorkerConcurrency(t *testing.T) {
+	setRequiredConfigEnv(t)
+
 	t.Setenv("SHIVA_WORKER_CONCURRENCY", "zero")
 	_, err := Load()
 	if err == nil {
@@ -103,7 +108,21 @@ func TestLoad_InvalidWorkerConcurrency(t *testing.T) {
 	}
 }
 
+func TestLoad_RejectsEmptyDatabaseURL(t *testing.T) {
+	t.Setenv("SHIVA_DATABASE_URL", "   ")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected error for empty database url")
+	}
+	if err.Error() != "SHIVA_DATABASE_URL must not be empty" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoad_RejectsEmptyTenantKey(t *testing.T) {
+	setRequiredConfigEnv(t)
+
 	t.Setenv("SHIVA_TENANT_KEY", "  ")
 	_, err := Load()
 	if err == nil {
@@ -112,6 +131,8 @@ func TestLoad_RejectsEmptyTenantKey(t *testing.T) {
 }
 
 func TestLoad_OpenAPIConfig(t *testing.T) {
+	setRequiredConfigEnv(t)
+
 	t.Setenv("SHIVA_OPENAPI_PATH_GLOBS", "specs/**/*.yaml,docs/swagger*.yml")
 	t.Setenv("SHIVA_OPENAPI_REF_MAX_FETCHES", "64")
 	t.Setenv("SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY", "6")
@@ -143,6 +164,8 @@ func TestLoad_OpenAPIConfig(t *testing.T) {
 }
 
 func TestLoad_OpenAPIBootstrapConfigValidation(t *testing.T) {
+	setRequiredConfigEnv(t)
+
 	testCases := []struct {
 		name    string
 		envKey  string
@@ -180,6 +203,8 @@ func TestLoad_OpenAPIBootstrapConfigValidation(t *testing.T) {
 }
 
 func TestLoad_OutboundTimeout(t *testing.T) {
+	setRequiredConfigEnv(t)
+
 	t.Setenv("SHIVA_OUTBOUND_TIMEOUT_SECONDS", "42")
 
 	cfg, err := Load()
@@ -193,6 +218,8 @@ func TestLoad_OutboundTimeout(t *testing.T) {
 }
 
 func TestLoad_IngressAndTracingConfig(t *testing.T) {
+	setRequiredConfigEnv(t)
+
 	t.Setenv("SHIVA_INGRESS_BODY_LIMIT_BYTES", "2097152")
 	t.Setenv("SHIVA_INGRESS_RATE_LIMIT_MAX", "20")
 	t.Setenv("SHIVA_INGRESS_RATE_LIMIT_WINDOW_SECONDS", "30")
@@ -223,4 +250,9 @@ func TestLoad_IngressAndTracingConfig(t *testing.T) {
 	if !cfg.TracingStdout {
 		t.Fatalf("expected TracingStdout=true")
 	}
+}
+
+func setRequiredConfigEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("SHIVA_DATABASE_URL", "postgres://localhost:5432/shiva")
 }

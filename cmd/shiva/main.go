@@ -62,52 +62,47 @@ func run(ctx context.Context) error {
 	defer storeInstance.Close()
 	defer telemetry.Shutdown(context.Background())
 
-	var workerManager *worker.Manager
-	if storeInstance.IsConfigured() {
-		if strings.TrimSpace(cfg.GitLabBaseURL) == "" {
-			return errors.New("SHIVA_GITLAB_BASE_URL must be configured when database worker is enabled")
-		}
+	if strings.TrimSpace(cfg.GitLabBaseURL) == "" {
+		return errors.New("SHIVA_GITLAB_BASE_URL must be configured")
+	}
 
-		gitLabClient, err := gitlab.NewClient(cfg.GitLabBaseURL, cfg.GitLabToken)
-		if err != nil {
-			return fmt.Errorf("initialize gitlab client: %w", err)
-		}
+	gitLabClient, err := gitlab.NewClient(cfg.GitLabBaseURL, cfg.GitLabToken)
+	if err != nil {
+		return fmt.Errorf("initialize gitlab client: %w", err)
+	}
 
-		openAPIResolver, err := openapi.NewResolver(openapi.ResolverConfig{
-			IncludeGlobs:              cfg.OpenAPIPathGlobs,
-			MaxFetches:                cfg.OpenAPIRefMaxFetches,
-			BootstrapFetchConcurrency: cfg.OpenAPIBootstrapFetchConcurrency,
-			BootstrapSniffBytes:       cfg.OpenAPIBootstrapSniffBytes,
-		})
-		if err != nil {
-			return fmt.Errorf("initialize openapi resolver: %w", err)
-		}
+	openAPIResolver, err := openapi.NewResolver(openapi.ResolverConfig{
+		IncludeGlobs:              cfg.OpenAPIPathGlobs,
+		MaxFetches:                cfg.OpenAPIRefMaxFetches,
+		BootstrapFetchConcurrency: cfg.OpenAPIBootstrapFetchConcurrency,
+		BootstrapSniffBytes:       cfg.OpenAPIBootstrapSniffBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("initialize openapi resolver: %w", err)
+	}
 
-		workerManager = worker.New(
-			cfg.WorkerConcurrency,
-			logger,
-			worker.WithQueue(storeQueueAdapter{store: storeInstance}),
-			worker.WithProcessor(revisionProcessor{
-				store:         storeInstance,
-				gitlabClient:  gitLabClient,
-				openapiLoader: openAPIResolver,
-				notifier: notify.New(
-					storeInstance,
-					notify.WithHTTPClient(&http.Client{Timeout: cfg.OutboundTimeout}),
-					notify.WithLogger(logger),
-					notify.WithMetrics(telemetry.Metrics()),
-					notify.WithTracer(telemetry.Tracer()),
-				),
-				logger:  logger,
-				metrics: telemetry.Metrics(),
-				tracer:  telemetry.Tracer(),
-			}),
-		)
-		if err := workerManager.Start(ctx); err != nil {
-			return err
-		}
-	} else {
-		logger.Info("worker manager disabled: database is not configured")
+	workerManager := worker.New(
+		cfg.WorkerConcurrency,
+		logger,
+		worker.WithQueue(storeQueueAdapter{store: storeInstance}),
+		worker.WithProcessor(revisionProcessor{
+			store:         storeInstance,
+			gitlabClient:  gitLabClient,
+			openapiLoader: openAPIResolver,
+			notifier: notify.New(
+				storeInstance,
+				notify.WithHTTPClient(&http.Client{Timeout: cfg.OutboundTimeout}),
+				notify.WithLogger(logger),
+				notify.WithMetrics(telemetry.Metrics()),
+				notify.WithTracer(telemetry.Tracer()),
+			),
+			logger:  logger,
+			metrics: telemetry.Metrics(),
+			tracer:  telemetry.Tracer(),
+		}),
+	)
+	if err := workerManager.Start(ctx); err != nil {
+		return err
 	}
 
 	server := httpserver.New(cfg, logger, storeInstance, httpserver.WithTelemetry(telemetry))
@@ -136,10 +131,8 @@ func run(ctx context.Context) error {
 		logger.Warn("http shutdown returned error", "error", err)
 	}
 
-	if workerManager != nil {
-		if err := workerManager.Stop(shutdownCtx); err != nil {
-			logger.Warn("worker shutdown returned error", "error", err)
-		}
+	if err := workerManager.Stop(shutdownCtx); err != nil {
+		logger.Warn("worker shutdown returned error", "error", err)
 	}
 
 	return nil

@@ -5,7 +5,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 
 ## Prerequisites
 - Go `1.22+`.
-- PostgreSQL if you want the full ingest/build/notify pipeline.
+- PostgreSQL.
 - GitLab access token only if your GitLab APIs require auth.
 
 ## Run
@@ -14,25 +14,22 @@ This document describes runtime setup, configuration, and startup behavior of th
 - Run tests:
   - `go test ./...`
 
-## Runtime Modes
-- Full mode (`SHIVA_DATABASE_URL` set):
-  - webhook ingest, worker processing, canonical build, diff, notifications, read API.
-- HTTP-only mode (`SHIVA_DATABASE_URL` empty):
-  - server starts,
-  - worker is disabled,
-  - data-backed routes return store-not-configured errors (`503`).
+## Runtime Behavior
+- Shiva expects DB connectivity at startup.
+- Missing DB URL or DB connection failure is a startup error.
+- Worker pipeline is always enabled when the service starts.
 
 ## Environment Variables
 
 ### Core
 - `SHIVA_HTTP_ADDR` (default `:8080`).
-- `SHIVA_DATABASE_URL` (optional; required for full mode).
+- `SHIVA_DATABASE_URL` (required).
 - `SHIVA_TENANT_KEY` (default `default`).
 - `SHIVA_LOG_LEVEL` (default `info`).
 - `SHIVA_SHUTDOWN_TIMEOUT_SECONDS` (default `15`).
 
 ### GitLab + Ingest
-- `SHIVA_GITLAB_BASE_URL` (required when DB worker is enabled).
+- `SHIVA_GITLAB_BASE_URL` (required).
 - `SHIVA_GITLAB_TOKEN` (optional).
 - `SHIVA_GITLAB_WEBHOOK_SECRET` (required for accepting inbound GitLab webhooks).
 
@@ -58,7 +55,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 
 ## Health and Metrics
 - `GET /healthz`
-  - returns service status and DB health (`ok`, `not_configured`, `unreachable`).
+  - returns service status and DB health (`ok`, `unreachable`).
 - `GET /internal/metrics` (or configured metrics path).
 
 ## Deployment Reference

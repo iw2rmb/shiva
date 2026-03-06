@@ -219,8 +219,11 @@ func Load() (Config, error) {
 	if cfg.TenantKey == "" {
 		return Config{}, errors.New("SHIVA_TENANT_KEY must not be empty")
 	}
+	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+		return Config{}, errors.New("SHIVA_DATABASE_URL must not be empty")
+	}
 
-	if strings.TrimSpace(cfg.DatabaseURL) != "" && !strings.HasPrefix(strings.ToLower(cfg.DatabaseURL), "postgres://") {
+	if !strings.HasPrefix(strings.ToLower(cfg.DatabaseURL), "postgres://") {
 		if !strings.HasPrefix(strings.ToLower(cfg.DatabaseURL), "postgresql://") {
 			return Config{}, errors.New("SHIVA_DATABASE_URL must start with postgres:// or postgresql://")
 		}
