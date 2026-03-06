@@ -44,6 +44,8 @@ Current baseline: full suite passes.
   dependency-intersection impact-only rebuild, unrelated change no rebuild, deleted-root deactivation, fallback discovery for create/rename changes, and per-API permanent-failure isolation (failed API + successful API in one revision).
 - Resolver-level incremental behavior in `internal/openapi/resolver_test.go`:
   `ResolveRootOpenAPIAtSHA` strict root validation and fallback discovery (`ResolveDiscoveredRootsAtPaths`) candidate filtering/collapse on changed path inputs.
+- Notifier payload identity and dedupe in `internal/notify/notifier_test.go`:
+  API-scoped payload contract fields (`api`, `api_revision_id`), per-API event-id identity, and mixed API deliveries in a single repo revision.
 
 ## DB/Query Change Validation
 When SQL schema/query files change:

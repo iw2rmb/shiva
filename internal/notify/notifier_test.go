@@ -22,6 +22,7 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 
 	type receivedRequest struct {
 		body      []byte
+		eventID   string
 		signature string
 		timestamp string
 	}
@@ -39,6 +40,7 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 		}
 		mu.Lock()
 		received = append(received, receivedRequest{
+			eventID:   r.Header.Get("X-Shiva-Event-ID"),
 			body:      body,
 			signature: r.Header.Get(HeaderSignature),
 			timestamp: r.Header.Get(HeaderTimestamp),
@@ -74,21 +76,24 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 		TenantKey:   "tenant-alpha",
 		RepoID:      9,
 		RepoPath:    "group/repo",
+		APISpecID:   101,
+		API:         "api/openapi.yaml",
+		APISpecRevisionID: 1001,
 		RevisionID:  333,
 		Sha:         "sha-333",
 		Branch:      "main",
 		ProcessedAt: now,
 		Artifact: store.SpecArtifact{
-			RevisionID: 333,
-			SpecJSON:   []byte(`{"openapi":"3.1.0","paths":{}}`),
-			SpecYAML:   "openapi: 3.1.0\npaths: {}\n",
-			ETag:       "\"etag-333\"",
-			SizeBytes:  128,
+			APISpecRevisionID: 1001,
+			SpecJSON:          []byte(`{"openapi":"3.1.0","paths":{}}`),
+			SpecYAML:          "openapi: 3.1.0\npaths: {}\n",
+			ETag:              "\"etag-333\"",
+			SizeBytes:         128,
 		},
 		SpecChange: store.SpecChange{
-			RepoID:       9,
-			ToRevisionID: 333,
-			ChangeJSON:   []byte(`{"version":1,"summary":{"changed_endpoints":0}}`),
+			APISpecID:           101,
+			ToAPISpecRevisionID: 1001,
+			ChangeJSON:          []byte(`{"version":1,"summary":{"changed_endpoints":0}}`),
 		},
 	})
 	if err != nil {
@@ -118,6 +123,16 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 		}
 		eventType, _ := envelope["type"].(string)
 		eventTypes = append(eventTypes, eventType)
+		if got := envelope["api"]; got != "api/openapi.yaml" {
+			t.Fatalf("expected envelope api=%q, got %q", "api/openapi.yaml", got)
+		}
+		gotAPISpecRevisionID, ok := envelope["api_revision_id"].(float64)
+		if !ok || int64(gotAPISpecRevisionID) != 1001 {
+			t.Fatalf("expected api_revision_id=%d, got %v", 1001, envelope["api_revision_id"])
+		}
+		if !strings.Contains(req.eventID, ":api:101:") {
+			t.Fatalf("expected event id to include api_spec_id=101, got %q", req.eventID)
+		}
 	}
 
 	expectedTypes := []string{store.DeliveryEventTypeSpecUpdatedFull, store.DeliveryEventTypeSpecUpdatedDiff}
@@ -177,15 +192,18 @@ func TestNotifierNotifyRevision_EmitsDiffOnlyWhenFullArtifactMissing(t *testing.
 		TenantKey:   "tenant-alpha",
 		RepoID:      9,
 		RepoPath:    "group/repo",
+		APISpecID:   102,
+		API:         "api/openapi.yaml",
+		APISpecRevisionID: 1002,
 		RevisionID:  333,
 		Sha:         "sha-333",
 		Branch:      "main",
 		ProcessedAt: time.Now().UTC(),
 		IncludeFull: false,
 		SpecChange: store.SpecChange{
-			RepoID:       9,
-			ToRevisionID: 333,
-			ChangeJSON:   []byte(`{"version":1,"summary":{"changed_endpoints":1}}`),
+			APISpecID:           102,
+			ToAPISpecRevisionID: 1002,
+			ChangeJSON:          []byte(`{"version":1,"summary":{"changed_endpoints":1}}`),
 		},
 	})
 	if err != nil {
@@ -206,7 +224,205 @@ func TestNotifierNotifyRevision_EmitsDiffOnlyWhenFullArtifactMissing(t *testing.
 	if eventType, _ := envelope["type"].(string); eventType != store.DeliveryEventTypeSpecUpdatedDiff {
 		t.Fatalf("expected outbound event type %q, got %q", store.DeliveryEventTypeSpecUpdatedDiff, eventType)
 	}
+	if envelope["api"] != "api/openapi.yaml" {
+		t.Fatalf("expected envelope api=%q, got %q", "api/openapi.yaml", envelope["api"])
+	}
+	if gotAPISpecRevisionID, ok := envelope["api_revision_id"].(float64); !ok || int64(gotAPISpecRevisionID) != 1002 {
+		t.Fatalf("expected api_revision_id=%d, got %v", 1002, envelope["api_revision_id"])
+	}
 }
+
+func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testing.T) {
+	t.Parallel()
+
+	type receivedRequest struct {
+		api       string
+		eventType string
+	}
+
+	var (
+		mu       sync.Mutex
+		received []receivedRequest
+	)
+
+	now := time.Date(2026, 3, 4, 14, 0, 0, 0, time.UTC)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		var envelope struct {
+			API       string `json:"api"`
+			EventType string `json:"type"`
+			Revision  int64  `json:"api_revision_id"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		mu.Lock()
+		received = append(received, receivedRequest{api: envelope.API, eventType: envelope.EventType})
+		mu.Unlock()
+
+		if envelope.Revision == 0 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	storeMock := newFakeNotifierStore(store.Subscription{
+		ID:                    44,
+		TenantID:              7,
+		RepoID:                9,
+		TargetURL:             server.URL,
+		Secret:                "top-secret",
+		MaxAttempts:           3,
+		BackoffInitialSeconds: 1,
+		BackoffMaxSeconds:     5,
+	})
+
+	notifier := New(
+		storeMock,
+		WithHTTPClient(server.Client()),
+		WithNow(func() time.Time { return now }),
+		WithSleep(func(_ context.Context, _ time.Duration) error { return nil }),
+	)
+
+	inputs := []RevisionNotification{
+		{
+			TenantID:          7,
+			TenantKey:         "tenant-alpha",
+			RepoID:            9,
+			RepoPath:          "group/repo",
+			APISpecID:         101,
+			API:               "api/customers",
+			APISpecRevisionID: 5001,
+			RevisionID:        444,
+			Sha:               "sha-444",
+			Branch:            "main",
+			ProcessedAt:       now,
+			Artifact:          store.SpecArtifact{APISpecRevisionID: 5001, SpecJSON: []byte(`{"openapi":"3.1.0","paths":{}}`), SpecYAML: "openapi: 3.1.0\npaths: {}\n", ETag: "\"etag-5001\"", SizeBytes: 128},
+			SpecChange:        store.SpecChange{APISpecID: 101, ToAPISpecRevisionID: 5001, ChangeJSON: []byte(`{"version":1}`)},
+		},
+		{
+			TenantID:          7,
+			TenantKey:         "tenant-alpha",
+			RepoID:            9,
+			RepoPath:          "group/repo",
+			APISpecID:         102,
+			API:               "api/orders",
+			APISpecRevisionID: 5002,
+			RevisionID:        444,
+			Sha:               "sha-444",
+			Branch:            "main",
+			ProcessedAt:       now,
+			Artifact:          store.SpecArtifact{APISpecRevisionID: 5002, SpecJSON: []byte(`{"openapi":"3.1.0","paths":{}}`), SpecYAML: "openapi: 3.1.0\npaths: {}\n", ETag: "\"etag-5002\"", SizeBytes: 128},
+			SpecChange:        store.SpecChange{APISpecID: 102, ToAPISpecRevisionID: 5002, ChangeJSON: []byte(`{"version":1}`)},
+		},
+	}
+
+	for _, input := range inputs {
+		if err := notifier.NotifyRevision(context.Background(), input); err != nil {
+			t.Fatalf("NotifyRevision() unexpected error: %v", err)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(received) != 4 {
+		t.Fatalf("expected 4 outbound requests, got %d", len(received))
+	}
+
+	counts := map[string]map[string]struct{}{
+		"api/customers": {store.DeliveryEventTypeSpecUpdatedFull: {}, store.DeliveryEventTypeSpecUpdatedDiff: {}},
+		"api/orders":   {store.DeliveryEventTypeSpecUpdatedFull: {}, store.DeliveryEventTypeSpecUpdatedDiff: {}},
+	}
+
+	for _, req := range received {
+		bucket, exists := counts[req.api]
+		if !exists {
+			t.Fatalf("unexpected api %q in outbound payload", req.api)
+		}
+		bucket[req.eventType] = struct{}{}
+	}
+
+	for api, types := range counts {
+		if len(types) != 2 {
+			t.Fatalf("expected full+diff for api=%q, got %d types", api, len(types))
+		}
+	}
+
+	if len(storeMock.createCalls) != 4 {
+		t.Fatalf("expected 4 created delivery attempts, got %d", len(storeMock.createCalls))
+	}
+}
+
+func TestDispatchEvent_DedupeKeyedByAPISpecID(t *testing.T) {
+	t.Parallel()
+
+	storeMock := newFakeNotifierStore(store.Subscription{
+		ID:                    99,
+		TenantID:              1,
+		RepoID:                2,
+		TargetURL:             "https://example.com/hook",
+		Secret:                "secret",
+		MaxAttempts:           2,
+		BackoffInitialSeconds: 1,
+		BackoffMaxSeconds:     2,
+	})
+
+	key := deliveryAttemptKey(99, 777, 555, store.DeliveryEventTypeSpecUpdatedDiff)
+	storeMock.latest[key] = store.DeliveryAttempt{
+		ID:             1,
+		SubscriptionID: 99,
+		APISpecID:      777,
+		RevisionID:     555,
+		EventType:      store.DeliveryEventTypeSpecUpdatedDiff,
+		AttemptNo:      1,
+		Status:         store.DeliveryAttemptStatusSucceeded,
+	}
+
+	client := &scriptedHTTPClient{responses: []int{http.StatusOK}}
+	notifier := New(
+		storeMock,
+		WithHTTPClient(client),
+		WithSleep(func(_ context.Context, _ time.Duration) error { return nil }),
+	)
+
+	err := notifier.dispatchEvent(
+		context.Background(),
+		storeMock.subscriptions[0],
+		RevisionNotification{
+			APISpecID: 888,
+			RepoID:     2,
+			RevisionID: 555,
+			DeliveryID: "delivery-555",
+			Sha:        "sha-555",
+		},
+		builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedDiff, body: []byte(`{"type":"spec.updated.diff"}`)},
+	)
+	if err != nil {
+		t.Fatalf("dispatchEvent() unexpected error: %v", err)
+	}
+
+	if client.calls != 1 {
+		t.Fatalf("expected one HTTP call for different api key, got %d", client.calls)
+	}
+	if len(storeMock.createCalls) != 1 {
+		t.Fatalf("expected one created delivery attempt, got %d", len(storeMock.createCalls))
+	}
+	if storeMock.createCalls[0].APISpecID != 888 {
+		t.Fatalf("expected created attempt for api_spec_id=888, got %d", storeMock.createCalls[0].APISpecID)
+	}
+}
+
 
 func TestDispatchEvent_RetryAndTerminalStates(t *testing.T) {
 	t.Parallel()
@@ -271,6 +487,7 @@ func TestDispatchEvent_RetryAndTerminalStates(t *testing.T) {
 				context.Background(),
 				storeMock.subscriptions[0],
 				RevisionNotification{
+					APISpecID:  111,
 					RepoID:     2,
 					RevisionID: 555,
 					DeliveryID: "delivery-555",
@@ -314,10 +531,11 @@ func TestDispatchEvent_SkipsTerminalAttempt(t *testing.T) {
 		BackoffInitialSeconds: 1,
 		BackoffMaxSeconds:     2,
 	})
-	key := deliveryAttemptKey(99, 777, store.DeliveryEventTypeSpecUpdatedDiff)
+	key := deliveryAttemptKey(99, 777, 777, store.DeliveryEventTypeSpecUpdatedDiff)
 	storeMock.latest[key] = store.DeliveryAttempt{
 		ID:             1,
 		SubscriptionID: 99,
+		APISpecID:      777,
 		RevisionID:     777,
 		EventType:      store.DeliveryEventTypeSpecUpdatedDiff,
 		AttemptNo:      1,
@@ -335,6 +553,7 @@ func TestDispatchEvent_SkipsTerminalAttempt(t *testing.T) {
 		context.Background(),
 		storeMock.subscriptions[0],
 		RevisionNotification{
+			APISpecID: 777,
 			RepoID:     2,
 			RevisionID: 777,
 			DeliveryID: "delivery-777",
@@ -413,6 +632,7 @@ func TestDispatchEvent_EmitsNotifyDispatchSpan(t *testing.T) {
 		context.Background(),
 		storeMock.subscriptions[0],
 		RevisionNotification{
+			APISpecID:  901,
 			RepoID:     2,
 			RevisionID: 901,
 			DeliveryID: "delivery-901",
@@ -502,13 +722,14 @@ func (f *fakeNotifierStore) ListEnabledSubscriptionsByRepo(
 func (f *fakeNotifierStore) GetLatestDeliveryAttemptByKey(
 	_ context.Context,
 	subscriptionID int64,
+	apiSpecID int64,
 	revisionID int64,
 	eventType string,
 ) (store.DeliveryAttempt, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	attempt, ok := f.latest[deliveryAttemptKey(subscriptionID, revisionID, eventType)]
+	attempt, ok := f.latest[deliveryAttemptKey(subscriptionID, apiSpecID, revisionID, eventType)]
 	return attempt, ok, nil
 }
 
@@ -525,6 +746,7 @@ func (f *fakeNotifierStore) CreateDeliveryAttempt(
 	attempt := store.DeliveryAttempt{
 		ID:             id,
 		SubscriptionID: input.SubscriptionID,
+		APISpecID:      input.APISpecID,
 		RevisionID:     input.RevisionID,
 		EventType:      input.EventType,
 		AttemptNo:      input.AttemptNo,
@@ -532,7 +754,7 @@ func (f *fakeNotifierStore) CreateDeliveryAttempt(
 		NextRetryAt:    cloneTime(input.NextRetryAt),
 	}
 	f.attempts[id] = attempt
-	f.latest[deliveryAttemptKey(input.SubscriptionID, input.RevisionID, input.EventType)] = attempt
+	f.latest[deliveryAttemptKey(input.SubscriptionID, input.APISpecID, input.RevisionID, input.EventType)] = attempt
 	f.createCalls = append(f.createCalls, input)
 
 	return attempt, nil
@@ -552,15 +774,16 @@ func (f *fakeNotifierStore) UpdateDeliveryAttemptResult(
 	attempt.NextRetryAt = cloneTime(input.NextRetryAt)
 
 	f.attempts[input.ID] = attempt
-	f.latest[deliveryAttemptKey(attempt.SubscriptionID, attempt.RevisionID, attempt.EventType)] = attempt
+	f.latest[deliveryAttemptKey(attempt.SubscriptionID, attempt.APISpecID, attempt.RevisionID, attempt.EventType)] = attempt
 	f.updateCalls = append(f.updateCalls, input)
 
 	return attempt, nil
 }
 
-func deliveryAttemptKey(subscriptionID, revisionID int64, eventType string) string {
+func deliveryAttemptKey(subscriptionID int64, apiSpecID int64, revisionID int64, eventType string) string {
 	return strings.Join([]string{
 		"sub", strconv.FormatInt(subscriptionID, 10),
+		"api", strconv.FormatInt(apiSpecID, 10),
 		"rev", strconv.FormatInt(revisionID, 10),
 		"event", eventType,
 	}, ":")

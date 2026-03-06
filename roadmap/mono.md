@@ -96,7 +96,7 @@ Legend: [ ] todo, [x] done.
   - Tests: handler tests for selector/no-selector listing, deleted API visibility, and deterministic ordering
 
 ## Notification Contract Refactor
-- [ ] Move outbound notifications to API-scoped payload identity — subscribers must identify changed API instance directly
+- [x] Move outbound notifications to API-scoped payload identity — subscribers must identify changed API instance directly
   - Repository: `shiva`
   - Component: `internal/notify`, `cmd/shiva/main.go`
   - Scope:

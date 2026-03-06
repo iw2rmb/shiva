@@ -44,6 +44,18 @@ Per event attempt headers:
 - `X-Shiva-Signature: sha256=<hex(hmac_sha256(secret, raw_body))>`
 - `X-Shiva-Event-ID: sub:<subscription_id>:api:<api_spec_id>:rev:<revision_id>:event:<event_type>`
 
+Outgoing payload fields:
+- `tenant`: tenant key.
+- `repo`: repository path with namespace.
+- `revision_id`: repository revision id that triggered the webhook.
+- `api`: API root path that changed.
+- `api_revision_id`: API spec revision id that changed.
+- `sha`: revision SHA at delivery time.
+- `branch`: source branch for the revision.
+- `processed_at`: RFC3339Nano UTC timestamp.
+- `event_id`: envelope id in format `api:<api_spec_id>:rev:<revision_id>:event:<event_type>`.
+- `payload`: event-specific payload.
+
 Delivery model:
 - subscription list is loaded from enabled repo subscriptions,
 - attempts are persisted in `delivery_attempts`,

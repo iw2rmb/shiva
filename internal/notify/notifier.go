@@ -80,15 +80,17 @@ type RevisionNotification struct {
 }
 
 type eventEnvelope[T any] struct {
-	Type        string `json:"type"`
-	EventID     string `json:"event_id"`
-	Tenant      string `json:"tenant"`
-	Repo        string `json:"repo"`
-	RevisionID  int64  `json:"revision_id"`
-	Sha         string `json:"sha"`
-	Branch      string `json:"branch"`
-	ProcessedAt string `json:"processed_at"`
-	Payload     T      `json:"payload"`
+	Type             string `json:"type"`
+	EventID          string `json:"event_id"`
+	Tenant           string `json:"tenant"`
+	Repo             string `json:"repo"`
+	RevisionID       int64  `json:"revision_id"`
+	APISpecRevisionID int64  `json:"api_revision_id"`
+	API              string `json:"api"`
+	Sha              string `json:"sha"`
+	Branch           string `json:"branch"`
+	ProcessedAt      string `json:"processed_at"`
+	Payload          T      `json:"payload"`
 }
 
 type fullEventPayload struct {
@@ -241,14 +243,16 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 	repoPath := strings.TrimSpace(notification.RepoPath)
 
 	diffEnvelope := eventEnvelope[diffEventPayload]{
-		Type:        store.DeliveryEventTypeSpecUpdatedDiff,
-		EventID:     deterministicEnvelopeEventID(notification.APISpecID, notification.RevisionID, store.DeliveryEventTypeSpecUpdatedDiff),
-		Tenant:      tenantKey,
-		Repo:        repoPath,
-		RevisionID:  notification.RevisionID,
-		Sha:         notification.Sha,
-		Branch:      notification.Branch,
-		ProcessedAt: processedAtText,
+		Type:              store.DeliveryEventTypeSpecUpdatedDiff,
+		EventID:           deterministicEnvelopeEventID(notification.APISpecID, notification.RevisionID, store.DeliveryEventTypeSpecUpdatedDiff),
+		Tenant:            tenantKey,
+		Repo:              repoPath,
+		RevisionID:        notification.RevisionID,
+		APISpecRevisionID: notification.APISpecRevisionID,
+		API:               notification.API,
+		Sha:               notification.Sha,
+		Branch:            notification.Branch,
+		ProcessedAt:       processedAtText,
 		Payload: diffEventPayload{
 			FromRevisionID: notification.SpecChange.FromAPISpecRevisionID,
 			FromSHA:        strings.TrimSpace(notification.FromSHA),
@@ -279,14 +283,16 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 	}
 
 	fullEnvelope := eventEnvelope[fullEventPayload]{
-		Type:        store.DeliveryEventTypeSpecUpdatedFull,
-		EventID:     deterministicEnvelopeEventID(notification.APISpecID, notification.RevisionID, store.DeliveryEventTypeSpecUpdatedFull),
-		Tenant:      tenantKey,
-		Repo:        repoPath,
-		RevisionID:  notification.RevisionID,
-		Sha:         notification.Sha,
-		Branch:      notification.Branch,
-		ProcessedAt: processedAtText,
+		Type:              store.DeliveryEventTypeSpecUpdatedFull,
+		EventID:           deterministicEnvelopeEventID(notification.APISpecID, notification.RevisionID, store.DeliveryEventTypeSpecUpdatedFull),
+		Tenant:            tenantKey,
+		Repo:              repoPath,
+		RevisionID:        notification.RevisionID,
+		APISpecRevisionID: notification.APISpecRevisionID,
+		API:               notification.API,
+		Sha:               notification.Sha,
+		Branch:            notification.Branch,
+		ProcessedAt:       processedAtText,
 		Payload: fullEventPayload{
 			ETag:      notification.Artifact.ETag,
 			SizeBytes: notification.Artifact.SizeBytes,
