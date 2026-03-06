@@ -41,17 +41,28 @@ Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifac
 - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/-/{api}/-/{selector}/{path}`
 
 Monorepo `api` is the raw root path, bounded by `/-/{api}/-/` in the URL.
+- `api` is decoded and may contain slashes (for example `platform/api`).
+- both delimiter segments must be present and in order (`.../-/{api}/-/...`).
 
 Malformed delimiter shapes are rejected as `400`:
 - missing closing delimiter `/-/{api}/` (example: `/-/{api}/pets`),
 - empty `api` (example: `/-/-/openapi.json`).
 
 Route method is the endpoint method selector.
+`/v1/routes/...` applies fallback semantics when selector is present but not found:
+- first resolves `/.../{selector}/...`
+- if `selector` resolves with `not_found`, resolves again without selector against the same `/{api}/-/...` context.
 
 ## Selector Semantics
 - selector can only be an 8-character lowercase commit SHA (short SHA prefix).
 - no-selector routes resolve to latest processed `HEAD` on `main`.
 - selector operation route is attempted first; if selector is not found it falls through to no-selector operation route.
+- spec routes do not fallback: `/v1/specs/.../{selector}/...` resolves selector only; 404 on selector failure.
+
+Route parser behavior:
+- non-monorepo: `/v1/specs/{tenant}/{repo}/...` and `/v1/routes/{tenant}/{repo}/...`
+- monorepo: `/v1/specs/{tenant}/{repo}/-/{api}/-/...` and `/v1/routes/{tenant}/{repo}/-/{api}/-/...`
+- compatibility: no `/-/{api}/-/` means single-API/legacy behavior based on latest processed API-scoped row for revision.
 
 ## Path Normalization on Reads
 - path parameter is URL-decoded,
@@ -73,6 +84,7 @@ Default operation-slice format is JSON.
     - `revision_branch`
 - selector form uses selector-resolved snapshot:
   - revision id is derived from `/{selector}/` and list entries include last processed revision state as of that revision
+- selector form requires an 8-character lowercase hex selector. Other selector values return `400`.
 
 ## Operation Slice Response Shape
 Response body shape:

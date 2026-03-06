@@ -33,11 +33,17 @@ This document describes current schema layout and SQL code generation workflow.
 ## API Spec Store Primitives
 - `ListActiveAPISpecsWithLatestDependencies(repo_id)`: returns active `api_specs` in `root_path` order with dependency file paths from each spec's latest `api_spec_revisions` row where `build_status='processed'` (ties resolved by `revision_id DESC, id DESC`); specs without processed revisions return an empty dependency list.
 - `ListAPISpecListingByRepo(repo_id)`: returns all `api_specs` (active + deleted) in `root_path` order with listing fields `api` (`root_path`), `status`, and optional `last_processed_revision` metadata (`api_spec_revision_id`, `revision_id`, `revision_sha`, `revision_branch`).
+- `ListAPISpecListingByRepoAtRevision(repo_id, revision_id)`: returns deterministic inventory as of the given revision id, using the latest processed API revision with `revision_id <= revision_id`.
 - `MarkAPISpecDeleted(api_spec_id)`: sets `api_specs.status='deleted'` for root deactivation flows.
 - `api_spec_dependencies` are revision-scoped and only latest-processed rows feed incremental impact intersection.
-- `spec_artifacts` and `endpoint_index` read/write contracts are `api_spec_revision_id`-scoped.
-- `spec_changes` read/write contracts are `api_spec_id` scoped and read with `(api_spec_id, to_api_spec_revision_id)`.
+- `spec_artifacts` and `endpoint_index` write contracts are strictly `api_spec_revision_id`-scoped.
+- `spec_changes` write contracts are `api_spec_id`-scoped and read with `(api_spec_id, to_api_spec_revision_id)`.
 - `delivery_attempts` read/write contracts include `api_spec_id` in the dedupe/lookup identity.
+
+### Read Compatibility Behavior
+- `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained for legacy read routes.
+- They resolve the latest processed API-scoped row for the requested `revisions.id` across all APIs in that revision, then return that row only when a matching method/path exists.
+- Monorepo read routes (`/-/{api}/-/`) still resolve explicitly via API root and revision ID, so same revision + different API returns different results.
 
 ## Generation
 sqlc config:

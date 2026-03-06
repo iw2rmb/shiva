@@ -107,7 +107,7 @@ Legend: [ ] todo, [x] done.
   - Tests: notifier tests for per-API dedupe keying and mixed API deliveries in one repo revision
 
 ## Documentation Sync
-- [ ] Update runtime and contract docs to match monorepo implementation — keep docs authoritative after breaking refactor
+- [x] Update runtime and contract docs to match monorepo implementation — keep docs authoritative after breaking refactor
   - Repository: `shiva`
   - Component: `docs/database.md`, `docs/gitlab.md`, `docs/endpoints.md`, `docs/webhooks.md`, `docs/testing.md`
   - Scope: replace revision-scoped artifact/index/change narratives with API-scoped behavior and document `/v1/specs|routes` contracts with `/-/{api}/-/` delimiters and short-SHA selector

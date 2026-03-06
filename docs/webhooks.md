@@ -62,6 +62,10 @@ Delivery model:
 - statuses: `pending`, `retry_scheduled`, `succeeded`, `failed`,
 - retries use exponential backoff bounded by subscription settings,
 - terminal `succeeded/failed` blocks duplicate redispatch for the same `(subscription_id, api_spec_id, revision_id, event_type)` key.
+- API-scoped identity/payload checks:
+  - dedupe and retry identity is `(subscription_id, api_spec_id, revision_id, event_type)`,
+  - header `X-Shiva-Event-ID` is `sub:<subscription_id>:api:<api_spec_id>:rev:<revision_id>:event:<event_type>`,
+  - payload is tied to one API via `api` and `api_revision_id`.
 
 Incremental edge behavior:
 - root-local permanent errors are isolated to `api_spec_revisions` and do not block outbound delivery if another root in the same revision succeeds (`openapi_changed=true`).

@@ -39,10 +39,11 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 8. For each changed API (rebuilt or deactivated root):
    - compute and persist semantic diff (`spec_changes`) for that API.
    - mark revision `openapi_changed=true`.
+   - create API-scoped revision rows and downstream identities per API (`api_spec_id`).
 9. If no API was rebuilt and no API was deactivated:
    - mark revision `openapi_changed=false`.
 10. Emit outbound notifications:
-   - emit events per changed API,
+   - emit events per changed API (`spec.updated.diff`, optional `spec.updated.full`),
    - always emit `spec.updated.diff` for each changed API,
    - emit `spec.updated.full` only when canonical artifact exists for that API spec revision.
 11. On successful bootstrap completion, clear `repos.openapi_force_rescan`.

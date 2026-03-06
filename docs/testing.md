@@ -7,7 +7,7 @@ This document describes the current test layout and practical test commands.
 - Run full suite:
   - `go test ./...`
 
-Current baseline: full suite passes.
+Current baseline should be validated by running `go test ./...`.
 
 ## Focused Commands
 - HTTP routes and webhook handlers:
@@ -34,6 +34,11 @@ Current baseline: full suite passes.
 - Canonical spec build and endpoint extraction.
 - Semantic diff computation.
 - Read route selector resolution and endpoint slice responses.
+- Route contract tests for:
+  - short-SHA selector validation,
+  - monorepo delimiter parsing (`/-/{api}/-/`) for spec and route families,
+  - selector fallback behavior on `/v1/routes`,
+  - `/v1/specs/{tenant}/{repo}/apis` and selector variant listing responses.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shiva/webhook_to_notify_integration_test.go`.
 - Delete-only incremental integration path in `cmd/shiva/webhook_to_notify_integration_test.go`:
@@ -46,6 +51,12 @@ Current baseline: full suite passes.
   `ResolveRootOpenAPIAtSHA` strict root validation and fallback discovery (`ResolveDiscoveredRootsAtPaths`) candidate filtering/collapse on changed path inputs.
 - Notifier payload identity and dedupe in `internal/notify/notifier_test.go`:
   API-scoped payload contract fields (`api`, `api_revision_id`), per-API event-id identity, and mixed API deliveries in a single repo revision.
+
+## Cross-Checks
+- `docs/database.md`: API-scoped artifact/index/change and listing behavior.
+- `docs/endpoints.md`: read route contract matrix and delimiter/selector semantics.
+- `docs/webhooks.md`: API-scoped notification identity and payload.
+- `docs/gitlab.md`: per-API changed revision flow and notification emission conditions.
 
 ## DB/Query Change Validation
 When SQL schema/query files change:
