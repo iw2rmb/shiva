@@ -114,6 +114,8 @@ func (s *Server) registerRoutes() {
 
 	v1 := s.app.Group("/v1")
 	specGroup := v1.Group("/specs/:tenant/:repo")
+	specGroup.Get("/apis", s.handleListAPISpecsByRepo)
+	specGroup.Get("/:selector/apis", s.handleListAPISpecsByRepoAtRevision)
 	specGroup.Get("/*", s.handleGetSpec)
 
 	routeGroup := v1.Group("/routes/:tenant/:repo")

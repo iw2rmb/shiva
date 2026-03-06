@@ -243,6 +243,137 @@ func TestReadRoutes_DelimitedMonorepoPathParsing(t *testing.T) {
 	}
 }
 
+func TestReadRoutes_APISpecListing_RouteModesAndDeletedVisibility(t *testing.T) {
+	t.Parallel()
+
+	shortSHA := "11111111"
+
+	listing := []store.APISpecListing{
+		{
+			API:    "apis/pets/openapi.yaml",
+			Status: "active",
+			LastProcessedRevision: &store.APISpecRevisionMetadata{
+				APISpecRevisionID: 1001,
+				RevisionID:        501,
+				RevisionSHA:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				RevisionBranch:    "main",
+			},
+		},
+		{
+			API:    "apis/deleted/openapi.yaml",
+			Status: "deleted",
+		},
+	}
+
+	testCases := []struct {
+		name                    string
+		path                    string
+		expectedNoSelectorInput store.ResolveReadSelectorInput
+		expectNoSelectorListing bool
+		expectSelectorListing   bool
+	}{
+		{
+			name: "no selector listing resolves main and includes deleted api",
+			path: "/v1/specs/tenant-a/repo/apis",
+			expectedNoSelectorInput: store.ResolveReadSelectorInput{
+				TenantKey:  "tenant-a",
+				RepoPath:   "repo",
+				NoSelector: true,
+			},
+			expectNoSelectorListing: true,
+		},
+		{
+			name: "selector listing resolves selector revision",
+			path: "/v1/specs/tenant-a/repo/" + shortSHA + "/apis",
+			expectedNoSelectorInput: store.ResolveReadSelectorInput{
+				TenantKey: "tenant-a",
+				RepoPath:  "repo",
+				Selector:  shortSHA,
+			},
+			expectSelectorListing: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			readStore := &fakeReadRouteStore{
+				resolved:                store.ResolvedReadSelector{RepoID: 88, Revision: store.Revision{ID: 77}},
+				listingResult:           listing,
+				listingByRevisionResult: listing,
+				listingByRepoErr:        nil,
+				listingByRevisionErr:    nil,
+			}
+			server := newReadRouteTestServer(readStore)
+
+			resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, testCase.path, nil), -1)
+			if err != nil {
+				t.Fatalf("http test request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+			}
+
+			var got []apiSpecListingResponse
+			if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+				t.Fatalf("decode api listing response: %v", err)
+			}
+			if !reflect.DeepEqual(got, []apiSpecListingResponse{
+				{
+					API:    "apis/pets/openapi.yaml",
+					Status: "active",
+					LastProcessedRevision: &apiSpecRevisionMetadataResponse{
+						APISpecRevisionID: 1001,
+						RevisionID:        501,
+						RevisionSHA:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						RevisionBranch:    "main",
+					},
+				},
+				{
+					API:    "apis/deleted/openapi.yaml",
+					Status: "deleted",
+				},
+			}) {
+				t.Fatalf("unexpected response body: %+v", got)
+			}
+
+			if len(readStore.resolveInputs) != 1 {
+				t.Fatalf("expected one selector resolution call, got %d", len(readStore.resolveInputs))
+			}
+			if !reflect.DeepEqual(readStore.resolveInputs[0], testCase.expectedNoSelectorInput) {
+				t.Fatalf("unexpected selector resolution input: %+v", readStore.resolveInputs[0])
+			}
+
+			if testCase.expectNoSelectorListing {
+				if len(readStore.listingInputs) != 1 || readStore.listingInputs[0] != 88 {
+					t.Fatalf("expected one listing call with repo_id=88, got %v", readStore.listingInputs)
+				}
+				if len(readStore.listingByRevisionInputs) != 0 {
+					t.Fatalf("did not expect selector listing call, got %d", len(readStore.listingByRevisionInputs))
+				}
+				return
+			}
+
+			if testCase.expectSelectorListing {
+				if len(readStore.listingByRevisionInputs) != 1 {
+					t.Fatalf("expected one revision listing call, got %d", len(readStore.listingByRevisionInputs))
+				}
+				if readStore.listingByRevisionInputs[0].repoID != 88 || readStore.listingByRevisionInputs[0].revisionID != 77 {
+					t.Fatalf("expected revision listing call for repo_id=88 revision_id=77, got %+v", readStore.listingByRevisionInputs[0])
+				}
+				if len(readStore.listingInputs) != 0 {
+					t.Fatalf("did not expect no-selector listing call, got %d", len(readStore.listingInputs))
+				}
+			}
+		})
+	}
+}
+
 func TestReadRoutes_RejectMalformedMonorepoDelimiter(t *testing.T) {
 	t.Parallel()
 
@@ -627,6 +758,18 @@ type fakeReadRouteStore struct {
 		Method     string
 		Path       string
 	}
+
+	listingInputs           []int64
+	listingByRevisionInputs []apiSpecListingByRevisionInput
+	listingByRepoErr        error
+	listingByRevisionErr    error
+	listingResult           []store.APISpecListing
+	listingByRevisionResult []store.APISpecListing
+}
+
+type apiSpecListingByRevisionInput struct {
+	repoID     int64
+	revisionID int64
 }
 
 func (f *fakeReadRouteStore) ResolveReadSelector(
@@ -719,6 +862,39 @@ func (f *fakeReadRouteStore) GetEndpointIndexByMethodPathForAPISpecRevision(
 		return store.EndpointIndexRecord{}, false, nil
 	}
 	return f.endpoint, true, nil
+}
+
+func (f *fakeReadRouteStore) ListAPISpecListingByRepo(
+	_ context.Context,
+	repoID int64,
+) ([]store.APISpecListing, error) {
+	f.listingInputs = append(f.listingInputs, repoID)
+	if f.listingByRepoErr != nil {
+		return nil, f.listingByRepoErr
+	}
+	result := make([]store.APISpecListing, len(f.listingResult))
+	copy(result, f.listingResult)
+	return result, nil
+}
+
+func (f *fakeReadRouteStore) ListAPISpecListingByRepoAtRevision(
+	_ context.Context,
+	repoID int64,
+	revisionID int64,
+) ([]store.APISpecListing, error) {
+	f.listingByRevisionInputs = append(
+		f.listingByRevisionInputs,
+		apiSpecListingByRevisionInput{
+			repoID:     repoID,
+			revisionID: revisionID,
+		},
+	)
+	if f.listingByRevisionErr != nil {
+		return nil, f.listingByRevisionErr
+	}
+	result := make([]store.APISpecListing, len(f.listingByRevisionResult))
+	copy(result, f.listingByRevisionResult)
+	return result, nil
 }
 
 type apiSpecLookupInput struct {

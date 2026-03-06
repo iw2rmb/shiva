@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrAPISpecNotFound = errors.New("api spec not found")
@@ -119,6 +121,20 @@ func (s *Store) ListAPISpecListingByRepo(ctx context.Context, repoID int64) ([]A
 	return listAPISpecListingByRepo(ctx, sqlc.New(s.pool), repoID)
 }
 
+func (s *Store) ListAPISpecListingByRepoAtRevision(ctx context.Context, repoID int64, revisionID int64) ([]APISpecListing, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+	if repoID < 1 {
+		return nil, errors.New("repo id must be positive")
+	}
+	if revisionID < 1 {
+		return nil, errors.New("revision id must be positive")
+	}
+
+	return listAPISpecListingsByRepoAtRevision(ctx, apiSpecListingAtRevisionQueries{pool: s.pool}, repoID, revisionID)
+}
+
 func (s *Store) UpsertAPISpec(ctx context.Context, input UpsertAPISpecInput) (APISpec, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return APISpec{}, ErrStoreNotConfigured
@@ -192,6 +208,93 @@ type apiSpecListingQueries interface {
 	ListAPISpecListingByRepo(ctx context.Context, repoID int64) ([]sqlc.ListAPISpecListingByRepoRow, error)
 }
 
+type apiSpecListingAtRevisionQueries struct {
+	pool *pgxpool.Pool
+}
+
+type apiSpecListingAtRevisionRow struct {
+	API               string
+	Status            string
+	APISpecRevisionID sql.NullInt64
+	RevisionID        sql.NullInt64
+	RevisionSHA       sql.NullString
+	RevisionBranch    sql.NullString
+}
+
+type listAPISpecListingByRepoAtRevision interface {
+	ListAPISpecListingByRepoAtRevision(
+		ctx context.Context,
+		repoID int64,
+		revisionID int64,
+	) ([]apiSpecListingAtRevisionRow, error)
+}
+
+func (q apiSpecListingAtRevisionQueries) ListAPISpecListingByRepoAtRevision(
+	ctx context.Context,
+	repoID int64,
+	revisionID int64,
+) ([]apiSpecListingAtRevisionRow, error) {
+	rows, err := q.pool.Query(
+		ctx,
+		`
+WITH repo_specs AS (
+	    SELECT id, root_path, status
+	    FROM api_specs
+	    WHERE api_specs.repo_id = $1
+),
+latest_processed AS (
+	    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+	        api_spec_revisions.api_spec_id,
+	        api_spec_revisions.id AS api_spec_revision_id,
+	        api_spec_revisions.revision_id
+	    FROM api_spec_revisions
+	    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+	    WHERE api_spec_revisions.build_status = 'processed'
+	      AND api_spec_revisions.revision_id <= $2
+    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.revision_id DESC, api_spec_revisions.id DESC
+)
+SELECT
+	repo_specs.root_path AS api,
+	repo_specs.status,
+	latest_processed.api_spec_revision_id,
+	revisions.id AS revision_id,
+	revisions.sha AS revision_sha,
+	revisions.branch AS revision_branch
+FROM repo_specs
+LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
+LEFT JOIN revisions ON revisions.id = latest_processed.revision_id
+ORDER BY repo_specs.root_path ASC;
+		`,
+		repoID,
+		revisionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]apiSpecListingAtRevisionRow, 0)
+	for rows.Next() {
+		var row apiSpecListingAtRevisionRow
+		if err := rows.Scan(
+			&row.API,
+			&row.Status,
+			&row.APISpecRevisionID,
+			&row.RevisionID,
+			&row.RevisionSHA,
+			&row.RevisionBranch,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func listActiveAPISpecsWithLatestDependencies(
 	ctx context.Context,
 	queries apiSpecLatestDependencyQueries,
@@ -253,7 +356,53 @@ func listAPISpecListingByRepo(
 		result = append(result, item)
 	}
 
+	sortAPISpecListings(result)
+
 	return result, nil
+}
+
+func listAPISpecListingsByRepoAtRevision(
+	ctx context.Context,
+	queries listAPISpecListingByRepoAtRevision,
+	repoID int64,
+	revisionID int64,
+) ([]APISpecListing, error) {
+	rows, err := queries.ListAPISpecListingByRepoAtRevision(ctx, repoID, revisionID)
+	if err != nil {
+		return nil, fmt.Errorf("list api spec listing for repo %d at revision %d: %w", repoID, revisionID, err)
+	}
+
+	result := make([]APISpecListing, 0, len(rows))
+	for _, row := range rows {
+		item := APISpecListing{
+			API:    row.API,
+			Status: row.Status,
+		}
+
+		if row.APISpecRevisionID.Valid && row.RevisionID.Valid && row.RevisionSHA.Valid && row.RevisionBranch.Valid {
+			item.LastProcessedRevision = &APISpecRevisionMetadata{
+				APISpecRevisionID: row.APISpecRevisionID.Int64,
+				RevisionID:        row.RevisionID.Int64,
+				RevisionSHA:       row.RevisionSHA.String,
+				RevisionBranch:    row.RevisionBranch.String,
+			}
+		}
+
+		result = append(result, item)
+	}
+
+	sortAPISpecListings(result)
+
+	return result, nil
+}
+
+func sortAPISpecListings(result []APISpecListing) {
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].API == result[j].API {
+			return result[i].Status < result[j].Status
+		}
+		return result[i].API < result[j].API
+	})
 }
 
 type apiSpecUpsertQueries interface {

@@ -30,6 +30,10 @@ Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifac
 - `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{openapi|index}.{yaml|json}`
 - `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{selector}/{openapi|index}.{yaml|json}`
 
+### API Inventory
+- `GET /v1/specs/{tenant}/{repo}/apis`
+- `GET /v1/specs/{tenant}/{repo}/{selector}/apis`
+
 ### Endpoint Operation Slice
 - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{path}`
 - `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{selector}/{path}`
@@ -55,6 +59,20 @@ Route method is the endpoint method selector.
 - if decoded path has no leading slash, `/` is prefixed.
 
 Default operation-slice format is JSON.
+
+## API Listing Response Shape
+- `GET /v1/specs/{tenant}/{repo}/apis`
+- `GET /v1/specs/{tenant}/{repo}/{selector}/apis`
+- HTTP `200` with `application/json` body:
+  - `api`: root path of the API spec (`root_path`)
+  - `status`: `active` or `deleted`
+  - `last_processed_revision`:
+    - `api_spec_revision_id`
+    - `revision_id`
+    - `revision_sha`
+    - `revision_branch`
+- selector form uses selector-resolved snapshot:
+  - revision id is derived from `/{selector}/` and list entries include last processed revision state as of that revision
 
 ## Operation Slice Response Shape
 Response body shape:

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -318,16 +319,6 @@ func TestListAPISpecListingByRepo(t *testing.T) {
 			},
 			expected: []APISpecListing{
 				{
-					API:    "apis/orders/openapi.yaml",
-					Status: "active",
-					LastProcessedRevision: &APISpecRevisionMetadata{
-						APISpecRevisionID: 301,
-						RevisionID:        91,
-						RevisionSHA:       "0123456789abcdef0123456789abcdef01234567",
-						RevisionBranch:    "main",
-					},
-				},
-				{
 					API:    "apis/legacy/openapi.yaml",
 					Status: "deleted",
 					LastProcessedRevision: &APISpecRevisionMetadata{
@@ -338,9 +329,18 @@ func TestListAPISpecListingByRepo(t *testing.T) {
 					},
 				},
 				{
-					API:                   "apis/new/openapi.yaml",
-					Status:                "active",
-					LastProcessedRevision: nil,
+					API:    "apis/new/openapi.yaml",
+					Status: "active",
+				},
+				{
+					API:    "apis/orders/openapi.yaml",
+					Status: "active",
+					LastProcessedRevision: &APISpecRevisionMetadata{
+						APISpecRevisionID: 301,
+						RevisionID:        91,
+						RevisionSHA:       "0123456789abcdef0123456789abcdef01234567",
+						RevisionBranch:    "main",
+					},
 				},
 			},
 		},
@@ -368,6 +368,108 @@ func TestListAPISpecListingByRepo(t *testing.T) {
 			}
 			if testCase.queries.lastRepoID != testCase.repoID {
 				t.Fatalf("expected query repo_id=%d, got %d", testCase.repoID, testCase.queries.lastRepoID)
+			}
+		})
+	}
+}
+
+func TestListAPISpecListingByRepoAtRevision_DeterministicOrderAndDeletedVisibility(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		repoID       int64
+		revisionID   int64
+		queries      fakeAPISpecListingAtRevisionQueries
+		expected     []APISpecListing
+		expectedRepo int64
+		expectedRev  int64
+	}{
+		{
+			name:       "sorts by api path and includes deleted api",
+			repoID:     55,
+			revisionID: 999,
+			queries: fakeAPISpecListingAtRevisionQueries{
+				rows: []apiSpecListingAtRevisionRow{
+					{
+						API:               "zeta/openapi.yaml",
+						Status:            "active",
+						APISpecRevisionID: sql.NullInt64{Int64: 22, Valid: true},
+						RevisionID:        sql.NullInt64{Int64: 120, Valid: true},
+						RevisionSHA:       sql.NullString{String: "dddddddddddddddddddddddddddddddddddddddd", Valid: true},
+						RevisionBranch:    sql.NullString{String: "main", Valid: true},
+					},
+					{
+						API:               "alpha/openapi.yaml",
+						Status:            "deleted",
+						APISpecRevisionID: sql.NullInt64{Int64: 11, Valid: true},
+						RevisionID:        sql.NullInt64{Int64: 80, Valid: true},
+						RevisionSHA:       sql.NullString{String: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Valid: true},
+						RevisionBranch:    sql.NullString{String: "main", Valid: true},
+					},
+					{
+						API:               "beta/openapi.yaml",
+						Status:            "active",
+						APISpecRevisionID: sql.NullInt64{},
+						RevisionID:        sql.NullInt64{},
+						RevisionSHA:       sql.NullString{},
+						RevisionBranch:    sql.NullString{},
+					},
+				},
+			},
+			expected: []APISpecListing{
+				{
+					API:    "alpha/openapi.yaml",
+					Status: "deleted",
+					LastProcessedRevision: &APISpecRevisionMetadata{
+						APISpecRevisionID: 11,
+						RevisionID:        80,
+						RevisionSHA:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						RevisionBranch:    "main",
+					},
+				},
+				{
+					API:    "beta/openapi.yaml",
+					Status: "active",
+				},
+				{
+					API:    "zeta/openapi.yaml",
+					Status: "active",
+					LastProcessedRevision: &APISpecRevisionMetadata{
+						APISpecRevisionID: 22,
+						RevisionID:        120,
+						RevisionSHA:       "dddddddddddddddddddddddddddddddddddddddd",
+						RevisionBranch:    "main",
+					},
+				},
+			},
+			expectedRepo: 55,
+			expectedRev:  999,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			actual, err := listAPISpecListingsByRepoAtRevision(
+				context.Background(),
+				&testCase.queries,
+				testCase.repoID,
+				testCase.revisionID,
+			)
+			if err != nil {
+				t.Fatalf("listAPISpecListingByRepoAtRevision() unexpected error: %v", err)
+			}
+			if testCase.queries.lastRepoID != testCase.expectedRepo {
+				t.Fatalf("expected repo_id=%d, got %d", testCase.expectedRepo, testCase.queries.lastRepoID)
+			}
+			if testCase.queries.lastRevisionID != testCase.expectedRev {
+				t.Fatalf("expected revision_id=%d, got %d", testCase.expectedRev, testCase.queries.lastRevisionID)
+			}
+			if !reflect.DeepEqual(actual, testCase.expected) {
+				t.Fatalf("unexpected api listing at revision: expected %+v, got %+v", testCase.expected, actual)
 			}
 		})
 	}
@@ -572,6 +674,24 @@ func (f *fakeAPISpecListingQueries) ListAPISpecListingByRepo(
 ) ([]sqlc.ListAPISpecListingByRepoRow, error) {
 	f.lastRepoID = repoID
 	result := make([]sqlc.ListAPISpecListingByRepoRow, len(f.rows))
+	copy(result, f.rows)
+	return result, nil
+}
+
+type fakeAPISpecListingAtRevisionQueries struct {
+	rows           []apiSpecListingAtRevisionRow
+	lastRepoID     int64
+	lastRevisionID int64
+}
+
+func (f *fakeAPISpecListingAtRevisionQueries) ListAPISpecListingByRepoAtRevision(
+	_ context.Context,
+	repoID int64,
+	revisionID int64,
+) ([]apiSpecListingAtRevisionRow, error) {
+	f.lastRepoID = repoID
+	f.lastRevisionID = revisionID
+	result := make([]apiSpecListingAtRevisionRow, len(f.rows))
 	copy(result, f.rows)
 	return result, nil
 }

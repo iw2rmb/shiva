@@ -18,6 +18,12 @@ type readRouteStore interface {
 	ResolveReadSelector(ctx context.Context, input store.ResolveReadSelectorInput) (store.ResolvedReadSelector, error)
 	GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (store.SpecArtifact, error)
 	GetSpecArtifactByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) (store.SpecArtifact, error)
+	ListAPISpecListingByRepo(ctx context.Context, repoID int64) ([]store.APISpecListing, error)
+	ListAPISpecListingByRepoAtRevision(
+		ctx context.Context,
+		repoID int64,
+		revisionID int64,
+	) ([]store.APISpecListing, error)
 	GetEndpointIndexByMethodPath(
 		ctx context.Context,
 		revisionID int64,
@@ -106,6 +112,42 @@ func (s *Server) handleGetSpec(c *fiber.Ctx) error {
 	default:
 		return c.SendStatus(fiber.StatusNotFound)
 	}
+}
+
+func (s *Server) handleListAPISpecsByRepo(c *fiber.Ctx) error {
+	resolved, err := s.resolveReadSelector(c, true, "")
+	if err != nil {
+		return s.writeReadRouteError(c, err)
+	}
+
+	listing, err := s.readStore.ListAPISpecListingByRepo(c.Context(), resolved.RepoID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to load api listing",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(mapAPISpecListing(listing))
+}
+
+func (s *Server) handleListAPISpecsByRepoAtRevision(c *fiber.Ctx) error {
+	resolved, err := s.resolveReadSelector(c, false, c.Params("selector"))
+	if err != nil {
+		return s.writeReadRouteError(c, err)
+	}
+
+	listing, err := s.readStore.ListAPISpecListingByRepoAtRevision(
+		c.Context(),
+		resolved.RepoID,
+		resolved.Revision.ID,
+	)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to load api listing",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(mapAPISpecListing(listing))
 }
 
 func (s *Server) handleOperationRoute(c *fiber.Ctx) error {
@@ -459,6 +501,40 @@ func normalizeETag(value string) string {
 		return strings.TrimSpace(strings.TrimPrefix(value, "W/"))
 	}
 	return value
+}
+
+func mapAPISpecListing(listings []store.APISpecListing) []apiSpecListingResponse {
+	response := make([]apiSpecListingResponse, 0, len(listings))
+	for _, listing := range listings {
+		item := apiSpecListingResponse{
+			API:    listing.API,
+			Status: listing.Status,
+		}
+		if listing.LastProcessedRevision != nil {
+			item.LastProcessedRevision = &apiSpecRevisionMetadataResponse{
+				APISpecRevisionID: listing.LastProcessedRevision.APISpecRevisionID,
+				RevisionID:        listing.LastProcessedRevision.RevisionID,
+				RevisionSHA:       listing.LastProcessedRevision.RevisionSHA,
+				RevisionBranch:    listing.LastProcessedRevision.RevisionBranch,
+			}
+		}
+		response = append(response, item)
+	}
+
+	return response
+}
+
+type apiSpecListingResponse struct {
+	API                   string                           `json:"api"`
+	Status                string                           `json:"status"`
+	LastProcessedRevision *apiSpecRevisionMetadataResponse `json:"last_processed_revision"`
+}
+
+type apiSpecRevisionMetadataResponse struct {
+	APISpecRevisionID int64  `json:"api_spec_revision_id"`
+	RevisionID        int64  `json:"revision_id"`
+	RevisionSHA       string `json:"revision_sha"`
+	RevisionBranch    string `json:"revision_branch"`
 }
 
 func (s *Server) writeReadRouteError(c *fiber.Ctx, err error) error {

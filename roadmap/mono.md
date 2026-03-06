@@ -85,7 +85,7 @@ Legend: [ ] todo, [x] done.
   - Tests: selector validation/resolution tests for invalid length, invalid charset, not-found SHA, and default head behavior
 
 ## API Listing Routes
-- [ ] Implement `/v1/specs/.../apis` listing for single-spec and monorepo repos — provide explicit API inventory view
+- [x] Implement `/v1/specs/.../apis` listing for single-spec and monorepo repos — provide explicit API inventory view
   - Repository: `shiva`
   - Component: `internal/http`, `internal/store`
   - Scope:
