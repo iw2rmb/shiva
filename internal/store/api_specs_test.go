@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestUpsertAPISpec_UniquenessByRepoAndRootPath(t *testing.T) {
@@ -272,6 +273,106 @@ func TestListActiveAPISpecsWithLatestDependencies(t *testing.T) {
 	}
 }
 
+func TestListAPISpecListingByRepo(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		repoID   int64
+		queries  fakeAPISpecListingQueries
+		expected []APISpecListing
+	}{
+		{
+			name:   "includes status and last processed revision metadata per api",
+			repoID: 44,
+			queries: fakeAPISpecListingQueries{
+				rows: []sqlc.ListAPISpecListingByRepoRow{
+					{
+						ApiSpecID:         1,
+						Api:               "apis/orders/openapi.yaml",
+						Status:            "active",
+						ApiSpecRevisionID: pgtype.Int8{Int64: 301, Valid: true},
+						RevisionID:        pgtype.Int8{Int64: 91, Valid: true},
+						RevisionSha:       pgtype.Text{String: "0123456789abcdef0123456789abcdef01234567", Valid: true},
+						RevisionBranch:    pgtype.Text{String: "main", Valid: true},
+					},
+					{
+						ApiSpecID:         2,
+						Api:               "apis/legacy/openapi.yaml",
+						Status:            "deleted",
+						ApiSpecRevisionID: pgtype.Int8{Int64: 155, Valid: true},
+						RevisionID:        pgtype.Int8{Int64: 77, Valid: true},
+						RevisionSha:       pgtype.Text{String: "89abcdef0123456789abcdef0123456789abcdef", Valid: true},
+						RevisionBranch:    pgtype.Text{String: "release", Valid: true},
+					},
+					{
+						ApiSpecID:         3,
+						Api:               "apis/new/openapi.yaml",
+						Status:            "active",
+						ApiSpecRevisionID: pgtype.Int8{},
+						RevisionID:        pgtype.Int8{},
+						RevisionSha:       pgtype.Text{},
+						RevisionBranch:    pgtype.Text{},
+					},
+				},
+			},
+			expected: []APISpecListing{
+				{
+					API:    "apis/orders/openapi.yaml",
+					Status: "active",
+					LastProcessedRevision: &APISpecRevisionMetadata{
+						APISpecRevisionID: 301,
+						RevisionID:        91,
+						RevisionSHA:       "0123456789abcdef0123456789abcdef01234567",
+						RevisionBranch:    "main",
+					},
+				},
+				{
+					API:    "apis/legacy/openapi.yaml",
+					Status: "deleted",
+					LastProcessedRevision: &APISpecRevisionMetadata{
+						APISpecRevisionID: 155,
+						RevisionID:        77,
+						RevisionSHA:       "89abcdef0123456789abcdef0123456789abcdef",
+						RevisionBranch:    "release",
+					},
+				},
+				{
+					API:                   "apis/new/openapi.yaml",
+					Status:                "active",
+					LastProcessedRevision: nil,
+				},
+			},
+		},
+		{
+			name:   "empty repo listing",
+			repoID: 99,
+			queries: fakeAPISpecListingQueries{
+				rows: []sqlc.ListAPISpecListingByRepoRow{},
+			},
+			expected: []APISpecListing{},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			actual, err := listAPISpecListingByRepo(context.Background(), &testCase.queries, testCase.repoID)
+			if err != nil {
+				t.Fatalf("listAPISpecListingByRepo() unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(actual, testCase.expected) {
+				t.Fatalf("unexpected api listing: expected %+v, got %+v", testCase.expected, actual)
+			}
+			if testCase.queries.lastRepoID != testCase.repoID {
+				t.Fatalf("expected query repo_id=%d, got %d", testCase.repoID, testCase.queries.lastRepoID)
+			}
+		})
+	}
+}
+
 func TestMarkAPISpecDeleted_StatusTransitions(t *testing.T) {
 	t.Parallel()
 
@@ -458,6 +559,21 @@ func (f *fakeAPISpecLatestDependencyQueries) ListActiveAPISpecsWithLatestDepende
 
 type fakeAPISpecDeleteQueries struct {
 	statusByID map[int64]string
+}
+
+type fakeAPISpecListingQueries struct {
+	rows       []sqlc.ListAPISpecListingByRepoRow
+	lastRepoID int64
+}
+
+func (f *fakeAPISpecListingQueries) ListAPISpecListingByRepo(
+	_ context.Context,
+	repoID int64,
+) ([]sqlc.ListAPISpecListingByRepoRow, error) {
+	f.lastRepoID = repoID
+	result := make([]sqlc.ListAPISpecListingByRepoRow, len(f.rows))
+	copy(result, f.rows)
+	return result, nil
 }
 
 func newFakeAPISpecDeleteQueries(initialStatus map[int64]string) *fakeAPISpecDeleteQueries {

@@ -33,7 +33,7 @@ Legend: [ ] todo, [x] done.
   - Tests: `go test ./internal/store` plus sqlc regeneration checks
 
 ## Store Layer Contracts
-- [ ] Introduce API-scoped store APIs for build/read/diff/notify loops — remove revision-level single-spec assumptions
+- [x] Introduce API-scoped store APIs for build/read/diff/notify loops — remove revision-level single-spec assumptions
   - Repository: `shiva`
   - Component: `internal/store`
   - Scope:

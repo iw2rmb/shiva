@@ -17,7 +17,8 @@ SET api_spec_id = EXCLUDED.api_spec_id,
     change_json = EXCLUDED.change_json
 RETURNING id, api_spec_id, from_api_spec_revision_id, to_api_spec_revision_id, change_json, created_at;
 
--- name: GetSpecChangeByToAPISpecRevision :one
+-- name: GetSpecChangeByAPISpecIDAndToAPISpecRevisionID :one
 SELECT id, api_spec_id, from_api_spec_revision_id, to_api_spec_revision_id, change_json, created_at
 FROM spec_changes
-WHERE to_api_spec_revision_id = sqlc.arg(to_api_spec_revision_id);
+WHERE api_spec_id = sqlc.arg(api_spec_id)
+  AND to_api_spec_revision_id = sqlc.arg(to_api_spec_revision_id);

@@ -10,45 +10,83 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func TestPersistSpecChange(t *testing.T) {
+func TestPersistSpecChange_PerAPIScopeIsolation(t *testing.T) {
 	t.Parallel()
 
-	fromAPISpecRevisionID := int64(12)
-	input, err := normalizePersistSpecChangeInput(PersistSpecChangeInput{
-		APISpecID:             7,
-		FromAPISpecRevisionID: &fromAPISpecRevisionID,
-		ToAPISpecRevisionID:   13,
-		ChangeJSON: []byte(`{
-			"summary":{"changed_endpoints":1},
-			"version":1,
-			"endpoints":{"changed":[{"method":"get","path":"/pets"}],"added":[],"removed":[]}
-		}`),
-	})
-	if err != nil {
-		t.Fatalf("normalizePersistSpecChangeInput() unexpected error: %v", err)
+	testCases := []struct {
+		name            string
+		input           PersistSpecChangeInput
+		expectedAPISpec int64
+		expectedFrom    pgtype.Int8
+		expectedTo      int64
+		expectedJSON    string
+	}{
+		{
+			name: "with previous api revision",
+			input: PersistSpecChangeInput{
+				APISpecID:             7,
+				FromAPISpecRevisionID: int64Pointer(12),
+				ToAPISpecRevisionID:   13,
+				ChangeJSON: []byte(`{
+					"summary":{"changed_endpoints":1},
+					"version":1,
+					"endpoints":{"changed":[{"method":"get","path":"/pets"}],"added":[],"removed":[]}
+				}`),
+			},
+			expectedAPISpec: 7,
+			expectedFrom:    pgtype.Int8{Int64: 12, Valid: true},
+			expectedTo:      13,
+			expectedJSON:    `{"endpoints":{"added":[],"changed":[{"method":"get","path":"/pets"}],"removed":[]},"summary":{"changed_endpoints":1},"version":1}`,
+		},
+		{
+			name: "different api scope with first revision",
+			input: PersistSpecChangeInput{
+				APISpecID:           11,
+				ToAPISpecRevisionID: 20,
+				ChangeJSON:          []byte(`{"version":1,"summary":{"added_endpoints":2}}`),
+			},
+			expectedAPISpec: 11,
+			expectedFrom:    pgtype.Int8{},
+			expectedTo:      20,
+			expectedJSON:    `{"summary":{"added_endpoints":2},"version":1}`,
+		},
 	}
 
-	queries := &fakeSpecChangePersistenceQueries{}
-	if err := persistSpecChange(context.Background(), queries, input); err != nil {
-		t.Fatalf("persistSpecChange() unexpected error: %v", err)
-	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	if len(queries.calls) != 1 || queries.calls[0] != "create_spec_change" {
-		t.Fatalf("unexpected query calls: %v", queries.calls)
-	}
+			input, err := normalizePersistSpecChangeInput(testCase.input)
+			if err != nil {
+				t.Fatalf("normalizePersistSpecChangeInput() unexpected error: %v", err)
+			}
 
-	if queries.arg.ApiSpecID != 7 {
-		t.Fatalf("expected api_spec_id=7, got %d", queries.arg.ApiSpecID)
-	}
-	if !queries.arg.FromApiSpecRevisionID.Valid || queries.arg.FromApiSpecRevisionID.Int64 != 12 {
-		t.Fatalf("unexpected from_api_spec_revision_id: %+v", queries.arg.FromApiSpecRevisionID)
-	}
-	if queries.arg.ToApiSpecRevisionID != 13 {
-		t.Fatalf("expected to_api_spec_revision_id=13, got %d", queries.arg.ToApiSpecRevisionID)
-	}
-	expectedJSON := `{"endpoints":{"added":[],"changed":[{"method":"get","path":"/pets"}],"removed":[]},"summary":{"changed_endpoints":1},"version":1}`
-	if string(queries.arg.ChangeJson) != expectedJSON {
-		t.Fatalf("unexpected change_json: %s", string(queries.arg.ChangeJson))
+			queries := &fakeSpecChangePersistenceQueries{}
+			if err := persistSpecChange(context.Background(), queries, input); err != nil {
+				t.Fatalf("persistSpecChange() unexpected error: %v", err)
+			}
+
+			if len(queries.calls) != 1 || queries.calls[0] != "create_spec_change" {
+				t.Fatalf("unexpected query calls: %v", queries.calls)
+			}
+			if queries.arg.ApiSpecID != testCase.expectedAPISpec {
+				t.Fatalf("expected api_spec_id=%d, got %d", testCase.expectedAPISpec, queries.arg.ApiSpecID)
+			}
+			if !reflect.DeepEqual(queries.arg.FromApiSpecRevisionID, testCase.expectedFrom) {
+				t.Fatalf(
+					"unexpected from_api_spec_revision_id: expected %+v, got %+v",
+					testCase.expectedFrom,
+					queries.arg.FromApiSpecRevisionID,
+				)
+			}
+			if queries.arg.ToApiSpecRevisionID != testCase.expectedTo {
+				t.Fatalf("expected to_api_spec_revision_id=%d, got %d", testCase.expectedTo, queries.arg.ToApiSpecRevisionID)
+			}
+			if string(queries.arg.ChangeJson) != testCase.expectedJSON {
+				t.Fatalf("unexpected change_json: %s", string(queries.arg.ChangeJson))
+			}
+		})
 	}
 }
 

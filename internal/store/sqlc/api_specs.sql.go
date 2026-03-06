@@ -77,6 +77,74 @@ func (q *Queries) CreateAPISpecRevision(ctx context.Context, arg CreateAPISpecRe
 	return i, err
 }
 
+const listAPISpecListingByRepo = `-- name: ListAPISpecListingByRepo :many
+WITH repo_specs AS (
+    SELECT id, root_path, status
+    FROM api_specs
+    WHERE api_specs.repo_id = $1
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.api_spec_id,
+        api_spec_revisions.id AS api_spec_revision_id,
+        api_spec_revisions.revision_id
+    FROM api_spec_revisions
+    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.revision_id DESC, api_spec_revisions.id DESC
+)
+SELECT
+    repo_specs.id AS api_spec_id,
+    repo_specs.root_path AS api,
+    repo_specs.status,
+    latest_processed.api_spec_revision_id,
+    revisions.id AS revision_id,
+    revisions.sha AS revision_sha,
+    revisions.branch AS revision_branch
+FROM repo_specs
+LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
+LEFT JOIN revisions ON revisions.id = latest_processed.revision_id
+ORDER BY repo_specs.root_path ASC
+`
+
+type ListAPISpecListingByRepoRow struct {
+	ApiSpecID         int64       `json:"api_spec_id"`
+	Api               string      `json:"api"`
+	Status            string      `json:"status"`
+	ApiSpecRevisionID pgtype.Int8 `json:"api_spec_revision_id"`
+	RevisionID        pgtype.Int8 `json:"revision_id"`
+	RevisionSha       pgtype.Text `json:"revision_sha"`
+	RevisionBranch    pgtype.Text `json:"revision_branch"`
+}
+
+func (q *Queries) ListAPISpecListingByRepo(ctx context.Context, targetRepoID int64) ([]ListAPISpecListingByRepoRow, error) {
+	rows, err := q.db.Query(ctx, listAPISpecListingByRepo, targetRepoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAPISpecListingByRepoRow{}
+	for rows.Next() {
+		var i ListAPISpecListingByRepoRow
+		if err := rows.Scan(
+			&i.ApiSpecID,
+			&i.Api,
+			&i.Status,
+			&i.ApiSpecRevisionID,
+			&i.RevisionID,
+			&i.RevisionSha,
+			&i.RevisionBranch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveAPISpecsWithLatestDependencies = `-- name: ListActiveAPISpecsWithLatestDependencies :many
 WITH active_specs AS (
     SELECT id, repo_id, root_path, status, display_name, created_at, updated_at

@@ -32,20 +32,39 @@ type normalizedPersistSpecChangeInput struct {
 	ChangeJSON            []byte
 }
 
-func (s *Store) GetSpecChangeByToAPISpecRevision(ctx context.Context, toAPISpecRevisionID int64) (SpecChange, error) {
+func (s *Store) GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
+	ctx context.Context,
+	apiSpecID int64,
+	toAPISpecRevisionID int64,
+) (SpecChange, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return SpecChange{}, ErrStoreNotConfigured
+	}
+	if apiSpecID < 1 {
+		return SpecChange{}, errors.New("api spec id must be positive")
 	}
 	if toAPISpecRevisionID < 1 {
 		return SpecChange{}, errors.New("to api spec revision id must be positive")
 	}
 
-	row, err := sqlc.New(s.pool).GetSpecChangeByToAPISpecRevision(ctx, toAPISpecRevisionID)
+	row, err := sqlc.New(s.pool).GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(ctx, sqlc.GetSpecChangeByAPISpecIDAndToAPISpecRevisionIDParams{
+		ApiSpecID:           apiSpecID,
+		ToApiSpecRevisionID: toAPISpecRevisionID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return SpecChange{}, fmt.Errorf("spec change not found for api_spec_revision_id=%d", toAPISpecRevisionID)
+			return SpecChange{}, fmt.Errorf(
+				"spec change not found for api_spec_id=%d to_api_spec_revision_id=%d",
+				apiSpecID,
+				toAPISpecRevisionID,
+			)
 		}
-		return SpecChange{}, fmt.Errorf("get spec change for api_spec_revision_id=%d: %w", toAPISpecRevisionID, err)
+		return SpecChange{}, fmt.Errorf(
+			"get spec change for api_spec_id=%d to_api_spec_revision_id=%d: %w",
+			apiSpecID,
+			toAPISpecRevisionID,
+			err,
+		)
 	}
 
 	var fromAPISpecRevisionID *int64

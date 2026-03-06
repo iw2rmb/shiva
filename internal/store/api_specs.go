@@ -31,6 +31,19 @@ type APISpecRevision struct {
 	Error              string
 }
 
+type APISpecRevisionMetadata struct {
+	APISpecRevisionID int64
+	RevisionID        int64
+	RevisionSHA       string
+	RevisionBranch    string
+}
+
+type APISpecListing struct {
+	API                   string
+	Status                string
+	LastProcessedRevision *APISpecRevisionMetadata
+}
+
 type ActiveAPISpecWithLatestDependencies struct {
 	APISpec
 	DependencyFilePaths []string
@@ -93,6 +106,17 @@ func (s *Store) ListActiveAPISpecsWithLatestDependencies(
 	}
 
 	return listActiveAPISpecsWithLatestDependencies(ctx, sqlc.New(s.pool), repoID)
+}
+
+func (s *Store) ListAPISpecListingByRepo(ctx context.Context, repoID int64) ([]APISpecListing, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+	if repoID < 1 {
+		return nil, errors.New("repo id must be positive")
+	}
+
+	return listAPISpecListingByRepo(ctx, sqlc.New(s.pool), repoID)
 }
 
 func (s *Store) UpsertAPISpec(ctx context.Context, input UpsertAPISpecInput) (APISpec, error) {
@@ -164,6 +188,10 @@ type apiSpecLatestDependencyQueries interface {
 	) ([]sqlc.ListActiveAPISpecsWithLatestDependenciesRow, error)
 }
 
+type apiSpecListingQueries interface {
+	ListAPISpecListingByRepo(ctx context.Context, repoID int64) ([]sqlc.ListAPISpecListingByRepoRow, error)
+}
+
 func listActiveAPISpecsWithLatestDependencies(
 	ctx context.Context,
 	queries apiSpecLatestDependencyQueries,
@@ -191,6 +219,38 @@ func listActiveAPISpecsWithLatestDependencies(
 			}),
 			DependencyFilePaths: dependencyPaths,
 		})
+	}
+
+	return result, nil
+}
+
+func listAPISpecListingByRepo(
+	ctx context.Context,
+	queries apiSpecListingQueries,
+	repoID int64,
+) ([]APISpecListing, error) {
+	rows, err := queries.ListAPISpecListingByRepo(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list api spec listing for repo %d: %w", repoID, err)
+	}
+
+	result := make([]APISpecListing, 0, len(rows))
+	for _, row := range rows {
+		item := APISpecListing{
+			API:    row.Api,
+			Status: row.Status,
+		}
+
+		if row.ApiSpecRevisionID.Valid && row.RevisionID.Valid && row.RevisionSha.Valid && row.RevisionBranch.Valid {
+			item.LastProcessedRevision = &APISpecRevisionMetadata{
+				APISpecRevisionID: row.ApiSpecRevisionID.Int64,
+				RevisionID:        row.RevisionID.Int64,
+				RevisionSHA:       row.RevisionSha.String,
+				RevisionBranch:    row.RevisionBranch.String,
+			}
+		}
+
+		result = append(result, item)
 	}
 
 	return result, nil

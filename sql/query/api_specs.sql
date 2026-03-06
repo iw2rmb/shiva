@@ -97,3 +97,32 @@ UPDATE api_specs
 SET status = 'deleted',
     updated_at = NOW()
 WHERE id = sqlc.arg(api_spec_id);
+
+-- name: ListAPISpecListingByRepo :many
+WITH repo_specs AS (
+    SELECT id, root_path, status
+    FROM api_specs
+    WHERE api_specs.repo_id = sqlc.arg(target_repo_id)
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.api_spec_id,
+        api_spec_revisions.id AS api_spec_revision_id,
+        api_spec_revisions.revision_id
+    FROM api_spec_revisions
+    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.revision_id DESC, api_spec_revisions.id DESC
+)
+SELECT
+    repo_specs.id AS api_spec_id,
+    repo_specs.root_path AS api,
+    repo_specs.status,
+    latest_processed.api_spec_revision_id,
+    revisions.id AS revision_id,
+    revisions.sha AS revision_sha,
+    revisions.branch AS revision_branch
+FROM repo_specs
+LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
+LEFT JOIN revisions ON revisions.id = latest_processed.revision_id
+ORDER BY repo_specs.root_path ASC;

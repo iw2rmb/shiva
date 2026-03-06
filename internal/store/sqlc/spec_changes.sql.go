@@ -57,14 +57,20 @@ func (q *Queries) CreateSpecChange(ctx context.Context, arg CreateSpecChangePara
 	return i, err
 }
 
-const getSpecChangeByToAPISpecRevision = `-- name: GetSpecChangeByToAPISpecRevision :one
+const getSpecChangeByAPISpecIDAndToAPISpecRevisionID = `-- name: GetSpecChangeByAPISpecIDAndToAPISpecRevisionID :one
 SELECT id, api_spec_id, from_api_spec_revision_id, to_api_spec_revision_id, change_json, created_at
 FROM spec_changes
-WHERE to_api_spec_revision_id = $1
+WHERE api_spec_id = $1
+  AND to_api_spec_revision_id = $2
 `
 
-func (q *Queries) GetSpecChangeByToAPISpecRevision(ctx context.Context, toApiSpecRevisionID int64) (SpecChange, error) {
-	row := q.db.QueryRow(ctx, getSpecChangeByToAPISpecRevision, toApiSpecRevisionID)
+type GetSpecChangeByAPISpecIDAndToAPISpecRevisionIDParams struct {
+	ApiSpecID           int64 `json:"api_spec_id"`
+	ToApiSpecRevisionID int64 `json:"to_api_spec_revision_id"`
+}
+
+func (q *Queries) GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(ctx context.Context, arg GetSpecChangeByAPISpecIDAndToAPISpecRevisionIDParams) (SpecChange, error) {
+	row := q.db.QueryRow(ctx, getSpecChangeByAPISpecIDAndToAPISpecRevisionID, arg.ApiSpecID, arg.ToApiSpecRevisionID)
 	var i SpecChange
 	err := row.Scan(
 		&i.ID,
