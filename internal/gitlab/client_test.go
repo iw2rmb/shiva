@@ -36,7 +36,7 @@ func TestClientCompareChangedPaths(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, "token-123")
+	client, err := NewClient(server.URL, "token-123", withSleep(noopSleep))
 	if err != nil {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestClientCompareChangedPathsErrors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client, err := NewClient(server.URL, "")
+			client, err := NewClient(server.URL, "", withSleep(noopSleep))
 			if err != nil {
 				t.Fatalf("NewClient() unexpected error: %v", err)
 			}
@@ -150,7 +150,7 @@ func TestClientGetFileContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, "")
+	client, err := NewClient(server.URL, "", withSleep(noopSleep))
 	if err != nil {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestClientGetFileContentErrors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client, err := NewClient(server.URL, "")
+			client, err := NewClient(server.URL, "", withSleep(noopSleep))
 			if err != nil {
 				t.Fatalf("NewClient() unexpected error: %v", err)
 			}
@@ -322,7 +322,7 @@ func TestClientListRepositoryTree(t *testing.T) {
 			server := tc.makeServer(t)
 			defer server.Close()
 
-			client, err := NewClient(server.URL, "")
+			client, err := NewClient(server.URL, "", withSleep(noopSleep))
 			if err != nil {
 				t.Fatalf("NewClient() unexpected error: %v", err)
 			}

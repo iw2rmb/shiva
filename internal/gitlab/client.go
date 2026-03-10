@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -27,9 +27,19 @@ type HTTPClient interface {
 type Option func(*Client)
 
 type Client struct {
-	baseURL    *url.URL
-	token      string
-	httpClient HTTPClient
+	baseURL             *url.URL
+	token               string
+	httpClient          HTTPClient
+	timeout             time.Duration
+	maxRetries          int
+	non4294xxRetryCap   int
+	backoffBase         time.Duration
+	backoffMax          time.Duration
+	instanceConcurrency int
+	instanceMinInterval time.Duration
+	now                 func() time.Time
+	sleep               func(context.Context, time.Duration) error
+	limiter             *instanceLimiterSet
 }
 
 type APIError struct {
@@ -67,9 +77,20 @@ func NewClient(baseURL, token string, options ...Option) (*Client, error) {
 	}
 
 	client := &Client{
-		baseURL:    normalizedBaseURL,
-		token:      strings.TrimSpace(token),
-		httpClient: &http.Client{},
+		baseURL:             normalizedBaseURL,
+		token:               strings.TrimSpace(token),
+		httpClient:          &http.Client{},
+		timeout:             defaultHTTPTimeout,
+		maxRetries:          defaultMaxRetries,
+		non4294xxRetryCap:   defaultNon4294xxRetryCap,
+		backoffBase:         defaultBackoffBase,
+		backoffMax:          defaultBackoffMax,
+		instanceConcurrency: defaultInstanceConcurrency,
+		instanceMinInterval: defaultInstanceMinInterval,
+		now: func() time.Time {
+			return time.Now().UTC()
+		},
+		sleep: sleepContext,
 	}
 	for _, option := range options {
 		option(client)
@@ -77,6 +98,41 @@ func NewClient(baseURL, token string, options ...Option) (*Client, error) {
 	if client.httpClient == nil {
 		client.httpClient = &http.Client{}
 	}
+	if client.timeout <= 0 {
+		client.timeout = defaultHTTPTimeout
+	}
+	if client.maxRetries <= 0 {
+		client.maxRetries = defaultMaxRetries
+	}
+	if client.non4294xxRetryCap <= 0 {
+		client.non4294xxRetryCap = defaultNon4294xxRetryCap
+	}
+	if client.backoffBase <= 0 {
+		client.backoffBase = defaultBackoffBase
+	}
+	if client.backoffMax <= 0 {
+		client.backoffMax = defaultBackoffMax
+	}
+	if client.instanceConcurrency <= 0 {
+		client.instanceConcurrency = defaultInstanceConcurrency
+	}
+	if client.instanceMinInterval < 0 {
+		client.instanceMinInterval = defaultInstanceMinInterval
+	}
+	if client.now == nil {
+		client.now = func() time.Time {
+			return time.Now().UTC()
+		}
+	}
+	if client.sleep == nil {
+		client.sleep = sleepContext
+	}
+	client.limiter = newInstanceLimiterSet(instanceLimiterSetOptions{
+		Concurrency: client.instanceConcurrency,
+		MinInterval: client.instanceMinInterval,
+		Now:         client.now,
+		Sleep:       client.sleep,
+	})
 
 	return client, nil
 }
@@ -112,18 +168,17 @@ func (c *Client) CompareChangedPaths(ctx context.Context, projectID int64, fromS
 		return nil, fmt.Errorf("build compare request: %w", err)
 	}
 
-	response, err := c.do(request)
+	response, statusErr, err := c.do(request)
 	if err != nil {
 		return nil, err
 	}
+	if statusErr != nil {
+		if statusErr.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: project=%d compare from=%q to=%q", ErrNotFound, projectID, fromSHA, toSHA)
+		}
+		return nil, statusErr.apiError(request)
+	}
 	defer response.Body.Close()
-
-	if response.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("%w: project=%d compare from=%q to=%q", ErrNotFound, projectID, fromSHA, toSHA)
-	}
-	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return nil, newAPIError(request, response)
-	}
 
 	var payload struct {
 		Diffs []struct {
@@ -177,18 +232,17 @@ func (c *Client) GetFileContent(ctx context.Context, projectID int64, filePath, 
 		return nil, fmt.Errorf("build file request: %w", err)
 	}
 
-	response, err := c.do(request)
+	response, statusErr, err := c.do(request)
 	if err != nil {
 		return nil, err
 	}
+	if statusErr != nil {
+		if statusErr.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: project=%d path=%q ref=%q", ErrNotFound, projectID, normalizedPath, ref)
+		}
+		return nil, statusErr.apiError(request)
+	}
 	defer response.Body.Close()
-
-	if response.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("%w: project=%d path=%q ref=%q", ErrNotFound, projectID, normalizedPath, ref)
-	}
-	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return nil, newAPIError(request, response)
-	}
 
 	var payload struct {
 		Content  string `json:"content"`
@@ -236,18 +290,15 @@ func (c *Client) ListRepositoryTree(ctx context.Context, projectID int64, sha, p
 			return nil, fmt.Errorf("build repository tree request: %w", err)
 		}
 
-		response, err := c.do(request)
+		response, statusErr, err := c.do(request)
 		if err != nil {
 			return nil, err
 		}
-
-		if response.StatusCode == http.StatusNotFound {
-			response.Body.Close()
-			return nil, fmt.Errorf("%w: project=%d sha=%q path=%q", ErrNotFound, projectID, normalizedSHA, normalizedPath)
-		}
-		if response.StatusCode < 200 || response.StatusCode > 299 {
-			response.Body.Close()
-			return nil, newAPIError(request, response)
+		if statusErr != nil {
+			if statusErr.StatusCode == http.StatusNotFound {
+				return nil, fmt.Errorf("%w: project=%d sha=%q path=%q", ErrNotFound, projectID, normalizedSHA, normalizedPath)
+			}
+			return nil, statusErr.apiError(request)
 		}
 
 		var payload []struct {
@@ -335,27 +386,4 @@ func (c *Client) makeRequestURL(pathSuffix string, rawPathSuffix string, query u
 	}
 	endpoint.RawQuery = query.Encode()
 	return endpoint.String()
-}
-
-func (c *Client) do(request *http.Request) (*http.Response, error) {
-	request.Header.Set("Accept", "application/json")
-	if c.token != "" {
-		request.Header.Set("PRIVATE-TOKEN", c.token)
-	}
-	response, err := c.httpClient.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("gitlab request %s %s failed: %w", request.Method, request.URL.String(), err)
-	}
-	return response, nil
-}
-
-func newAPIError(request *http.Request, response *http.Response) error {
-	limitedBody := io.LimitReader(response.Body, maxErrorBodyBytes)
-	body, _ := io.ReadAll(limitedBody)
-	return &APIError{
-		Method:     request.Method,
-		URL:        request.URL.String(),
-		StatusCode: response.StatusCode,
-		Body:       strings.TrimSpace(string(body)),
-	}
 }
