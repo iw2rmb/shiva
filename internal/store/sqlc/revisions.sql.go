@@ -11,6 +11,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countRevisions = `-- name: CountRevisions :one
+SELECT COUNT(*)::BIGINT
+FROM revisions
+`
+
+func (q *Queries) CountRevisions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countRevisions)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createRevision = `-- name: CreateRevision :one
 INSERT INTO revisions (
     repo_id,

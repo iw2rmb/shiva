@@ -34,6 +34,26 @@ type Revision struct {
 	Error          string
 }
 
+type revisionCountQueries interface {
+	CountRevisions(ctx context.Context) (int64, error)
+}
+
+func (s *Store) CountRevisions(ctx context.Context) (int64, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return 0, ErrStoreNotConfigured
+	}
+
+	return countRevisions(ctx, sqlc.New(s.pool))
+}
+
+func countRevisions(ctx context.Context, queries revisionCountQueries) (int64, error) {
+	count, err := queries.CountRevisions(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count revisions: %w", err)
+	}
+	return count, nil
+}
+
 func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return Repo{}, ErrStoreNotConfigured

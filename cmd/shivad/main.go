@@ -71,6 +71,10 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("initialize gitlab client: %w", err)
 	}
 
+	if err := enqueueStartupIndexingIfEmpty(ctx, cfg, logger, storeInstance, gitLabClient); err != nil {
+		return err
+	}
+
 	openAPIResolver, err := openapi.NewResolver(openapi.ResolverConfig{
 		IncludeGlobs:              cfg.OpenAPIPathGlobs,
 		MaxFetches:                cfg.OpenAPIRefMaxFetches,

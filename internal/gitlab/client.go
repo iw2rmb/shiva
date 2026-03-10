@@ -65,6 +65,18 @@ type ChangedPath struct {
 	DeletedFile bool
 }
 
+type Project struct {
+	ID                int64
+	PathWithNamespace string
+	DefaultBranch     string
+	NamespaceKind     string
+}
+
+type Branch struct {
+	Name     string
+	CommitID string
+}
+
 type TreeEntry struct {
 	Path string
 	Type string
@@ -260,6 +272,111 @@ func (c *Client) GetFileContent(ctx context.Context, projectID int64, filePath, 
 		return nil, fmt.Errorf("decode repository file content: %w", err)
 	}
 	return decoded, nil
+}
+
+func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
+	query := url.Values{}
+	query.Set("page", "1")
+	query.Set("per_page", "100")
+	query.Set("simple", "true")
+	query.Set("archived", "false")
+	query.Set("order_by", "id")
+	query.Set("sort", "asc")
+
+	projects := make([]Project, 0)
+	for {
+		requestURL := c.makeRequestURL("/projects", "", query)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("build list projects request: %w", err)
+		}
+
+		response, statusErr, err := c.do(request)
+		if err != nil {
+			return nil, err
+		}
+		if statusErr != nil {
+			return nil, statusErr.apiError(request)
+		}
+
+		var payload []struct {
+			ID                int64  `json:"id"`
+			PathWithNamespace string `json:"path_with_namespace"`
+			DefaultBranch     string `json:"default_branch"`
+			Namespace         struct {
+				Kind string `json:"kind"`
+			} `json:"namespace"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+			response.Body.Close()
+			return nil, fmt.Errorf("decode projects response: %w", err)
+		}
+		response.Body.Close()
+
+		for _, item := range payload {
+			projects = append(projects, Project{
+				ID:                item.ID,
+				PathWithNamespace: strings.TrimSpace(item.PathWithNamespace),
+				DefaultBranch:     strings.TrimSpace(item.DefaultBranch),
+				NamespaceKind:     strings.TrimSpace(item.Namespace.Kind),
+			})
+		}
+
+		nextPage := strings.TrimSpace(response.Header.Get("X-Next-Page"))
+		if nextPage == "" {
+			break
+		}
+		query.Set("page", nextPage)
+	}
+
+	return projects, nil
+}
+
+func (c *Client) GetBranch(ctx context.Context, projectID int64, branch string) (Branch, error) {
+	if projectID < 1 {
+		return Branch{}, errors.New("project id must be positive")
+	}
+	normalizedBranch := strings.TrimSpace(branch)
+	if normalizedBranch == "" {
+		return Branch{}, errors.New("branch must not be empty")
+	}
+
+	requestURL := c.makeRequestURL(
+		"/projects/"+strconv.FormatInt(projectID, 10)+"/repository/branches/"+normalizedBranch,
+		"/projects/"+strconv.FormatInt(projectID, 10)+"/repository/branches/"+url.PathEscape(normalizedBranch),
+		nil,
+	)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return Branch{}, fmt.Errorf("build branch request: %w", err)
+	}
+
+	response, statusErr, err := c.do(request)
+	if err != nil {
+		return Branch{}, err
+	}
+	if statusErr != nil {
+		if statusErr.StatusCode == http.StatusNotFound {
+			return Branch{}, fmt.Errorf("%w: project=%d branch=%q", ErrNotFound, projectID, normalizedBranch)
+		}
+		return Branch{}, statusErr.apiError(request)
+	}
+	defer response.Body.Close()
+
+	var payload struct {
+		Name   string `json:"name"`
+		Commit struct {
+			ID string `json:"id"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return Branch{}, fmt.Errorf("decode branch response: %w", err)
+	}
+
+	return Branch{
+		Name:     strings.TrimSpace(payload.Name),
+		CommitID: strings.TrimSpace(payload.Commit.ID),
+	}, nil
 }
 
 func (c *Client) ListRepositoryTree(ctx context.Context, projectID int64, sha, path string, recursive bool) ([]TreeEntry, error) {

@@ -4,6 +4,11 @@
 This document describes how Shiva ingests specs from GitLab and turns revisions into canonical OpenAPI artifacts.
 
 ## Inbound to Build Pipeline
+Startup initialization:
+1. If `revisions` is empty, Shiva lists accessible GitLab projects, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events`.
+2. Synthetic startup events reuse the same worker path as inbound webhooks and rely on bootstrap mode when the repo has no active APIs yet.
+
+Webhook / worker pipeline:
 1. `POST /internal/webhooks/gitlab` persists ingest event and repo metadata.
 2. Worker claims pending ingest events from DB queue.
 3. Worker upserts revision from ingest event.
@@ -59,6 +64,8 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 | Artifact/diff outputs | `openapi_changed=true` if any root built | `openapi_changed=true` if any API build succeeds or impacted root is deleted; diff is emitted per changed API revision, full is emitted per API revision only when artifact exists |
 
 ## GitLab APIs Used
+- `GET /projects`
+- `GET /projects/:id/repository/branches/:branch`
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`
 - `GET /projects/:id/repository/files/:path?ref=<sha>`
 - `GET /projects/:id/repository/tree?ref=<sha>&recursive=true`

@@ -17,6 +17,8 @@ This document describes runtime setup, configuration, and startup behavior of th
 ## Runtime Behavior
 - Shiva expects DB connectivity at startup.
 - Missing DB URL or DB connection failure is a startup error.
+- When no repository revisions exist yet, Shiva performs startup indexing before worker startup:
+  it lists accessible GitLab projects, skips projects in personal (`user`) namespaces by default, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into the normal DB-backed queue.
 - Worker pipeline is always enabled when the service starts.
 
 ## Environment Variables
@@ -30,7 +32,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 
 ### GitLab + Ingest
 - `SHIVA_GITLAB_BASE_URL` (required).
-- `SHIVA_GITLAB_TOKEN` (optional).
+- `SHIVA_GITLAB_TOKEN` (optional, but startup indexing and repository processing need whatever access your GitLab APIs require).
 - `SHIVA_GITLAB_WEBHOOK_SECRET` (required for accepting inbound GitLab webhooks).
 
 ### Worker + OpenAPI Resolver

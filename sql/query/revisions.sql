@@ -1,3 +1,7 @@
+-- name: CountRevisions :one
+SELECT COUNT(*)::BIGINT
+FROM revisions;
+
 -- name: CreateRevision :one
 INSERT INTO revisions (
     repo_id,

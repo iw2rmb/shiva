@@ -224,6 +224,139 @@ func TestClientGetFileContentErrors(t *testing.T) {
 	}
 }
 
+func TestClientListProjects(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected method %s, got %s", http.MethodGet, r.Method)
+		}
+		if r.URL.Path != "/api/v4/projects" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		switch r.URL.Query().Get("page") {
+		case "1":
+			if got := r.URL.Query().Get("per_page"); got != "100" {
+				t.Fatalf("expected per_page=100, got %q", got)
+			}
+			if got := r.URL.Query().Get("simple"); got != "true" {
+				t.Fatalf("expected simple=true, got %q", got)
+			}
+			if got := r.URL.Query().Get("archived"); got != "false" {
+				t.Fatalf("expected archived=false, got %q", got)
+			}
+			if got := r.URL.Query().Get("order_by"); got != "id" {
+				t.Fatalf("expected order_by=id, got %q", got)
+			}
+			if got := r.URL.Query().Get("sort"); got != "asc" {
+				t.Fatalf("expected sort=asc, got %q", got)
+			}
+			w.Header().Set("X-Next-Page", "2")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":11,"path_with_namespace":"group/service-a","default_branch":"main","namespace":{"kind":"group"}},
+				{"id":12,"path_with_namespace":"group/service-b","default_branch":"develop","namespace":{"kind":"group"}}
+			]`))
+		case "2":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":13,"path_with_namespace":"alex/personal-repo","default_branch":"","namespace":{"kind":"user"}}
+			]`))
+		default:
+			t.Fatalf("unexpected page: %s", r.URL.Query().Get("page"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "token-123", withSleep(noopSleep))
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+
+	projects, err := client.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects() unexpected error: %v", err)
+	}
+
+	expected := []Project{
+		{ID: 11, PathWithNamespace: "group/service-a", DefaultBranch: "main", NamespaceKind: "group"},
+		{ID: 12, PathWithNamespace: "group/service-b", DefaultBranch: "develop", NamespaceKind: "group"},
+		{ID: 13, PathWithNamespace: "alex/personal-repo", DefaultBranch: "", NamespaceKind: "user"},
+	}
+	if !reflect.DeepEqual(projects, expected) {
+		t.Fatalf("projects mismatch: expected %#v, got %#v", expected, projects)
+	}
+}
+
+func TestClientGetBranch(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		statusCode   int
+		response     string
+		wantBranch   Branch
+		wantErr      bool
+		wantNotFound bool
+	}{
+		{
+			name:       "returns branch head",
+			statusCode: http.StatusOK,
+			response:   `{"name":"main","commit":{"id":"abcdef123456"}}`,
+			wantBranch: Branch{Name: "main", CommitID: "abcdef123456"},
+		},
+		{
+			name:         "maps 404 to ErrNotFound",
+			statusCode:   http.StatusNotFound,
+			response:     `{"message":"404 Branch Not Found"}`,
+			wantErr:      true,
+			wantNotFound: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Fatalf("expected method %s, got %s", http.MethodGet, r.Method)
+				}
+				if r.URL.Path != "/api/v4/projects/42/repository/branches/main" {
+					t.Fatalf("unexpected path: %s", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.statusCode)
+				_, _ = w.Write([]byte(tc.response))
+			}))
+			defer server.Close()
+
+			client, err := NewClient(server.URL, "", withSleep(noopSleep))
+			if err != nil {
+				t.Fatalf("NewClient() unexpected error: %v", err)
+			}
+
+			branch, err := client.GetBranch(context.Background(), 42, "main")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				if tc.wantNotFound && !errors.Is(err, ErrNotFound) {
+					t.Fatalf("expected ErrNotFound, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetBranch() unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(branch, tc.wantBranch) {
+				t.Fatalf("branch mismatch: expected %#v, got %#v", tc.wantBranch, branch)
+			}
+		})
+	}
+}
+
 func TestClientListRepositoryTree(t *testing.T) {
 	t.Parallel()
 
