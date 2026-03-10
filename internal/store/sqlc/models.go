@@ -102,6 +102,12 @@ type Revision struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type SchemaMigration struct {
+	Version   string             `json:"version"`
+	Checksum  string             `json:"checksum"`
+	AppliedAt pgtype.Timestamptz `json:"applied_at"`
+}
+
 type SpecArtifact struct {
 	ID                int64              `json:"id"`
 	ApiSpecRevisionID int64              `json:"api_spec_revision_id"`

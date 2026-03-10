@@ -9,6 +9,7 @@ This document describes current schema layout and SQL code generation workflow.
 - Generated access layer: `internal/store/sqlc/*`
 
 ## Core Tables
+- `schema_migrations`: startup schema bootstrap record (`version`, `checksum`, `applied_at`).
 - `tenants`: tenant identity.
 - `repos`: repo identity per tenant (`gitlab_project_id`, `path_with_namespace`, `default_branch`, `openapi_force_rescan`).
 - `subscriptions`: outbound webhook subscribers and retry policy.
@@ -64,7 +65,8 @@ Regenerate code:
 
 Notes:
 - Repository currently keeps schema in the initial migration file.
-- Migration runner/tooling is not bundled in this repository.
+- Shiva applies the embedded `sql/schema/000001_initial.sql` schema at startup and records version/checksum in `schema_migrations`.
+- Startup schema bootstrap is idempotent for fresh databases and repeated restarts, but it is not a multi-step migration system for upgrading arbitrary existing schemas.
 
 ## References
 - Setup and runtime config: `docs/setup.md`

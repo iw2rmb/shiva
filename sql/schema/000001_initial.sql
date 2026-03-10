@@ -1,11 +1,17 @@
-CREATE TABLE tenants (
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version TEXT PRIMARY KEY,
+    checksum TEXT NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tenants (
     id BIGSERIAL PRIMARY KEY,
     key TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE repos (
+CREATE TABLE IF NOT EXISTS repos (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     gitlab_project_id BIGINT NOT NULL,
@@ -19,9 +25,9 @@ CREATE TABLE repos (
     UNIQUE (tenant_id, path_with_namespace)
 );
 
-CREATE INDEX repos_tenant_id_idx ON repos(tenant_id);
+CREATE INDEX IF NOT EXISTS repos_tenant_id_idx ON repos(tenant_id);
 
-CREATE TABLE subscriptions (
+CREATE TABLE IF NOT EXISTS subscriptions (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
@@ -37,9 +43,9 @@ CREATE TABLE subscriptions (
     FOREIGN KEY (tenant_id, repo_id) REFERENCES repos(tenant_id, id) ON DELETE CASCADE
 );
 
-CREATE INDEX subscriptions_repo_enabled_idx ON subscriptions(repo_id, enabled);
+CREATE INDEX IF NOT EXISTS subscriptions_repo_enabled_idx ON subscriptions(repo_id, enabled);
 
-CREATE TABLE ingest_events (
+CREATE TABLE IF NOT EXISTS ingest_events (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
@@ -59,10 +65,10 @@ CREATE TABLE ingest_events (
     FOREIGN KEY (tenant_id, repo_id) REFERENCES repos(tenant_id, id) ON DELETE CASCADE
 );
 
-CREATE INDEX ingest_events_status_retry_idx ON ingest_events(status, next_retry_at, id);
-CREATE INDEX ingest_events_repo_id_idx ON ingest_events(repo_id, id);
+CREATE INDEX IF NOT EXISTS ingest_events_status_retry_idx ON ingest_events(status, next_retry_at, id);
+CREATE INDEX IF NOT EXISTS ingest_events_repo_id_idx ON ingest_events(repo_id, id);
 
-CREATE TABLE revisions (
+CREATE TABLE IF NOT EXISTS revisions (
     id BIGSERIAL PRIMARY KEY,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
     sha TEXT NOT NULL,
@@ -76,10 +82,10 @@ CREATE TABLE revisions (
     UNIQUE (repo_id, sha)
 );
 
-CREATE INDEX revisions_repo_branch_processed_idx ON revisions(repo_id, branch, processed_at DESC);
-CREATE INDEX revisions_repo_created_idx ON revisions(repo_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS revisions_repo_branch_processed_idx ON revisions(repo_id, branch, processed_at DESC);
+CREATE INDEX IF NOT EXISTS revisions_repo_created_idx ON revisions(repo_id, created_at DESC);
 
-CREATE TABLE api_specs (
+CREATE TABLE IF NOT EXISTS api_specs (
     id BIGSERIAL PRIMARY KEY,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
     root_path TEXT NOT NULL,
@@ -90,9 +96,9 @@ CREATE TABLE api_specs (
     UNIQUE (repo_id, root_path)
 );
 
-CREATE INDEX api_specs_repo_status_idx ON api_specs(repo_id, status);
+CREATE INDEX IF NOT EXISTS api_specs_repo_status_idx ON api_specs(repo_id, status);
 
-CREATE TABLE api_spec_revisions (
+CREATE TABLE IF NOT EXISTS api_spec_revisions (
     id BIGSERIAL PRIMARY KEY,
     api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
     revision_id BIGINT NOT NULL REFERENCES revisions(id) ON DELETE CASCADE,
@@ -104,15 +110,15 @@ CREATE TABLE api_spec_revisions (
     UNIQUE (api_spec_id, revision_id)
 );
 
-CREATE INDEX api_spec_revisions_revision_id_idx ON api_spec_revisions(revision_id);
+CREATE INDEX IF NOT EXISTS api_spec_revisions_revision_id_idx ON api_spec_revisions(revision_id);
 
-CREATE TABLE api_spec_dependencies (
+CREATE TABLE IF NOT EXISTS api_spec_dependencies (
     api_spec_revision_id BIGINT NOT NULL REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
     file_path TEXT NOT NULL,
     UNIQUE (api_spec_revision_id, file_path)
 );
 
-CREATE TABLE spec_artifacts (
+CREATE TABLE IF NOT EXISTS spec_artifacts (
     id BIGSERIAL PRIMARY KEY,
     api_spec_revision_id BIGINT NOT NULL UNIQUE REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
     spec_json JSONB NOT NULL,
@@ -122,7 +128,7 @@ CREATE TABLE spec_artifacts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE endpoint_index (
+CREATE TABLE IF NOT EXISTS endpoint_index (
     id BIGSERIAL PRIMARY KEY,
     api_spec_revision_id BIGINT NOT NULL REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
     method TEXT NOT NULL,
@@ -135,10 +141,10 @@ CREATE TABLE endpoint_index (
     UNIQUE (api_spec_revision_id, method, path)
 );
 
-CREATE INDEX endpoint_index_api_spec_revision_idx ON endpoint_index(api_spec_revision_id);
-CREATE INDEX endpoint_index_lookup_idx ON endpoint_index(api_spec_revision_id, method, path);
+CREATE INDEX IF NOT EXISTS endpoint_index_api_spec_revision_idx ON endpoint_index(api_spec_revision_id);
+CREATE INDEX IF NOT EXISTS endpoint_index_lookup_idx ON endpoint_index(api_spec_revision_id, method, path);
 
-CREATE TABLE spec_changes (
+CREATE TABLE IF NOT EXISTS spec_changes (
     id BIGSERIAL PRIMARY KEY,
     api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
     from_api_spec_revision_id BIGINT REFERENCES api_spec_revisions(id) ON DELETE SET NULL,
@@ -147,9 +153,9 @@ CREATE TABLE spec_changes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX spec_changes_api_spec_created_idx ON spec_changes(api_spec_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS spec_changes_api_spec_created_idx ON spec_changes(api_spec_id, created_at DESC);
 
-CREATE TABLE delivery_attempts (
+CREATE TABLE IF NOT EXISTS delivery_attempts (
     id BIGSERIAL PRIMARY KEY,
     subscription_id BIGINT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
     api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
@@ -165,5 +171,5 @@ CREATE TABLE delivery_attempts (
     UNIQUE (subscription_id, api_spec_id, revision_id, event_type, attempt_no)
 );
 
-CREATE INDEX delivery_attempts_retry_idx ON delivery_attempts(status, next_retry_at);
-CREATE INDEX delivery_attempts_subscription_idx ON delivery_attempts(subscription_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS delivery_attempts_retry_idx ON delivery_attempts(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS delivery_attempts_subscription_idx ON delivery_attempts(subscription_id, created_at DESC);

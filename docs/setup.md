@@ -17,6 +17,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 ## Runtime Behavior
 - Shiva expects DB connectivity at startup.
 - Missing DB URL or DB connection failure is a startup error.
+- Shiva applies the embedded initial database schema at startup before any worker or startup-indexing queries run.
 - When no repository revisions exist yet, Shiva performs startup indexing before worker startup:
   it lists accessible GitLab projects, skips projects in personal (`user`) namespaces by default, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into the normal DB-backed queue.
 - Worker pipeline is always enabled when the service starts.

@@ -30,6 +30,10 @@ func New(ctx context.Context, databaseURL string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create database pool: %w", err)
 	}
+	if err := applyCurrentSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("apply database schema: %w", err)
+	}
 
 	return &Store{pool: pool, configured: true}, nil
 }

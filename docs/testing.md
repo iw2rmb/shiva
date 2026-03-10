@@ -24,6 +24,7 @@ Current baseline should be validated by running `go test ./...`.
 ## Coverage Areas
 - Config parsing and defaults.
 - GitLab API client behavior.
+- Startup schema migration bootstrap and checksum validation.
 - Startup indexing orchestration when revision history is empty.
 - Inbound webhook validation + ingest persistence behavior.
 - Worker retry and permanent-failure handling.
