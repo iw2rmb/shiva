@@ -34,7 +34,7 @@ SET status = 'processing',
     error = ''
 FROM candidate
 WHERE ingest_events.id = candidate.id
-RETURNING ingest_events.id, ingest_events.tenant_id, ingest_events.repo_id, ingest_events.sha, ingest_events.branch, ingest_events.parent_sha, ingest_events.event_type, ingest_events.delivery_id, ingest_events.payload_json, ingest_events.received_at, ingest_events.attempt_count, ingest_events.next_retry_at, ingest_events.status, ingest_events.error
+RETURNING ingest_events.id, ingest_events.tenant_id, ingest_events.repo_id, ingest_events.sha, ingest_events.branch, ingest_events.parent_sha, ingest_events.event_type, ingest_events.delivery_id, ingest_events.payload_json, ingest_events.received_at, ingest_events.attempt_count, ingest_events.next_retry_at, ingest_events.processed_at, ingest_events.openapi_changed, ingest_events.status, ingest_events.error
 `
 
 func (q *Queries) ClaimNextIngestEvent(ctx context.Context) (IngestEvent, error) {
@@ -53,6 +53,8 @@ func (q *Queries) ClaimNextIngestEvent(ctx context.Context) (IngestEvent, error)
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
 	)
@@ -80,7 +82,7 @@ VALUES (
     $7,
     $8
 )
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
 type CreateIngestEventParams struct {
@@ -119,6 +121,8 @@ func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventPa
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
 	)
@@ -126,7 +130,7 @@ func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventPa
 }
 
 const getIngestEventByRepoDelivery = `-- name: GetIngestEventByRepoDelivery :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND delivery_id = $2
@@ -153,6 +157,8 @@ func (q *Queries) GetIngestEventByRepoDelivery(ctx context.Context, arg GetInges
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
 	)
@@ -160,7 +166,7 @@ func (q *Queries) GetIngestEventByRepoDelivery(ctx context.Context, arg GetInges
 }
 
 const getIngestEventByRepoSHA = `-- name: GetIngestEventByRepoSHA :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND sha = $2
@@ -187,6 +193,8 @@ func (q *Queries) GetIngestEventByRepoSHA(ctx context.Context, arg GetIngestEven
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
 	)
@@ -196,9 +204,11 @@ func (q *Queries) GetIngestEventByRepoSHA(ctx context.Context, arg GetIngestEven
 const markIngestEventFailed = `-- name: MarkIngestEventFailed :one
 UPDATE ingest_events
 SET status = 'failed',
+    processed_at = NOW(),
+    openapi_changed = NULL,
     error = $1
 WHERE id = $2
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
 type MarkIngestEventFailedParams struct {
@@ -222,6 +232,8 @@ func (q *Queries) MarkIngestEventFailed(ctx context.Context, arg MarkIngestEvent
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
 	)
@@ -231,13 +243,20 @@ func (q *Queries) MarkIngestEventFailed(ctx context.Context, arg MarkIngestEvent
 const markIngestEventProcessed = `-- name: MarkIngestEventProcessed :one
 UPDATE ingest_events
 SET status = 'processed',
+    processed_at = NOW(),
+    openapi_changed = $1,
     error = ''
-WHERE id = $1
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+WHERE id = $2
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
-func (q *Queries) MarkIngestEventProcessed(ctx context.Context, id int64) (IngestEvent, error) {
-	row := q.db.QueryRow(ctx, markIngestEventProcessed, id)
+type MarkIngestEventProcessedParams struct {
+	OpenapiChanged pgtype.Bool `json:"openapi_changed"`
+	ID             int64       `json:"id"`
+}
+
+func (q *Queries) MarkIngestEventProcessed(ctx context.Context, arg MarkIngestEventProcessedParams) (IngestEvent, error) {
+	row := q.db.QueryRow(ctx, markIngestEventProcessed, arg.OpenapiChanged, arg.ID)
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
@@ -252,6 +271,8 @@ func (q *Queries) MarkIngestEventProcessed(ctx context.Context, id int64) (Inges
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
 	)
@@ -264,7 +285,7 @@ SET status = 'pending',
     error = $1,
     next_retry_at = $2
 WHERE id = $3
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
 type ScheduleIngestEventRetryParams struct {
@@ -289,6 +310,8 @@ func (q *Queries) ScheduleIngestEventRetry(ctx context.Context, arg ScheduleInge
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
 	)

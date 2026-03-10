@@ -18,9 +18,8 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 	t.Parallel()
 
 	const (
-		repoID     = int64(77)
-		projectID  = int64(9001)
-		revisionID = int64(1234)
+		repoID    = int64(77)
+		projectID = int64(9001)
 	)
 
 	tests := []struct {
@@ -184,7 +183,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			storeFake := newIncrementalImpactRevisionStore(repoID, projectID, revisionID, tc.activeSpecs)
+			storeFake := newIncrementalImpactRevisionStore(repoID, projectID, tc.activeSpecs)
 			resolverFake := &incrementalImpactResolver{
 				resolvedRootByPath: tc.resolvedRootByPath,
 				discoveredRoots:    tc.discoveredRoots,
@@ -205,7 +204,8 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 				ParentSha:  "1111111111111111111111111111111111111111",
 			}
 
-			if err := processor.Process(context.Background(), job); err != nil {
+			result, err := processor.Process(context.Background(), job)
+			if err != nil {
 				t.Fatalf("Process() unexpected error: %v", err)
 			}
 
@@ -246,11 +246,8 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution(t *testing.T) {
 
 			assertSortedStringsEqual(t, "upsert roots", storeFake.upsertRoots, tc.wantUpsertRoots)
 
-			if storeFake.markProcessedCalls != 1 {
-				t.Fatalf("expected one MarkRevisionProcessed call, got %d", storeFake.markProcessedCalls)
-			}
-			if storeFake.markProcessedOpenAPIChanged != tc.wantOpenAPIChanged {
-				t.Fatalf("expected openapi_changed=%t, got %t", tc.wantOpenAPIChanged, storeFake.markProcessedOpenAPIChanged)
+			if result.OpenAPIChanged != tc.wantOpenAPIChanged {
+				t.Fatalf("expected openapi_changed=%t, got %t", tc.wantOpenAPIChanged, result.OpenAPIChanged)
 			}
 		})
 	}
@@ -260,15 +257,13 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution_PermanentFailureIs
 	t.Parallel()
 
 	const (
-		repoID     = int64(77)
-		projectID  = int64(9001)
-		revisionID = int64(1234)
+		repoID    = int64(77)
+		projectID = int64(9001)
 	)
 
 	storeFake := newIncrementalImpactRevisionStore(
 		repoID,
 		projectID,
-		revisionID,
 		[]store.ActiveAPISpecWithLatestDependencies{
 			{
 				APISpec: store.APISpec{
@@ -324,7 +319,8 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution_PermanentFailureIs
 		ParentSha:  "1111111111111111111111111111111111111111",
 	}
 
-	if err := processor.Process(context.Background(), job); err != nil {
+	result, err := processor.Process(context.Background(), job)
+	if err != nil {
 		t.Fatalf("Process() unexpected error: %v", err)
 	}
 
@@ -339,10 +335,7 @@ func TestRevisionProcessorProcess_IncrementalImpactResolution_PermanentFailureIs
 	if len(storeFake.persistSpecChangeCalls) != 1 {
 		t.Fatalf("expected one PersistSpecChange call, got %d", len(storeFake.persistSpecChangeCalls))
 	}
-	if storeFake.markProcessedCalls != 1 {
-		t.Fatalf("expected one MarkRevisionProcessed call, got %d", storeFake.markProcessedCalls)
-	}
-	if !storeFake.markProcessedOpenAPIChanged {
+	if !result.OpenAPIChanged {
 		t.Fatalf("expected openapi_changed=true")
 	}
 	if len(storeFake.createAPISpecRevisionCalls) != 4 {
@@ -486,7 +479,6 @@ func (*incrementalImpactGitLabClient) ListRepositoryTree(
 type incrementalImpactRevisionStore struct {
 	repo           store.Repo
 	bootstrapState store.RepoBootstrapState
-	revisionID     int64
 
 	activeSpecs []store.ActiveAPISpecWithLatestDependencies
 
@@ -502,9 +494,6 @@ type incrementalImpactRevisionStore struct {
 	persistCanonicalCalls      []store.PersistCanonicalSpecInput
 	persistSpecChangeCalls     []store.PersistSpecChangeInput
 
-	markProcessedCalls          int
-	markProcessedOpenAPIChanged bool
-
 	finalStatusByRoot map[string]string
 	finalErrorByRoot  map[string]string
 	endpoints         map[int64][]store.EndpointIndexRecord
@@ -513,7 +502,6 @@ type incrementalImpactRevisionStore struct {
 func newIncrementalImpactRevisionStore(
 	repoID int64,
 	projectID int64,
-	revisionID int64,
 	activeSpecs []store.ActiveAPISpecWithLatestDependencies,
 ) *incrementalImpactRevisionStore {
 	copiedActiveSpecs := make([]store.ActiveAPISpecWithLatestDependencies, len(activeSpecs))
@@ -533,7 +521,6 @@ func newIncrementalImpactRevisionStore(
 			ActiveAPICount: int64(len(activeSpecs)),
 			ForceRescan:    false,
 		},
-		revisionID:             revisionID,
 		activeSpecs:            copiedActiveSpecs,
 		nextAPISpecID:          1000,
 		nextAPISpecRevisionID:  5000,
@@ -543,27 +530,6 @@ func newIncrementalImpactRevisionStore(
 		finalErrorByRoot:       make(map[string]string),
 		endpoints:              make(map[int64][]store.EndpointIndexRecord),
 	}
-}
-
-func (s *incrementalImpactRevisionStore) UpsertRevisionFromIngestEvent(
-	_ context.Context,
-	_ store.IngestQueueEvent,
-) (int64, error) {
-	return s.revisionID, nil
-}
-
-func (s *incrementalImpactRevisionStore) MarkRevisionProcessed(
-	_ context.Context,
-	_ int64,
-	openapiChanged bool,
-) error {
-	s.markProcessedCalls++
-	s.markProcessedOpenAPIChanged = openapiChanged
-	return nil
-}
-
-func (*incrementalImpactRevisionStore) MarkRevisionFailed(_ context.Context, revisionID int64, _ string) error {
-	return fmt.Errorf("unexpected MarkRevisionFailed call for revision %d", revisionID)
 }
 
 func (s *incrementalImpactRevisionStore) GetRepoByID(_ context.Context, repoID int64) (store.Repo, error) {

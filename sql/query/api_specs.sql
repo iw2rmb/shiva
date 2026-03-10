@@ -119,10 +119,10 @@ SELECT
     repo_specs.root_path AS api,
     repo_specs.status,
     latest_processed.api_spec_revision_id,
-    revisions.id AS revision_id,
-    revisions.sha AS revision_sha,
-    revisions.branch AS revision_branch
+    ingest_events.id AS revision_id,
+    ingest_events.sha AS revision_sha,
+    ingest_events.branch AS revision_branch
 FROM repo_specs
 LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
-LEFT JOIN revisions ON revisions.id = latest_processed.revision_id
+LEFT JOIN ingest_events ON ingest_events.id = latest_processed.revision_id
 ORDER BY repo_specs.root_path ASC;

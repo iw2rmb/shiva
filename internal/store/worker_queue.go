@@ -38,11 +38,14 @@ func (s *Store) ClaimNextIngestEvent(ctx context.Context) (IngestQueueEvent, boo
 	return mapQueueEvent(event), true, nil
 }
 
-func (s *Store) MarkIngestEventProcessed(ctx context.Context, eventID int64) error {
+func (s *Store) MarkIngestEventProcessed(ctx context.Context, eventID int64, openapiChanged bool) error {
 	if s == nil || !s.configured || s.pool == nil {
 		return ErrStoreNotConfigured
 	}
-	if _, err := sqlc.New(s.pool).MarkIngestEventProcessed(ctx, eventID); err != nil {
+	if _, err := sqlc.New(s.pool).MarkIngestEventProcessed(ctx, sqlc.MarkIngestEventProcessedParams{
+		ID:             eventID,
+		OpenapiChanged: pgtype.Bool{Bool: openapiChanged, Valid: true},
+	}); err != nil {
 		return fmt.Errorf("mark ingest event processed: %w", err)
 	}
 	return nil
@@ -75,24 +78,6 @@ func (s *Store) MarkIngestEventFailed(ctx context.Context, eventID int64, errorM
 		return fmt.Errorf("mark ingest event failed: %w", err)
 	}
 	return nil
-}
-
-func (s *Store) UpsertRevisionFromIngestEvent(ctx context.Context, event IngestQueueEvent) (int64, error) {
-	if s == nil || !s.configured || s.pool == nil {
-		return 0, ErrStoreNotConfigured
-	}
-
-	revision, err := sqlc.New(s.pool).CreateRevision(ctx, sqlc.CreateRevisionParams{
-		RepoID:    event.RepoID,
-		Sha:       event.Sha,
-		Branch:    event.Branch,
-		ParentSha: nullableText(event.ParentSha),
-	})
-	if err != nil {
-		return 0, fmt.Errorf("upsert revision for ingest event %d: %w", event.ID, err)
-	}
-
-	return revision.ID, nil
 }
 
 func mapQueueEvent(event sqlc.IngestEvent) IngestQueueEvent {

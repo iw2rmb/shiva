@@ -24,15 +24,19 @@ type QueueJob struct {
 	AttemptCount int32
 }
 
+type ProcessResult struct {
+	OpenAPIChanged bool
+}
+
 type Queue interface {
 	ClaimNext(ctx context.Context) (QueueJob, bool, error)
-	MarkProcessed(ctx context.Context, eventID int64) error
+	MarkProcessed(ctx context.Context, eventID int64, result ProcessResult) error
 	ScheduleRetry(ctx context.Context, eventID int64, nextRetryAt time.Time, errorMessage string) error
 	MarkFailed(ctx context.Context, eventID int64, errorMessage string) error
 }
 
 type Processor interface {
-	Process(ctx context.Context, job QueueJob) error
+	Process(ctx context.Context, job QueueJob) (ProcessResult, error)
 }
 
 type Backoff interface {
@@ -188,12 +192,13 @@ func (m *Manager) loop(ctx context.Context, id int) {
 			continue
 		}
 
-		if err := m.processor.Process(ctx, job); err != nil {
+		result, err := m.processor.Process(ctx, job)
+		if err != nil {
 			m.handleProcessError(ctx, id, job, err)
 			continue
 		}
 
-		if err := m.queue.MarkProcessed(ctx, job.EventID); err != nil {
+		if err := m.queue.MarkProcessed(ctx, job.EventID, result); err != nil {
 			m.logger.Error(
 				"mark ingest job processed failed",
 				"worker_id", id,
@@ -201,6 +206,7 @@ func (m *Manager) loop(ctx context.Context, id int) {
 				"repo_id", job.RepoID,
 				"delivery_id", job.DeliveryID,
 				"sha", job.Sha,
+				"openapi_changed", result.OpenAPIChanged,
 				"error", err,
 			)
 		}

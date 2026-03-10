@@ -9,7 +9,6 @@ import (
 
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var ErrRepoNotFound = errors.New("repo not found")
@@ -98,40 +97,6 @@ func (s *Store) GetRevisionByID(ctx context.Context, revisionID int64) (Revision
 	return mapRevision(revision), nil
 }
 
-func (s *Store) MarkRevisionProcessed(ctx context.Context, revisionID int64, openapiChanged bool) error {
-	if s == nil || !s.configured || s.pool == nil {
-		return ErrStoreNotConfigured
-	}
-	if revisionID < 1 {
-		return errors.New("revision id must be positive")
-	}
-
-	if _, err := sqlc.New(s.pool).MarkRevisionProcessed(ctx, sqlc.MarkRevisionProcessedParams{
-		OpenapiChanged: pgtype.Bool{Bool: openapiChanged, Valid: true},
-		ID:             revisionID,
-	}); err != nil {
-		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
-	}
-	return nil
-}
-
-func (s *Store) MarkRevisionFailed(ctx context.Context, revisionID int64, errorMessage string) error {
-	if s == nil || !s.configured || s.pool == nil {
-		return ErrStoreNotConfigured
-	}
-	if revisionID < 1 {
-		return errors.New("revision id must be positive")
-	}
-
-	if _, err := sqlc.New(s.pool).MarkRevisionFailed(ctx, sqlc.MarkRevisionFailedParams{
-		Error: strings.TrimSpace(errorMessage),
-		ID:    revisionID,
-	}); err != nil {
-		return fmt.Errorf("mark revision %d failed: %w", revisionID, err)
-	}
-	return nil
-}
-
 func (s *Store) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 	ctx context.Context,
 	repoID int64,
@@ -176,7 +141,7 @@ func (s *Store) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 	return mapRevision(revision), true, nil
 }
 
-func mapRevision(revision sqlc.Revision) Revision {
+func mapRevision(revision sqlc.IngestEvent) Revision {
 	mapped := Revision{
 		ID:     revision.ID,
 		RepoID: revision.RepoID,

@@ -19,16 +19,16 @@ VALUES (
     sqlc.arg(delivery_id),
     sqlc.arg(payload_json)
 )
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error;
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error;
 
 -- name: GetIngestEventByRepoDelivery :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = sqlc.arg(repo_id)
   AND delivery_id = sqlc.arg(delivery_id);
 
 -- name: GetIngestEventByRepoSHA :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = sqlc.arg(repo_id)
   AND sha = sqlc.arg(sha);
@@ -56,14 +56,16 @@ SET status = 'processing',
     error = ''
 FROM candidate
 WHERE ingest_events.id = candidate.id
-RETURNING ingest_events.id, ingest_events.tenant_id, ingest_events.repo_id, ingest_events.sha, ingest_events.branch, ingest_events.parent_sha, ingest_events.event_type, ingest_events.delivery_id, ingest_events.payload_json, ingest_events.received_at, ingest_events.attempt_count, ingest_events.next_retry_at, ingest_events.status, ingest_events.error;
+RETURNING ingest_events.id, ingest_events.tenant_id, ingest_events.repo_id, ingest_events.sha, ingest_events.branch, ingest_events.parent_sha, ingest_events.event_type, ingest_events.delivery_id, ingest_events.payload_json, ingest_events.received_at, ingest_events.attempt_count, ingest_events.next_retry_at, ingest_events.processed_at, ingest_events.openapi_changed, ingest_events.status, ingest_events.error;
 
 -- name: MarkIngestEventProcessed :one
 UPDATE ingest_events
 SET status = 'processed',
+    processed_at = NOW(),
+    openapi_changed = sqlc.arg(openapi_changed),
     error = ''
 WHERE id = sqlc.arg(id)
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error;
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error;
 
 -- name: ScheduleIngestEventRetry :one
 UPDATE ingest_events
@@ -71,11 +73,13 @@ SET status = 'pending',
     error = sqlc.arg(error),
     next_retry_at = sqlc.arg(next_retry_at)
 WHERE id = sqlc.arg(id)
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error;
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error;
 
 -- name: MarkIngestEventFailed :one
 UPDATE ingest_events
 SET status = 'failed',
+    processed_at = NOW(),
+    openapi_changed = NULL,
     error = sqlc.arg(error)
 WHERE id = sqlc.arg(id)
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, status, error;
+RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error;

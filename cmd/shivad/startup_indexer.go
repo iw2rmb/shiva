@@ -47,16 +47,16 @@ func enqueueStartupIndexingIfEmpty(
 		return errors.New("startup indexing gitlab client is not configured")
 	}
 
-	revisionCount, err := storeInstance.CountRevisions(ctx)
+	existingRevisionCount, err := storeInstance.CountRevisions(ctx)
 	if err != nil {
-		return fmt.Errorf("count revisions before startup indexing: %w", err)
+		return fmt.Errorf("count canonical revisions before startup indexing: %w", err)
 	}
-	if revisionCount > 0 {
+	if existingRevisionCount > 0 {
 		return nil
 	}
 
 	if logger != nil {
-		logger.Info("startup indexing started", "reason", "no revisions recorded")
+		logger.Info("startup indexing started", "reason", "no canonical revisions recorded")
 	}
 
 	var (

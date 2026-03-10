@@ -15,10 +15,10 @@ func TestResolveReadSelector_NoSelectorDefaultsToMainHead(t *testing.T) {
 
 	queries := newSelectorTestQueries()
 	queries.repo.DefaultBranch = "release"
-	queries.latestByBranch = map[string]sqlc.Revision{
+	queries.latestByBranch = map[string]sqlc.IngestEvent{
 		mainBranchName: newSelectorTestRevision(500, "processed", boolPtr(false), mainBranchName, "main-head"),
 	}
-	queries.openAPIByBranch = map[string]sqlc.Revision{
+	queries.openAPIByBranch = map[string]sqlc.IngestEvent{
 		mainBranchName: newSelectorTestRevision(490, "processed", boolPtr(true), mainBranchName, "main-artifact"),
 	}
 
@@ -42,7 +42,7 @@ func TestResolveReadSelector_NoSelectorHeadUnprocessedReturnsConflict(t *testing
 	t.Parallel()
 
 	queries := newSelectorTestQueries()
-	queries.latestByBranch = map[string]sqlc.Revision{
+	queries.latestByBranch = map[string]sqlc.IngestEvent{
 		mainBranchName: newSelectorTestRevision(501, "pending", nil, mainBranchName, "main-head"),
 	}
 
@@ -67,7 +67,7 @@ func TestResolveReadSelector_SHAProcessedWithoutOpenAPIArtifactReturnsNotFound(t
 	t.Parallel()
 
 	queries := newSelectorTestQueries()
-	queries.bySHAPrefix = map[string]sqlc.Revision{
+	queries.bySHAPrefix = map[string]sqlc.IngestEvent{
 		"11111111": newSelectorTestRevision(
 			700,
 			"processed",
@@ -245,9 +245,9 @@ type fakeSelectorResolutionQueries struct {
 	tenant sqlc.Tenant
 	repo   sqlc.Repo
 
-	bySHAPrefix     map[string]sqlc.Revision
-	latestByBranch  map[string]sqlc.Revision
-	openAPIByBranch map[string]sqlc.Revision
+	bySHAPrefix     map[string]sqlc.IngestEvent
+	latestByBranch  map[string]sqlc.IngestEvent
+	openAPIByBranch map[string]sqlc.IngestEvent
 
 	lastHeadBranch string
 }
@@ -272,13 +272,13 @@ func (f *fakeSelectorResolutionQueries) GetRepoByTenantAndPath(
 func (f *fakeSelectorResolutionQueries) GetRevisionByRepoSHAPrefix(
 	_ context.Context,
 	arg sqlc.GetRevisionByRepoSHAPrefixParams,
-) (sqlc.Revision, error) {
+) (sqlc.IngestEvent, error) {
 	if f.bySHAPrefix == nil {
-		return sqlc.Revision{}, pgx.ErrNoRows
+		return sqlc.IngestEvent{}, pgx.ErrNoRows
 	}
 	revision, ok := f.bySHAPrefix[arg.ShaPrefix.String]
 	if !ok {
-		return sqlc.Revision{}, pgx.ErrNoRows
+		return sqlc.IngestEvent{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
@@ -286,14 +286,14 @@ func (f *fakeSelectorResolutionQueries) GetRevisionByRepoSHAPrefix(
 func (f *fakeSelectorResolutionQueries) GetLatestRevisionByBranch(
 	_ context.Context,
 	arg sqlc.GetLatestRevisionByBranchParams,
-) (sqlc.Revision, error) {
+) (sqlc.IngestEvent, error) {
 	f.lastHeadBranch = arg.Branch
 	if f.latestByBranch == nil {
-		return sqlc.Revision{}, pgx.ErrNoRows
+		return sqlc.IngestEvent{}, pgx.ErrNoRows
 	}
 	revision, ok := f.latestByBranch[arg.Branch]
 	if !ok {
-		return sqlc.Revision{}, pgx.ErrNoRows
+		return sqlc.IngestEvent{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
@@ -301,19 +301,19 @@ func (f *fakeSelectorResolutionQueries) GetLatestRevisionByBranch(
 func (f *fakeSelectorResolutionQueries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 	_ context.Context,
 	arg sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams,
-) (sqlc.Revision, error) {
+) (sqlc.IngestEvent, error) {
 	if f.openAPIByBranch == nil {
-		return sqlc.Revision{}, pgx.ErrNoRows
+		return sqlc.IngestEvent{}, pgx.ErrNoRows
 	}
 	revision, ok := f.openAPIByBranch[arg.Branch]
 	if !ok {
-		return sqlc.Revision{}, pgx.ErrNoRows
+		return sqlc.IngestEvent{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func newSelectorTestRevision(id int64, status string, openAPIChanged *bool, branch string, sha string) sqlc.Revision {
-	revision := sqlc.Revision{
+func newSelectorTestRevision(id int64, status string, openAPIChanged *bool, branch string, sha string) sqlc.IngestEvent {
+	revision := sqlc.IngestEvent{
 		ID:     id,
 		Status: status,
 		Branch: branch,

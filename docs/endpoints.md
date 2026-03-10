@@ -79,7 +79,7 @@ Default operation-slice format is JSON.
   - `status`: `active` or `deleted`
   - `last_processed_revision`:
     - `api_spec_revision_id`
-    - `revision_id`
+    - `revision_id` (canonical repo revision id, backed by `ingest_events.id`)
     - `revision_sha`
     - `revision_branch`
 - selector form uses selector-resolved snapshot:

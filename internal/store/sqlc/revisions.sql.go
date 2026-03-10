@@ -13,7 +13,7 @@ import (
 
 const countRevisions = `-- name: CountRevisions :one
 SELECT COUNT(*)::BIGINT
-FROM revisions
+FROM ingest_events
 `
 
 func (q *Queries) CountRevisions(ctx context.Context) (int64, error) {
@@ -23,58 +23,9 @@ func (q *Queries) CountRevisions(ctx context.Context) (int64, error) {
 	return column_1, err
 }
 
-const createRevision = `-- name: CreateRevision :one
-INSERT INTO revisions (
-    repo_id,
-    sha,
-    branch,
-    parent_sha
-)
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4
-)
-ON CONFLICT (repo_id, sha) DO UPDATE
-SET branch = EXCLUDED.branch,
-    parent_sha = EXCLUDED.parent_sha
-RETURNING id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-`
-
-type CreateRevisionParams struct {
-	RepoID    int64       `json:"repo_id"`
-	Sha       string      `json:"sha"`
-	Branch    string      `json:"branch"`
-	ParentSha pgtype.Text `json:"parent_sha"`
-}
-
-func (q *Queries) CreateRevision(ctx context.Context, arg CreateRevisionParams) (Revision, error) {
-	row := q.db.QueryRow(ctx, createRevision,
-		arg.RepoID,
-		arg.Sha,
-		arg.Branch,
-		arg.ParentSha,
-	)
-	var i Revision
-	err := row.Scan(
-		&i.ID,
-		&i.RepoID,
-		&i.Sha,
-		&i.Branch,
-		&i.ParentSha,
-		&i.ProcessedAt,
-		&i.OpenapiChanged,
-		&i.Status,
-		&i.Error,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getLatestProcessedOpenAPIRevisionByBranchExcludingID = `-- name: GetLatestProcessedOpenAPIRevisionByBranchExcludingID :one
-SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-FROM revisions
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+FROM ingest_events
 WHERE repo_id = $1
   AND branch = $2
   AND status = 'processed'
@@ -90,27 +41,33 @@ type GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams struct {
 	ExcludeRevisionID int64  `json:"exclude_revision_id"`
 }
 
-func (q *Queries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(ctx context.Context, arg GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams) (Revision, error) {
+func (q *Queries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(ctx context.Context, arg GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, getLatestProcessedOpenAPIRevisionByBranchExcludingID, arg.RepoID, arg.Branch, arg.ExcludeRevisionID)
-	var i Revision
+	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
 		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
-		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getLatestProcessedRevisionByBranch = `-- name: GetLatestProcessedRevisionByBranch :one
-SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-FROM revisions
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+FROM ingest_events
 WHERE repo_id = $1
   AND branch = $2
   AND status = 'processed'
@@ -123,30 +80,36 @@ type GetLatestProcessedRevisionByBranchParams struct {
 	Branch string `json:"branch"`
 }
 
-func (q *Queries) GetLatestProcessedRevisionByBranch(ctx context.Context, arg GetLatestProcessedRevisionByBranchParams) (Revision, error) {
+func (q *Queries) GetLatestProcessedRevisionByBranch(ctx context.Context, arg GetLatestProcessedRevisionByBranchParams) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, getLatestProcessedRevisionByBranch, arg.RepoID, arg.Branch)
-	var i Revision
+	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
 		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
-		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getLatestRevisionByBranch = `-- name: GetLatestRevisionByBranch :one
-SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-FROM revisions
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+FROM ingest_events
 WHERE repo_id = $1
   AND branch = $2
-ORDER BY created_at DESC, id DESC
+ORDER BY received_at DESC, id DESC
 LIMIT 1
 `
 
@@ -155,51 +118,63 @@ type GetLatestRevisionByBranchParams struct {
 	Branch string `json:"branch"`
 }
 
-func (q *Queries) GetLatestRevisionByBranch(ctx context.Context, arg GetLatestRevisionByBranchParams) (Revision, error) {
+func (q *Queries) GetLatestRevisionByBranch(ctx context.Context, arg GetLatestRevisionByBranchParams) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, getLatestRevisionByBranch, arg.RepoID, arg.Branch)
-	var i Revision
+	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
 		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
-		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getRevisionByID = `-- name: GetRevisionByID :one
-SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-FROM revisions
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+FROM ingest_events
 WHERE id = $1
 `
 
-func (q *Queries) GetRevisionByID(ctx context.Context, id int64) (Revision, error) {
+func (q *Queries) GetRevisionByID(ctx context.Context, id int64) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, getRevisionByID, id)
-	var i Revision
+	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
 		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
-		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getRevisionByRepoSHA = `-- name: GetRevisionByRepoSHA :one
-SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-FROM revisions
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+FROM ingest_events
 WHERE repo_id = $1
   AND sha = $2
 `
@@ -209,30 +184,36 @@ type GetRevisionByRepoSHAParams struct {
 	Sha    string `json:"sha"`
 }
 
-func (q *Queries) GetRevisionByRepoSHA(ctx context.Context, arg GetRevisionByRepoSHAParams) (Revision, error) {
+func (q *Queries) GetRevisionByRepoSHA(ctx context.Context, arg GetRevisionByRepoSHAParams) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, getRevisionByRepoSHA, arg.RepoID, arg.Sha)
-	var i Revision
+	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
 		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
-		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getRevisionByRepoSHAPrefix = `-- name: GetRevisionByRepoSHAPrefix :one
-SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-FROM revisions
+SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+FROM ingest_events
 WHERE repo_id = $1
   AND sha LIKE $2 || '%'
-ORDER BY created_at DESC, id DESC
+ORDER BY received_at DESC, id DESC
 LIMIT 1
 `
 
@@ -241,85 +222,26 @@ type GetRevisionByRepoSHAPrefixParams struct {
 	ShaPrefix pgtype.Text `json:"sha_prefix"`
 }
 
-func (q *Queries) GetRevisionByRepoSHAPrefix(ctx context.Context, arg GetRevisionByRepoSHAPrefixParams) (Revision, error) {
+func (q *Queries) GetRevisionByRepoSHAPrefix(ctx context.Context, arg GetRevisionByRepoSHAPrefixParams) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, getRevisionByRepoSHAPrefix, arg.RepoID, arg.ShaPrefix)
-	var i Revision
+	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
 		&i.ParentSha,
+		&i.EventType,
+		&i.DeliveryID,
+		&i.PayloadJson,
+		&i.ReceivedAt,
+		&i.AttemptCount,
+		&i.NextRetryAt,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,
 		&i.Error,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const markRevisionFailed = `-- name: MarkRevisionFailed :one
-UPDATE revisions
-SET processed_at = NOW(),
-    status = 'failed',
-    error = $1
-WHERE id = $2
-RETURNING id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-`
-
-type MarkRevisionFailedParams struct {
-	Error string `json:"error"`
-	ID    int64  `json:"id"`
-}
-
-func (q *Queries) MarkRevisionFailed(ctx context.Context, arg MarkRevisionFailedParams) (Revision, error) {
-	row := q.db.QueryRow(ctx, markRevisionFailed, arg.Error, arg.ID)
-	var i Revision
-	err := row.Scan(
-		&i.ID,
-		&i.RepoID,
-		&i.Sha,
-		&i.Branch,
-		&i.ParentSha,
-		&i.ProcessedAt,
-		&i.OpenapiChanged,
-		&i.Status,
-		&i.Error,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const markRevisionProcessed = `-- name: MarkRevisionProcessed :one
-UPDATE revisions
-SET processed_at = NOW(),
-    openapi_changed = $1,
-    status = 'processed',
-    error = ''
-WHERE id = $2
-RETURNING id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error, created_at
-`
-
-type MarkRevisionProcessedParams struct {
-	OpenapiChanged pgtype.Bool `json:"openapi_changed"`
-	ID             int64       `json:"id"`
-}
-
-func (q *Queries) MarkRevisionProcessed(ctx context.Context, arg MarkRevisionProcessedParams) (Revision, error) {
-	row := q.db.QueryRow(ctx, markRevisionProcessed, arg.OpenapiChanged, arg.ID)
-	var i Revision
-	err := row.Scan(
-		&i.ID,
-		&i.RepoID,
-		&i.Sha,
-		&i.Branch,
-		&i.ParentSha,
-		&i.ProcessedAt,
-		&i.OpenapiChanged,
-		&i.Status,
-		&i.Error,
-		&i.CreatedAt,
 	)
 	return i, err
 }

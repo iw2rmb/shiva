@@ -5,14 +5,14 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 
 ## Inbound to Build Pipeline
 Startup initialization:
-1. If `revisions` is empty, Shiva launches startup indexing in the background during service startup, paginates accessible GitLab projects, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events` as each page is consumed.
+1. If no canonical repo revision rows exist in `ingest_events`, Shiva launches startup indexing in the background during service startup, paginates accessible GitLab projects, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events` as each page is consumed.
 2. Synthetic startup events reuse the same worker path as inbound webhooks and rely on bootstrap mode when the repo has no active APIs yet.
-3. Worker startup does not wait for startup indexing to finish, so `revisions` can begin appearing while project pagination is still in progress.
+3. Worker startup does not wait for startup indexing to finish, so processed canonical repo revisions in `ingest_events` can begin appearing while project pagination is still in progress.
 
 Webhook / worker pipeline:
 1. `POST /internal/webhooks/gitlab` persists ingest event and repo metadata.
 2. Worker claims pending ingest events from DB queue.
-3. Worker upserts revision from ingest event.
+3. The existing `ingest_events.id` becomes the canonical repository `revision_id`; worker processing does not create a second revision row.
 4. Worker loads bootstrap state (`active_api_count`, `openapi_force_rescan`) and decides ingestion mode:
    - bootstrap when `active_api_count == 0` or `openapi_force_rescan == true`,
    - incremental otherwise.
@@ -44,15 +44,16 @@ Webhook / worker pipeline:
    - persist `spec_artifacts` and `endpoint_index` for that API spec revision.
 8. For each changed API (rebuilt or deactivated root):
    - compute and persist semantic diff (`spec_changes`) for that API.
-   - mark revision `openapi_changed=true`.
+   - return `openapi_changed=true` for worker finalization of the canonical `ingest_events` row.
    - create API-scoped revision rows and downstream identities per API (`api_spec_id`).
 9. If no API was rebuilt and no API was deactivated:
-   - mark revision `openapi_changed=false`.
+   - return `openapi_changed=false` for worker finalization of the canonical `ingest_events` row.
 10. Emit outbound notifications:
    - emit events per changed API (`spec.updated.diff`, optional `spec.updated.full`),
    - always emit `spec.updated.diff` for each changed API,
    - emit `spec.updated.full` only when canonical artifact exists for that API spec revision.
-11. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
+11. Worker finalization writes terminal state onto `ingest_events` (`status`, `processed_at`, `openapi_changed`).
+12. On successful bootstrap completion, clear `repos.openapi_force_rescan`.
 
 ## Incremental vs Bootstrap Matrix
 | Dimension | Bootstrap | Incremental |
@@ -95,7 +96,7 @@ Resolver config is controlled by:
 - `SHIVA_OPENAPI_BOOTSTRAP_SNIFF_BYTES`
 
 ## Permanent vs Retryable Failures
-Marked permanent (revision failed, no further retries for that event):
+Marked permanent (ingest event failed, no further retries for that event):
 - invalid OpenAPI document,
 - invalid local `$ref`,
 - `$ref` cycle,
@@ -109,7 +110,7 @@ Incremental mode exception for impacted/fallback per-API execution:
 Other errors are retried by worker backoff policy.
 
 Cross-failure behavior:
-- Compare/diff/persist failures in incremental mode are revision-scoped and can fail the whole revision.
+- Compare/diff/persist failures in incremental mode are canonical-revision-scoped and can fail the whole revision.
 - Per-API/per-root permanent processing errors in incremental mode are scoped to that root and do not block other impacted roots.
 
 ## References

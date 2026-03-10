@@ -16,7 +16,7 @@ Legend: [ ] todo, [x] done.
   - Repository: `shiva`
   - Component: `cmd/shivad`, `internal/openapi`, `internal/gitlab`
   - Scope: `cmd/shivad/main.go` exits early with `openapi_changed=false` when `parent_sha` is empty; resolver path is `ResolveChangedOpenAPI` only; GitLab client supports compare + file fetch only
-  - Snippets: `revisionProcessor.Process` currently calls `MarkRevisionProcessed(..., false)` when `parent_sha == ""`; when `parent_sha != ""`, resolver uses `CompareChangedPaths(parent_sha, sha)` and candidate filtering from changed files
+  - Snippets: planning-time baseline was `revisionProcessor.Process` short-circuiting to unchanged when `parent_sha == ""`; current implementation now decides bootstrap vs incremental before compare and uses the canonical `ingest_events.id` as the repository revision id
   - Tests: Existing resolver tests in `internal/openapi/resolver_test.go` cover changed-path flow only — no full-tree bootstrap coverage
 
 ## Data Foundation (Required for Init Trigger/Persistence)

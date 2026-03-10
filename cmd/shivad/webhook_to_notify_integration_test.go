@@ -80,7 +80,7 @@ func TestIntegrationWebhookToNotifyFlow(t *testing.T) {
 		},
 	}
 
-	queue := newIntegrationQueue()
+	queue := newIntegrationQueue(revisionStore)
 	processor := revisionProcessor{
 		store:         revisionStore,
 		gitlabClient:  gitlabClient,
@@ -110,8 +110,9 @@ func TestIntegrationWebhookToNotifyFlow(t *testing.T) {
 	})
 
 	ingestor := &integrationWebhookIngestor{
-		repoID: revisionStore.repo.ID,
-		queue:  queue,
+		repoID:        revisionStore.repo.ID,
+		queue:         queue,
+		revisionStore: revisionStore,
 	}
 	httpServer := httpserver.New(
 		config.Config{
@@ -475,7 +476,7 @@ func runWebhookToNotifyIntegrationCase(
 		files:        tc.files,
 	}
 
-	queue := newIntegrationQueue()
+	queue := newIntegrationQueue(revisionStore)
 	processor := revisionProcessor{
 		store:         revisionStore,
 		gitlabClient:  gitlabClient,
@@ -505,8 +506,9 @@ func runWebhookToNotifyIntegrationCase(
 	})
 
 	ingestor := &integrationWebhookIngestor{
-		repoID: revisionStore.repo.ID,
-		queue:  queue,
+		repoID:        revisionStore.repo.ID,
+		queue:         queue,
+		revisionStore: revisionStore,
 	}
 	httpServer := httpserver.New(
 		config.Config{
@@ -569,10 +571,11 @@ func runWebhookToNotifyIntegrationCase(
 }
 
 type integrationWebhookIngestor struct {
-	mu          sync.Mutex
-	nextEventID int64
-	repoID      int64
-	queue       *integrationQueue
+	mu            sync.Mutex
+	nextEventID   int64
+	repoID        int64
+	queue         *integrationQueue
+	revisionStore *integrationRevisionStore
 }
 
 func (f *integrationWebhookIngestor) PersistGitLabWebhook(
@@ -584,7 +587,7 @@ func (f *integrationWebhookIngestor) PersistGitLabWebhook(
 
 	f.nextEventID++
 	eventID := f.nextEventID
-	f.queue.enqueue(worker.QueueJob{
+	job := worker.QueueJob{
 		EventID:      eventID,
 		RepoID:       f.repoID,
 		DeliveryID:   input.DeliveryID,
@@ -592,7 +595,11 @@ func (f *integrationWebhookIngestor) PersistGitLabWebhook(
 		Branch:       input.Branch,
 		ParentSha:    input.ParentSha,
 		AttemptCount: 0,
-	})
+	}
+	if f.revisionStore != nil {
+		f.revisionStore.recordIngestEvent(job)
+	}
+	f.queue.enqueue(job)
 
 	return store.GitLabIngestResult{EventID: eventID, RepoID: f.repoID, Duplicate: false}, nil
 }
@@ -604,14 +611,18 @@ type queueItem struct {
 }
 
 type integrationQueue struct {
-	mu        sync.Mutex
-	order     []int64
-	items     map[int64]*queueItem
-	processed int
+	mu            sync.Mutex
+	order         []int64
+	items         map[int64]*queueItem
+	processed     int
+	revisionStore *integrationRevisionStore
 }
 
-func newIntegrationQueue() *integrationQueue {
-	return &integrationQueue{items: make(map[int64]*queueItem)}
+func newIntegrationQueue(revisionStore *integrationRevisionStore) *integrationQueue {
+	return &integrationQueue{
+		items:         make(map[int64]*queueItem),
+		revisionStore: revisionStore,
+	}
 }
 
 func (q *integrationQueue) enqueue(job worker.QueueJob) {
@@ -623,8 +634,6 @@ func (q *integrationQueue) enqueue(job worker.QueueJob) {
 
 func (q *integrationQueue) ClaimNext(_ context.Context) (worker.QueueJob, bool, error) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	now := time.Now()
 	for _, eventID := range q.order {
 		item := q.items[eventID]
@@ -633,43 +642,67 @@ func (q *integrationQueue) ClaimNext(_ context.Context) (worker.QueueJob, bool, 
 		}
 		item.status = "processing"
 		item.job.AttemptCount++
-		return item.job, true, nil
+		job := item.job
+		revisionStore := q.revisionStore
+		q.mu.Unlock()
+		if revisionStore != nil {
+			if err := revisionStore.markProcessing(job.EventID); err != nil {
+				return worker.QueueJob{}, false, err
+			}
+		}
+		return job, true, nil
 	}
+	q.mu.Unlock()
 	return worker.QueueJob{}, false, nil
 }
 
-func (q *integrationQueue) MarkProcessed(_ context.Context, eventID int64) error {
+func (q *integrationQueue) MarkProcessed(_ context.Context, eventID int64, result worker.ProcessResult) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	item := q.items[eventID]
 	if item == nil {
+		q.mu.Unlock()
 		return fmt.Errorf("queue event %d not found", eventID)
 	}
 	item.status = "processed"
 	q.processed++
+	revisionStore := q.revisionStore
+	q.mu.Unlock()
+	if revisionStore != nil {
+		return revisionStore.markProcessed(eventID, result.OpenAPIChanged)
+	}
 	return nil
 }
 
 func (q *integrationQueue) ScheduleRetry(_ context.Context, eventID int64, nextRetryAt time.Time, _ string) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	item := q.items[eventID]
 	if item == nil {
+		q.mu.Unlock()
 		return fmt.Errorf("queue event %d not found", eventID)
 	}
 	item.status = "pending"
 	item.nextRetry = nextRetryAt
+	revisionStore := q.revisionStore
+	q.mu.Unlock()
+	if revisionStore != nil {
+		return revisionStore.markPending(eventID)
+	}
 	return nil
 }
 
 func (q *integrationQueue) MarkFailed(_ context.Context, eventID int64, _ string) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	item := q.items[eventID]
 	if item == nil {
+		q.mu.Unlock()
 		return fmt.Errorf("queue event %d not found", eventID)
 	}
 	item.status = "failed"
+	revisionStore := q.revisionStore
+	q.mu.Unlock()
+	if revisionStore != nil {
+		return revisionStore.markFailed(eventID)
+	}
 	return nil
 }
 
@@ -749,7 +782,6 @@ type integrationRevisionStore struct {
 	tenant          store.Tenant
 	repo            store.Repo
 	bootstrapState  store.RepoBootstrapState
-	nextRevisionID  int64
 	nextAPISpecID   int64
 	nextSpecRevID   int64
 	revisions       map[int64]store.Revision
@@ -778,7 +810,6 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 			ActiveAPICount: 1,
 			ForceRescan:    false,
 		},
-		nextRevisionID:  1000,
 		nextAPISpecID:   400,
 		nextSpecRevID:   700,
 		revisions:       make(map[int64]store.Revision),
@@ -792,6 +823,18 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 		apiSpecRevByKey: make(map[string]int64),
 		dependencies:    make(map[int64][]string),
 	}
+
+	processedAt := time.Now().UTC()
+	s.revisions[999] = store.Revision{
+		ID:             999,
+		RepoID:         s.repo.ID,
+		Sha:            "1111111111111111111111111111111111111111",
+		Branch:         "main",
+		ProcessedAt:    &processedAt,
+		OpenAPIChanged: boolPtr(true),
+		Status:         "processed",
+	}
+	s.revisionBySHA["1111111111111111111111111111111111111111"] = 999
 
 	s.apiSpecs[400] = store.APISpec{
 		ID:       400,
@@ -813,29 +856,49 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 	return s
 }
 
-func (s *integrationRevisionStore) UpsertRevisionFromIngestEvent(
-	_ context.Context,
-	event store.IngestQueueEvent,
-) (int64, error) {
+func (s *integrationRevisionStore) recordIngestEvent(event worker.QueueJob) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.nextRevisionID++
-	revisionID := s.nextRevisionID
 	revision := store.Revision{
-		ID:        revisionID,
+		ID:        event.EventID,
 		RepoID:    event.RepoID,
 		Sha:       event.Sha,
 		Branch:    event.Branch,
 		ParentSHA: event.ParentSha,
-		Status:    "processing",
+		Status:    "pending",
 	}
-	s.revisions[revisionID] = revision
-	s.revisionBySHA[event.Sha] = revisionID
-	return revisionID, nil
+	s.revisions[event.EventID] = revision
+	s.revisionBySHA[event.Sha] = event.EventID
 }
 
-func (s *integrationRevisionStore) MarkRevisionProcessed(_ context.Context, revisionID int64, openapiChanged bool) error {
+func (s *integrationRevisionStore) markPending(revisionID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	revision, exists := s.revisions[revisionID]
+	if !exists {
+		return fmt.Errorf("revision %d not found", revisionID)
+	}
+	revision.Status = "pending"
+	s.revisions[revisionID] = revision
+	return nil
+}
+
+func (s *integrationRevisionStore) markProcessing(revisionID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	revision, exists := s.revisions[revisionID]
+	if !exists {
+		return fmt.Errorf("revision %d not found", revisionID)
+	}
+	revision.Status = "processing"
+	s.revisions[revisionID] = revision
+	return nil
+}
+
+func (s *integrationRevisionStore) markProcessed(revisionID int64, openapiChanged bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -851,7 +914,7 @@ func (s *integrationRevisionStore) MarkRevisionProcessed(_ context.Context, revi
 	return nil
 }
 
-func (s *integrationRevisionStore) MarkRevisionFailed(_ context.Context, revisionID int64, errorMessage string) error {
+func (s *integrationRevisionStore) markFailed(revisionID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -860,7 +923,6 @@ func (s *integrationRevisionStore) MarkRevisionFailed(_ context.Context, revisio
 		return fmt.Errorf("revision %d not found", revisionID)
 	}
 	revision.Status = "failed"
-	revision.Error = strings.TrimSpace(errorMessage)
 	s.revisions[revisionID] = revision
 	return nil
 }

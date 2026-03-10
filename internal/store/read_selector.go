@@ -120,12 +120,12 @@ type normalizedResolveReadSelectorInput struct {
 type selectorResolutionQueries interface {
 	GetTenantByKey(ctx context.Context, key string) (sqlc.Tenant, error)
 	GetRepoByTenantAndPath(ctx context.Context, arg sqlc.GetRepoByTenantAndPathParams) (sqlc.Repo, error)
-	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.Revision, error)
-	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.Revision, error)
+	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.IngestEvent, error)
+	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.IngestEvent, error)
 	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 		ctx context.Context,
 		arg sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams,
-	) (sqlc.Revision, error)
+	) (sqlc.IngestEvent, error)
 }
 
 func (s *Store) ResolveReadSelector(ctx context.Context, input ResolveReadSelectorInput) (ResolvedReadSelector, error) {

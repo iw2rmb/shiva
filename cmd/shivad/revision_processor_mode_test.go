@@ -87,8 +87,6 @@ func TestRevisionProcessorProcess_ModeSelectionMatrix(t *testing.T) {
 
 			repoID := int64(77)
 			projectID := int64(987)
-			revisionID := int64(1234)
-
 			storeFake := &modeSelectionRevisionStore{
 				repo: store.Repo{
 					ID:              repoID,
@@ -98,7 +96,6 @@ func TestRevisionProcessorProcess_ModeSelectionMatrix(t *testing.T) {
 					ActiveAPICount: tc.activeAPICount,
 					ForceRescan:    tc.forceRescan,
 				},
-				revisionID: revisionID,
 			}
 			resolverFake := &modeSelectionResolver{}
 			gitlabClient := &modeSelectionGitLabClient{}
@@ -117,18 +114,12 @@ func TestRevisionProcessorProcess_ModeSelectionMatrix(t *testing.T) {
 				ParentSha:  tc.parentSHA,
 			}
 
-			err := processor.Process(context.Background(), job)
+			result, err := processor.Process(context.Background(), job)
 			if err != nil {
 				t.Fatalf("Process() unexpected error: %v", err)
 			}
 
-			if storeFake.markProcessedCalls != 1 {
-				t.Fatalf("expected exactly one MarkRevisionProcessed call, got %d", storeFake.markProcessedCalls)
-			}
-			if storeFake.markProcessedRevisionID != revisionID {
-				t.Fatalf("expected revision id %d, got %d", revisionID, storeFake.markProcessedRevisionID)
-			}
-			if storeFake.markProcessedOpenAPIChanged {
+			if result.OpenAPIChanged {
 				t.Fatal("expected openapi_changed=false in mode routing test")
 			}
 
@@ -259,33 +250,6 @@ func (*modeSelectionGitLabClient) ListRepositoryTree(
 type modeSelectionRevisionStore struct {
 	repo           store.Repo
 	bootstrapState store.RepoBootstrapState
-	revisionID     int64
-
-	markProcessedCalls          int
-	markProcessedRevisionID     int64
-	markProcessedOpenAPIChanged bool
-}
-
-func (s *modeSelectionRevisionStore) UpsertRevisionFromIngestEvent(
-	_ context.Context,
-	_ store.IngestQueueEvent,
-) (int64, error) {
-	return s.revisionID, nil
-}
-
-func (s *modeSelectionRevisionStore) MarkRevisionProcessed(
-	_ context.Context,
-	revisionID int64,
-	openapiChanged bool,
-) error {
-	s.markProcessedCalls++
-	s.markProcessedRevisionID = revisionID
-	s.markProcessedOpenAPIChanged = openapiChanged
-	return nil
-}
-
-func (s *modeSelectionRevisionStore) MarkRevisionFailed(_ context.Context, revisionID int64, _ string) error {
-	return fmt.Errorf("unexpected MarkRevisionFailed call for revision %d", revisionID)
 }
 
 func (s *modeSelectionRevisionStore) GetRepoByID(_ context.Context, repoID int64) (store.Repo, error) {

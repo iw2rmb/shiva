@@ -13,8 +13,7 @@ This document describes current schema layout and SQL code generation workflow.
 - `tenants`: tenant identity.
 - `repos`: repo identity per tenant (`gitlab_project_id`, `path_with_namespace`, `default_branch`, `openapi_force_rescan`).
 - `subscriptions`: outbound webhook subscribers and retry policy.
-- `ingest_events`: inbound queue records and retry state.
-- `revisions`: per-repo revision processing state.
+- `ingest_events`: inbound queue records and canonical repo revision rows (`sha`, `branch`, retry state, terminal processing result).
 - `api_specs`: durable API root identity per repo (`root_path`, `status`, optional `display_name`).
 - `api_spec_revisions`: per-API per-revision build record (`root_path_at_revision`, `build_status`, `error`) used for both bootstrap and incremental workflows.
 - `api_spec_dependencies`: per API-spec revision dependency file set (`api_spec_revision_id`, `file_path`).
@@ -25,7 +24,8 @@ This document describes current schema layout and SQL code generation workflow.
 
 ## Processing State Fields
 - `ingest_events.status`: `pending | processing | processed | failed`
-- `revisions.status`: `pending | processed | failed | skipped`
+- `ingest_events.processed_at`: terminal processing timestamp for the canonical repo revision row.
+- `ingest_events.openapi_changed`: nullable build result on the canonical repo revision row; set on terminal success and cleared on terminal failure.
 - `api_specs.status`: `active | deleted`
 - `api_spec_revisions.build_status`: processor writes `processing | processed | failed` during per-root build execution in both bootstrap and incremental loops.
 - `delivery_attempts.status`: `pending | retry_scheduled | succeeded | failed`
@@ -37,13 +37,14 @@ This document describes current schema layout and SQL code generation workflow.
 - `ListAPISpecListingByRepoAtRevision(repo_id, revision_id)`: returns deterministic inventory as of the given revision id, using the latest processed API revision with `revision_id <= revision_id`.
 - `MarkAPISpecDeleted(api_spec_id)`: sets `api_specs.status='deleted'` for root deactivation flows.
 - `api_spec_dependencies` are revision-scoped and only latest-processed rows feed incremental impact intersection.
+- `api_spec_revisions.revision_id` and `delivery_attempts.revision_id` both reference the canonical `ingest_events.id`.
 - `spec_artifacts` and `endpoint_index` write contracts are strictly `api_spec_revision_id`-scoped.
 - `spec_changes` write contracts are `api_spec_id`-scoped and read with `(api_spec_id, to_api_spec_revision_id)`.
 - `delivery_attempts` read/write contracts include `api_spec_id` in the dedupe/lookup identity.
 
 ### Read Compatibility Behavior
 - `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained for legacy read routes.
-- They resolve the latest processed API-scoped row for the requested `revisions.id` across all APIs in that revision, then return that row only when a matching method/path exists.
+- They resolve the latest processed API-scoped row for the requested canonical `ingest_events.id` across all APIs in that revision, then return that row only when a matching method/path exists.
 - Monorepo read routes (`/-/{api}/-/`) still resolve explicitly via API root and revision ID, so same revision + different API returns different results.
 
 ## Generation
@@ -70,7 +71,7 @@ Notes:
 
 ## References
 - Setup and runtime config: `docs/setup.md`
-- GitLab ingestion and revision writes: `docs/gitlab.md`
+- GitLab ingestion and canonical revision writes: `docs/gitlab.md`
 - Endpoint index read/write behavior: `docs/endpoints.md`
 - Webhook delivery attempts: `docs/webhooks.md`
 - DB-related test guidance: `docs/testing.md`

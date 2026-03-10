@@ -25,7 +25,7 @@ func TestManager_ProcessesSameRepoInCommitOrder(t *testing.T) {
 	var mu sync.Mutex
 	repoOrder := map[int64][]string{}
 
-	processor := processorFunc(func(_ context.Context, job QueueJob) error {
+	processor := processorFunc(func(_ context.Context, job QueueJob) (ProcessResult, error) {
 		if job.RepoID == 100 && job.Sha == "a1" {
 			time.Sleep(25 * time.Millisecond)
 		}
@@ -33,7 +33,7 @@ func TestManager_ProcessesSameRepoInCommitOrder(t *testing.T) {
 		mu.Lock()
 		repoOrder[job.RepoID] = append(repoOrder[job.RepoID], job.Sha)
 		mu.Unlock()
-		return nil
+		return ProcessResult{}, nil
 	})
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -84,16 +84,16 @@ func TestManager_RetriesWithBackoff(t *testing.T) {
 	attempts := []int32{}
 	failures := 0
 
-	processor := processorFunc(func(_ context.Context, job QueueJob) error {
+	processor := processorFunc(func(_ context.Context, job QueueJob) (ProcessResult, error) {
 		mu.Lock()
 		attempts = append(attempts, job.AttemptCount)
 		if failures == 0 {
 			failures++
 			mu.Unlock()
-			return errors.New("temporary failure")
+			return ProcessResult{}, errors.New("temporary failure")
 		}
 		mu.Unlock()
-		return nil
+		return ProcessResult{}, nil
 	})
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -141,9 +141,9 @@ func TestManager_RetriesWithBackoff(t *testing.T) {
 	}
 }
 
-type processorFunc func(context.Context, QueueJob) error
+type processorFunc func(context.Context, QueueJob) (ProcessResult, error)
 
-func (f processorFunc) Process(ctx context.Context, job QueueJob) error {
+func (f processorFunc) Process(ctx context.Context, job QueueJob) (ProcessResult, error) {
 	return f(ctx, job)
 }
 
@@ -208,7 +208,7 @@ func (q *fakeQueue) ClaimNext(_ context.Context) (QueueJob, bool, error) {
 	return QueueJob{}, false, nil
 }
 
-func (q *fakeQueue) MarkProcessed(_ context.Context, eventID int64) error {
+func (q *fakeQueue) MarkProcessed(_ context.Context, eventID int64, _ ProcessResult) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 

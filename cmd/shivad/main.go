@@ -206,8 +206,8 @@ func (q storeQueueAdapter) ClaimNext(ctx context.Context) (worker.QueueJob, bool
 	}, true, nil
 }
 
-func (q storeQueueAdapter) MarkProcessed(ctx context.Context, eventID int64) error {
-	return q.store.MarkIngestEventProcessed(ctx, eventID)
+func (q storeQueueAdapter) MarkProcessed(ctx context.Context, eventID int64, result worker.ProcessResult) error {
+	return q.store.MarkIngestEventProcessed(ctx, eventID, result.OpenAPIChanged)
 }
 
 func (q storeQueueAdapter) ScheduleRetry(ctx context.Context, eventID int64, nextRetryAt time.Time, errorMessage string) error {
@@ -273,9 +273,6 @@ type openapiResolver interface {
 }
 
 type revisionStore interface {
-	UpsertRevisionFromIngestEvent(ctx context.Context, event store.IngestQueueEvent) (int64, error)
-	MarkRevisionProcessed(ctx context.Context, revisionID int64, openapiChanged bool) error
-	MarkRevisionFailed(ctx context.Context, revisionID int64, errorMessage string) error
 	GetRepoByID(ctx context.Context, repoID int64) (store.Repo, error)
 	GetRepoBootstrapState(ctx context.Context, repoID int64) (store.RepoBootstrapState, error)
 	ClearRepoForceRescan(ctx context.Context, repoID int64) error
@@ -320,25 +317,18 @@ func decideIngestionMode(state store.RepoBootstrapState) ingestionMode {
 }
 
 func (p revisionProcessor) handleRevisionError(
-	ctx context.Context,
 	span trace.Span,
-	revisionID int64,
 	err error,
 	label string,
 ) error {
 	if isPermanentOpenAPIProcessingError(err) {
-		if markErr := p.store.MarkRevisionFailed(ctx, revisionID, err.Error()); markErr != nil {
-			span.RecordError(markErr)
-			span.SetStatus(codes.Error, "mark revision failed")
-			return fmt.Errorf("mark revision %d failed: %w", revisionID, markErr)
-		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, label+" permanent failure")
 		return worker.Permanent(fmt.Errorf("%s failed: %w", label, err))
 	}
 	span.RecordError(err)
 	span.SetStatus(codes.Error, label+" failed")
-	return fmt.Errorf("%s for revision %d: %w", label, revisionID, err)
+	return fmt.Errorf("%s failed: %w", label, err)
 }
 
 func (p revisionProcessor) effectiveTracer() trace.Tracer {
@@ -348,7 +338,7 @@ func (p revisionProcessor) effectiveTracer() trace.Tracer {
 	return trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
 }
 
-func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) error {
+func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) (worker.ProcessResult, error) {
 	tracer := p.effectiveTracer()
 	ctx, processSpan := tracer.Start(ctx, "process.revision", trace.WithAttributes(
 		attribute.Int64("event.id", job.EventID),
@@ -360,15 +350,15 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 
 	if p.store == nil {
 		processSpan.SetStatus(codes.Error, "store not configured")
-		return errors.New("revision processor store is not configured")
+		return worker.ProcessResult{}, errors.New("revision processor store is not configured")
 	}
 	if p.gitlabClient == nil {
 		processSpan.SetStatus(codes.Error, "gitlab client not configured")
-		return errors.New("revision processor gitlab client is not configured")
+		return worker.ProcessResult{}, errors.New("revision processor gitlab client is not configured")
 	}
 	if p.openapiLoader == nil {
 		processSpan.SetStatus(codes.Error, "openapi loader not configured")
-		return errors.New("revision processor openapi loader is not configured")
+		return worker.ProcessResult{}, errors.New("revision processor openapi loader is not configured")
 	}
 
 	logger := p.logger
@@ -382,19 +372,10 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		logger.Debug("revision processing started")
 	}
 
-	revisionID, err := p.store.UpsertRevisionFromIngestEvent(ctx, store.IngestQueueEvent{
-		ID:           job.EventID,
-		RepoID:       job.RepoID,
-		DeliveryID:   job.DeliveryID,
-		Sha:          job.Sha,
-		Branch:       job.Branch,
-		ParentSha:    job.ParentSha,
-		AttemptCount: job.AttemptCount,
-	})
-	if err != nil {
-		processSpan.RecordError(err)
-		processSpan.SetStatus(codes.Error, "upsert revision failed")
-		return fmt.Errorf("upsert revision from ingest event %d: %w", job.EventID, err)
+	revisionID := job.EventID
+	if revisionID < 1 {
+		processSpan.SetStatus(codes.Error, "invalid ingest event id")
+		return worker.ProcessResult{}, fmt.Errorf("ingest event id must be positive")
 	}
 
 	if logger != nil {
@@ -408,7 +389,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	if err != nil {
 		processSpan.RecordError(err)
 		processSpan.SetStatus(codes.Error, "load repo bootstrap state failed")
-		return fmt.Errorf("load repo bootstrap state for repo %d: %w", job.RepoID, err)
+		return worker.ProcessResult{}, fmt.Errorf("load repo bootstrap state for repo %d: %w", job.RepoID, err)
 	}
 	mode := decideIngestionMode(bootstrapState)
 	processSpan.SetAttributes(
@@ -421,13 +402,13 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	if err != nil {
 		processSpan.RecordError(err)
 		processSpan.SetStatus(codes.Error, "load repo failed")
-		return fmt.Errorf("load repo %d for ingest event %d: %w", job.RepoID, job.EventID, err)
+		return worker.ProcessResult{}, fmt.Errorf("load repo %d for ingest event %d: %w", job.RepoID, job.EventID, err)
 	}
 	previousAPISpecRevisionByRoot, err := p.loadPreviousAPISpecRevisionsByRoot(ctx, job.RepoID)
 	if err != nil {
 		processSpan.RecordError(err)
 		processSpan.SetStatus(codes.Error, "load previous api spec revisions failed")
-		return fmt.Errorf("load previous api spec revisions for repo %d: %w", job.RepoID, err)
+		return worker.ProcessResult{}, fmt.Errorf("load previous api spec revisions for repo %d: %w", job.RepoID, err)
 	}
 
 	var bootstrapRoots []openapi.RootResolution
@@ -459,7 +440,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		err = resolveErr
 	}
 	if err != nil {
-		return p.handleRevisionError(ctx, processSpan, revisionID, err, "openapi resolution")
+		return worker.ProcessResult{}, p.handleRevisionError(processSpan, err, "openapi resolution")
 	}
 
 	changedAPIs := make([]changedAPISpecRevision, 0)
@@ -485,14 +466,14 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 			recordBuildMetric()
 			processSpan.RecordError(err)
 			processSpan.SetStatus(codes.Error, "bootstrap build stage failed")
-			return fmt.Errorf("build bootstrap openapi roots for revision %d: %w", revisionID, err)
+			return worker.ProcessResult{}, fmt.Errorf("build bootstrap openapi roots for revision %d: %w", revisionID, err)
 		}
 
 		if err := p.persistSemanticDiffsForAPIs(ctx, job, changedAPIs); err != nil {
 			recordBuildMetric()
 			processSpan.RecordError(err)
 			processSpan.SetStatus(codes.Error, "semantic diff failed")
-			return fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
+			return worker.ProcessResult{}, fmt.Errorf("persist semantic diff for revision %d: %w", revisionID, err)
 		}
 		openAPIChanged = len(changedAPIs) > 0
 		buildSuccess = openAPIChanged
@@ -508,10 +489,10 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 			previousAPISpecRevisionByRoot,
 		)
 		if err != nil {
-			return p.handleRevisionError(ctx, processSpan, revisionID, err, "incremental openapi processing")
+			return worker.ProcessResult{}, p.handleRevisionError(processSpan, err, "incremental openapi processing")
 		}
 		if err := p.persistSemanticDiffsForAPIs(ctx, job, changedAPIs); err != nil {
-			return p.handleRevisionError(ctx, processSpan, revisionID, err, "incremental semantic diff")
+			return worker.ProcessResult{}, p.handleRevisionError(processSpan, err, "incremental semantic diff")
 		}
 		openAPIChanged = len(changedAPIs) > 0
 		if openAPIChanged && p.metrics != nil {
@@ -519,23 +500,18 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 		}
 	}
 
-	if err := p.store.MarkRevisionProcessed(ctx, revisionID, openAPIChanged); err != nil {
-		processSpan.RecordError(err)
-		processSpan.SetStatus(codes.Error, "mark revision processed failed")
-		return fmt.Errorf("mark revision %d processed: %w", revisionID, err)
-	}
 	if openAPIChanged {
 		if err := p.emitOutboundNotifications(ctx, repo, revisionID, job, changedAPIs); err != nil {
 			processSpan.RecordError(err)
 			processSpan.SetStatus(codes.Error, "notify dispatch failed")
-			return fmt.Errorf("emit outbound notifications for revision %d: %w", revisionID, err)
+			return worker.ProcessResult{}, fmt.Errorf("emit outbound notifications for revision %d: %w", revisionID, err)
 		}
 	}
 	if mode == ingestionModeBootstrap {
 		if err := p.store.ClearRepoForceRescan(ctx, job.RepoID); err != nil {
 			processSpan.RecordError(err)
 			processSpan.SetStatus(codes.Error, "clear repo force rescan failed")
-			return fmt.Errorf("clear repo %d force-rescan: %w", job.RepoID, err)
+			return worker.ProcessResult{}, fmt.Errorf("clear repo %d force-rescan: %w", job.RepoID, err)
 		}
 	}
 	if logger != nil {
@@ -543,7 +519,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) err
 	}
 
 	processSpan.SetStatus(codes.Ok, "")
-	return nil
+	return worker.ProcessResult{OpenAPIChanged: openAPIChanged}, nil
 }
 
 type changedAPISpecRevision struct {

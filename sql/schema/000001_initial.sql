@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS ingest_events (
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+    openapi_changed BOOLEAN,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'processed', 'failed')),
     error TEXT NOT NULL DEFAULT '',
     UNIQUE (repo_id, delivery_id),
@@ -67,23 +69,8 @@ CREATE TABLE IF NOT EXISTS ingest_events (
 
 CREATE INDEX IF NOT EXISTS ingest_events_status_retry_idx ON ingest_events(status, next_retry_at, id);
 CREATE INDEX IF NOT EXISTS ingest_events_repo_id_idx ON ingest_events(repo_id, id);
-
-CREATE TABLE IF NOT EXISTS revisions (
-    id BIGSERIAL PRIMARY KEY,
-    repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
-    sha TEXT NOT NULL,
-    branch TEXT NOT NULL,
-    parent_sha TEXT,
-    processed_at TIMESTAMPTZ,
-    openapi_changed BOOLEAN,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processed', 'failed', 'skipped')),
-    error TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (repo_id, sha)
-);
-
-CREATE INDEX IF NOT EXISTS revisions_repo_branch_processed_idx ON revisions(repo_id, branch, processed_at DESC);
-CREATE INDEX IF NOT EXISTS revisions_repo_created_idx ON revisions(repo_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ingest_events_repo_branch_processed_idx ON ingest_events(repo_id, branch, processed_at DESC);
+CREATE INDEX IF NOT EXISTS ingest_events_repo_received_idx ON ingest_events(repo_id, received_at DESC);
 
 CREATE TABLE IF NOT EXISTS api_specs (
     id BIGSERIAL PRIMARY KEY,
@@ -101,7 +88,7 @@ CREATE INDEX IF NOT EXISTS api_specs_repo_status_idx ON api_specs(repo_id, statu
 CREATE TABLE IF NOT EXISTS api_spec_revisions (
     id BIGSERIAL PRIMARY KEY,
     api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
-    revision_id BIGINT NOT NULL REFERENCES revisions(id) ON DELETE CASCADE,
+    revision_id BIGINT NOT NULL REFERENCES ingest_events(id) ON DELETE CASCADE,
     root_path_at_revision TEXT NOT NULL,
     build_status TEXT NOT NULL,
     error TEXT NOT NULL DEFAULT '',
@@ -159,7 +146,7 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
     id BIGSERIAL PRIMARY KEY,
     subscription_id BIGINT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
     api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
-    revision_id BIGINT NOT NULL REFERENCES revisions(id) ON DELETE CASCADE,
+    revision_id BIGINT NOT NULL REFERENCES ingest_events(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL CHECK (event_type IN ('spec.updated.full', 'spec.updated.diff')),
     attempt_no INTEGER NOT NULL CHECK (attempt_no > 0),
     status TEXT NOT NULL CHECK (status IN ('pending', 'retry_scheduled', 'succeeded', 'failed')),

@@ -62,20 +62,22 @@ type EndpointIndex struct {
 }
 
 type IngestEvent struct {
-	ID           int64              `json:"id"`
-	TenantID     int64              `json:"tenant_id"`
-	RepoID       int64              `json:"repo_id"`
-	Sha          string             `json:"sha"`
-	Branch       string             `json:"branch"`
-	ParentSha    pgtype.Text        `json:"parent_sha"`
-	EventType    string             `json:"event_type"`
-	DeliveryID   string             `json:"delivery_id"`
-	PayloadJson  []byte             `json:"payload_json"`
-	ReceivedAt   pgtype.Timestamptz `json:"received_at"`
-	AttemptCount int32              `json:"attempt_count"`
-	NextRetryAt  pgtype.Timestamptz `json:"next_retry_at"`
-	Status       string             `json:"status"`
-	Error        string             `json:"error"`
+	ID             int64              `json:"id"`
+	TenantID       int64              `json:"tenant_id"`
+	RepoID         int64              `json:"repo_id"`
+	Sha            string             `json:"sha"`
+	Branch         string             `json:"branch"`
+	ParentSha      pgtype.Text        `json:"parent_sha"`
+	EventType      string             `json:"event_type"`
+	DeliveryID     string             `json:"delivery_id"`
+	PayloadJson    []byte             `json:"payload_json"`
+	ReceivedAt     pgtype.Timestamptz `json:"received_at"`
+	AttemptCount   int32              `json:"attempt_count"`
+	NextRetryAt    pgtype.Timestamptz `json:"next_retry_at"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	OpenapiChanged pgtype.Bool        `json:"openapi_changed"`
+	Status         string             `json:"status"`
+	Error          string             `json:"error"`
 }
 
 type Repo struct {
@@ -87,19 +89,6 @@ type Repo struct {
 	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-}
-
-type Revision struct {
-	ID             int64              `json:"id"`
-	RepoID         int64              `json:"repo_id"`
-	Sha            string             `json:"sha"`
-	Branch         string             `json:"branch"`
-	ParentSha      pgtype.Text        `json:"parent_sha"`
-	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
-	OpenapiChanged pgtype.Bool        `json:"openapi_changed"`
-	Status         string             `json:"status"`
-	Error          string             `json:"error"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type SchemaMigration struct {

@@ -47,7 +47,7 @@ Per event attempt headers:
 Outgoing payload fields:
 - `tenant`: tenant key.
 - `repo`: repository path with namespace.
-- `revision_id`: repository revision id that triggered the webhook.
+- `revision_id`: canonical repository revision id that triggered the webhook (`ingest_events.id`).
 - `api`: API root path that changed.
 - `api_revision_id`: API spec revision id that changed.
 - `sha`: revision SHA at delivery time.

@@ -18,9 +18,8 @@ func TestRevisionProcessorProcess_BootstrapPersistence(t *testing.T) {
 	t.Parallel()
 
 	const (
-		repoID     = int64(77)
-		projectID  = int64(9001)
-		revisionID = int64(1234)
+		repoID    = int64(77)
+		projectID = int64(9001)
 	)
 
 	tests := []struct {
@@ -85,7 +84,7 @@ func TestRevisionProcessorProcess_BootstrapPersistence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			storeFake := newBootstrapPersistenceRevisionStore(repoID, projectID, revisionID)
+			storeFake := newBootstrapPersistenceRevisionStore(repoID, projectID)
 			resolverFake := &bootstrapPersistenceResolver{roots: tc.roots}
 			processor := revisionProcessor{
 				store:         storeFake,
@@ -101,7 +100,8 @@ func TestRevisionProcessorProcess_BootstrapPersistence(t *testing.T) {
 				ParentSha:  "1111111111111111111111111111111111111111",
 			}
 
-			if err := processor.Process(context.Background(), job); err != nil {
+			result, err := processor.Process(context.Background(), job)
+			if err != nil {
 				t.Fatalf("Process() unexpected error: %v", err)
 			}
 
@@ -112,11 +112,8 @@ func TestRevisionProcessorProcess_BootstrapPersistence(t *testing.T) {
 				t.Fatalf("expected zero incremental resolver calls, got %d", len(resolverFake.incrementalCalls))
 			}
 
-			if storeFake.markProcessedCalls != 1 {
-				t.Fatalf("expected one MarkRevisionProcessed call, got %d", storeFake.markProcessedCalls)
-			}
-			if storeFake.markProcessedOpenAPIChanged != tc.wantOpenAPIChanged {
-				t.Fatalf("expected openapi_changed=%t, got %t", tc.wantOpenAPIChanged, storeFake.markProcessedOpenAPIChanged)
+			if result.OpenAPIChanged != tc.wantOpenAPIChanged {
+				t.Fatalf("expected openapi_changed=%t, got %t", tc.wantOpenAPIChanged, result.OpenAPIChanged)
 			}
 			if storeFake.clearRepoForceRescanCalls != 1 {
 				t.Fatalf("expected one ClearRepoForceRescan call, got %d", storeFake.clearRepoForceRescanCalls)
@@ -268,12 +265,8 @@ func (bootstrapPersistenceGitLabClient) ListRepositoryTree(
 type bootstrapPersistenceRevisionStore struct {
 	repo           store.Repo
 	bootstrapState store.RepoBootstrapState
-	revisionID     int64
 
-	markProcessedCalls          int
-	markProcessedRevisionID     int64
-	markProcessedOpenAPIChanged bool
-	clearRepoForceRescanCalls   int
+	clearRepoForceRescanCalls int
 
 	nextAPISpecID                   int64
 	nextAPISpecRevisionID           int64
@@ -292,7 +285,7 @@ type bootstrapPersistenceRevisionStore struct {
 	endpoints         map[int64][]store.EndpointIndexRecord
 }
 
-func newBootstrapPersistenceRevisionStore(repoID, projectID, revisionID int64) *bootstrapPersistenceRevisionStore {
+func newBootstrapPersistenceRevisionStore(repoID, projectID int64) *bootstrapPersistenceRevisionStore {
 	return &bootstrapPersistenceRevisionStore{
 		repo: store.Repo{
 			ID:              repoID,
@@ -302,7 +295,6 @@ func newBootstrapPersistenceRevisionStore(repoID, projectID, revisionID int64) *
 			ActiveAPICount: 0,
 			ForceRescan:    true,
 		},
-		revisionID:                      revisionID,
 		nextAPISpecID:                   100,
 		nextAPISpecRevisionID:           500,
 		apiSpecIDByRoot:                 make(map[string]int64),
@@ -312,28 +304,6 @@ func newBootstrapPersistenceRevisionStore(repoID, projectID, revisionID int64) *
 		finalErrorByRoot:                make(map[string]string),
 		endpoints:                       make(map[int64][]store.EndpointIndexRecord),
 	}
-}
-
-func (s *bootstrapPersistenceRevisionStore) UpsertRevisionFromIngestEvent(
-	_ context.Context,
-	_ store.IngestQueueEvent,
-) (int64, error) {
-	return s.revisionID, nil
-}
-
-func (s *bootstrapPersistenceRevisionStore) MarkRevisionProcessed(
-	_ context.Context,
-	revisionID int64,
-	openapiChanged bool,
-) error {
-	s.markProcessedCalls++
-	s.markProcessedRevisionID = revisionID
-	s.markProcessedOpenAPIChanged = openapiChanged
-	return nil
-}
-
-func (s *bootstrapPersistenceRevisionStore) MarkRevisionFailed(_ context.Context, revisionID int64, _ string) error {
-	return fmt.Errorf("unexpected MarkRevisionFailed call for revision %d", revisionID)
 }
 
 func (s *bootstrapPersistenceRevisionStore) GetRepoByID(_ context.Context, repoID int64) (store.Repo, error) {
