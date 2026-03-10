@@ -5,8 +5,9 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 
 ## Inbound to Build Pipeline
 Startup initialization:
-1. If `revisions` is empty, Shiva lists accessible GitLab projects, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events`.
+1. If `revisions` is empty, Shiva paginates accessible GitLab projects, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events` as each page is consumed.
 2. Synthetic startup events reuse the same worker path as inbound webhooks and rely on bootstrap mode when the repo has no active APIs yet.
+3. `revisions` are still created only after startup indexing finishes and worker startup begins; during startup indexing itself, expect writes in `tenants`, `repos`, and `ingest_events`.
 
 Webhook / worker pipeline:
 1. `POST /internal/webhooks/gitlab` persists ingest event and repo metadata.

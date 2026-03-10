@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientCompareChangedPaths(t *testing.T) {
@@ -285,6 +286,63 @@ func TestClientListProjects(t *testing.T) {
 	}
 	if !reflect.DeepEqual(projects, expected) {
 		t.Fatalf("projects mismatch: expected %#v, got %#v", expected, projects)
+	}
+}
+
+func TestClientVisitProjectsProcessesPageBeforeFetchingNextPage(t *testing.T) {
+	t.Parallel()
+
+	firstProjectVisited := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("X-Next-Page", "2")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":11,"path_with_namespace":"group/service-a","default_branch":"main","namespace":{"kind":"group"}}
+			]`))
+		case "2":
+			select {
+			case <-firstProjectVisited:
+			case <-time.After(250 * time.Millisecond):
+				t.Fatalf("requested page 2 before visiting page 1 projects")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":12,"path_with_namespace":"group/service-b","default_branch":"main","namespace":{"kind":"group"}}
+			]`))
+		default:
+			t.Fatalf("unexpected page: %s", r.URL.Query().Get("page"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "token-123", withSleep(noopSleep))
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+
+	visited := make([]Project, 0, 2)
+	count, err := client.VisitProjects(context.Background(), func(project Project) error {
+		visited = append(visited, project)
+		if project.ID == 11 {
+			close(firstProjectVisited)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("VisitProjects() unexpected error: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("visited count = %d, want 2", count)
+	}
+
+	expected := []Project{
+		{ID: 11, PathWithNamespace: "group/service-a", DefaultBranch: "main", NamespaceKind: "group"},
+		{ID: 12, PathWithNamespace: "group/service-b", DefaultBranch: "main", NamespaceKind: "group"},
+	}
+	if !reflect.DeepEqual(visited, expected) {
+		t.Fatalf("visited projects mismatch: expected %#v, got %#v", expected, visited)
 	}
 }
 

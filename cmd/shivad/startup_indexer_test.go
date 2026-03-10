@@ -18,21 +18,21 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                  string
-		revisionCount         int64
-		projects              []gitlab.Project
-		branches              map[string]startupIndexBranchResult
-		listProjectsErr       error
-		persistErr            error
-		wantErr               string
-		wantListProjectsCalls int
-		wantGetBranchCalls    []startupIndexBranchCall
-		wantPersistProjectIDs []int64
+		name                   string
+		revisionCount          int64
+		projects               []gitlab.Project
+		branches               map[string]startupIndexBranchResult
+		listProjectsErr        error
+		persistErr             error
+		wantErr                string
+		wantVisitProjectsCalls int
+		wantGetBranchCalls     []startupIndexBranchCall
+		wantPersistProjectIDs  []int64
 	}{
 		{
-			name:                  "existing revisions skip startup indexing",
-			revisionCount:         3,
-			wantListProjectsCalls: 0,
+			name:                   "existing revisions skip startup indexing",
+			revisionCount:          3,
+			wantVisitProjectsCalls: 0,
 		},
 		{
 			name:          "empty revision history enqueues discovered projects",
@@ -45,7 +45,7 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 				"11:main":    {branch: gitlab.Branch{Name: "main", CommitID: "aaa111"}},
 				"12:develop": {branch: gitlab.Branch{Name: "develop", CommitID: "bbb222"}},
 			},
-			wantListProjectsCalls: 1,
+			wantVisitProjectsCalls: 1,
 			wantGetBranchCalls: []startupIndexBranchCall{
 				{projectID: 11, branch: "main"},
 				{projectID: 12, branch: "develop"},
@@ -62,7 +62,7 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 			branches: map[string]startupIndexBranchResult{
 				"19:main": {branch: gitlab.Branch{Name: "main", CommitID: "ggg999"}},
 			},
-			wantListProjectsCalls: 1,
+			wantVisitProjectsCalls: 1,
 			wantGetBranchCalls: []startupIndexBranchCall{
 				{projectID: 19, branch: "main"},
 			},
@@ -82,7 +82,7 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 				"23:main": {branch: gitlab.Branch{Name: "main", CommitID: ""}},
 				"24:main": {branch: gitlab.Branch{Name: "main", CommitID: "ccc333"}},
 			},
-			wantListProjectsCalls: 1,
+			wantVisitProjectsCalls: 1,
 			wantGetBranchCalls: []startupIndexBranchCall{
 				{projectID: 22, branch: "main"},
 				{projectID: 23, branch: "main"},
@@ -91,11 +91,11 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 			wantPersistProjectIDs: []int64{24},
 		},
 		{
-			name:                  "list projects error fails startup indexing",
-			revisionCount:         0,
-			listProjectsErr:       errors.New("gitlab down"),
-			wantErr:               "list gitlab projects for startup indexing",
-			wantListProjectsCalls: 1,
+			name:                   "list projects error fails startup indexing",
+			revisionCount:          0,
+			listProjectsErr:        errors.New("gitlab down"),
+			wantErr:                "list gitlab projects for startup indexing",
+			wantVisitProjectsCalls: 1,
 		},
 		{
 			name:          "branch load error fails startup indexing",
@@ -106,8 +106,8 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 			branches: map[string]startupIndexBranchResult{
 				"31:main": {err: errors.New("boom")},
 			},
-			wantErr:               "resolve startup indexing branch head",
-			wantListProjectsCalls: 1,
+			wantErr:                "resolve startup indexing branch head",
+			wantVisitProjectsCalls: 1,
 			wantGetBranchCalls: []startupIndexBranchCall{
 				{projectID: 31, branch: "main"},
 			},
@@ -121,9 +121,9 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 			branches: map[string]startupIndexBranchResult{
 				"41:main": {branch: gitlab.Branch{Name: "main", CommitID: "ddd444"}},
 			},
-			persistErr:            errors.New("db write failed"),
-			wantErr:               "enqueue startup indexing event",
-			wantListProjectsCalls: 1,
+			persistErr:             errors.New("db write failed"),
+			wantErr:                "enqueue startup indexing event",
+			wantVisitProjectsCalls: 1,
 			wantGetBranchCalls: []startupIndexBranchCall{
 				{projectID: 41, branch: "main"},
 			},
@@ -164,8 +164,8 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 				t.Fatalf("enqueueStartupIndexingIfEmpty() unexpected error: %v", err)
 			}
 
-			if clientFake.listProjectsCalls != tc.wantListProjectsCalls {
-				t.Fatalf("expected listProjectsCalls=%d, got %d", tc.wantListProjectsCalls, clientFake.listProjectsCalls)
+			if clientFake.visitProjectsCalls != tc.wantVisitProjectsCalls {
+				t.Fatalf("expected visitProjectsCalls=%d, got %d", tc.wantVisitProjectsCalls, clientFake.visitProjectsCalls)
 			}
 			if len(clientFake.getBranchCalls) != len(tc.wantGetBranchCalls) {
 				t.Fatalf("expected getBranchCalls=%v, got %v", tc.wantGetBranchCalls, clientFake.getBranchCalls)
@@ -252,19 +252,24 @@ type startupIndexBranchResult struct {
 }
 
 type fakeStartupIndexingGitLabClient struct {
-	projects          []gitlab.Project
-	branches          map[string]startupIndexBranchResult
-	listProjectsErr   error
-	listProjectsCalls int
-	getBranchCalls    []startupIndexBranchCall
+	projects           []gitlab.Project
+	branches           map[string]startupIndexBranchResult
+	listProjectsErr    error
+	visitProjectsCalls int
+	getBranchCalls     []startupIndexBranchCall
 }
 
-func (f *fakeStartupIndexingGitLabClient) ListProjects(context.Context) ([]gitlab.Project, error) {
-	f.listProjectsCalls++
+func (f *fakeStartupIndexingGitLabClient) VisitProjects(_ context.Context, visit func(gitlab.Project) error) (int, error) {
+	f.visitProjectsCalls++
 	if f.listProjectsErr != nil {
-		return nil, f.listProjectsErr
+		return 0, f.listProjectsErr
 	}
-	return append([]gitlab.Project(nil), f.projects...), nil
+	for idx, project := range f.projects {
+		if err := visit(project); err != nil {
+			return idx + 1, err
+		}
+	}
+	return len(f.projects), nil
 }
 
 func (f *fakeStartupIndexingGitLabClient) GetBranch(

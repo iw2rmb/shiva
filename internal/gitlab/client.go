@@ -275,6 +275,22 @@ func (c *Client) GetFileContent(ctx context.Context, projectID int64, filePath, 
 }
 
 func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
+	projects := make([]Project, 0)
+	_, err := c.VisitProjects(ctx, func(project Project) error {
+		projects = append(projects, project)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
+func (c *Client) VisitProjects(ctx context.Context, visit func(Project) error) (int, error) {
+	if visit == nil {
+		return 0, errors.New("project visitor is not configured")
+	}
+
 	query := url.Values{}
 	query.Set("page", "1")
 	query.Set("per_page", "100")
@@ -283,20 +299,20 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 	query.Set("order_by", "id")
 	query.Set("sort", "asc")
 
-	projects := make([]Project, 0)
+	projectCount := 0
 	for {
 		requestURL := c.makeRequestURL("/projects", "", query)
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("build list projects request: %w", err)
+			return 0, fmt.Errorf("build list projects request: %w", err)
 		}
 
 		response, statusErr, err := c.do(request)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 		if statusErr != nil {
-			return nil, statusErr.apiError(request)
+			return 0, statusErr.apiError(request)
 		}
 
 		var payload []struct {
@@ -309,27 +325,30 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 		}
 		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 			response.Body.Close()
-			return nil, fmt.Errorf("decode projects response: %w", err)
+			return 0, fmt.Errorf("decode projects response: %w", err)
 		}
+		nextPage := strings.TrimSpace(response.Header.Get("X-Next-Page"))
 		response.Body.Close()
 
 		for _, item := range payload {
-			projects = append(projects, Project{
+			projectCount++
+			if err := visit(Project{
 				ID:                item.ID,
 				PathWithNamespace: strings.TrimSpace(item.PathWithNamespace),
 				DefaultBranch:     strings.TrimSpace(item.DefaultBranch),
 				NamespaceKind:     strings.TrimSpace(item.Namespace.Kind),
-			})
+			}); err != nil {
+				return projectCount, err
+			}
 		}
 
-		nextPage := strings.TrimSpace(response.Header.Get("X-Next-Page"))
 		if nextPage == "" {
 			break
 		}
 		query.Set("page", nextPage)
 	}
 
-	return projects, nil
+	return projectCount, nil
 }
 
 func (c *Client) GetBranch(ctx context.Context, projectID int64, branch string) (Branch, error) {

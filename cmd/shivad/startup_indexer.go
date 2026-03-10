@@ -21,7 +21,7 @@ type startupIndexingStore interface {
 }
 
 type startupIndexingGitLabClient interface {
-	ListProjects(ctx context.Context) ([]gitlab.Project, error)
+	VisitProjects(ctx context.Context, visit func(gitlab.Project) error) (int, error)
 	GetBranch(ctx context.Context, projectID int64, branch string) (gitlab.Branch, error)
 }
 
@@ -59,11 +59,6 @@ func enqueueStartupIndexingIfEmpty(
 		logger.Info("startup indexing started", "reason", "no revisions recorded")
 	}
 
-	projects, err := gitlabClient.ListProjects(ctx)
-	if err != nil {
-		return fmt.Errorf("list gitlab projects for startup indexing: %w", err)
-	}
-
 	var (
 		enqueued                int
 		duplicates              int
@@ -72,7 +67,8 @@ func enqueueStartupIndexingIfEmpty(
 		skippedNoDefaultBranch  int
 		skippedMissingBranchSHA int
 	)
-	for _, project := range projects {
+
+	projectCount, err := gitlabClient.VisitProjects(ctx, func(project gitlab.Project) error {
 		projectID := project.ID
 		pathWithNamespace := strings.TrimSpace(project.PathWithNamespace)
 		defaultBranch := strings.TrimSpace(project.DefaultBranch)
@@ -84,13 +80,13 @@ func enqueueStartupIndexingIfEmpty(
 			if logger != nil {
 				logger.Warn("startup indexing skipped project with invalid id")
 			}
-			continue
+			return nil
 		case pathWithNamespace == "":
 			skippedInvalidProject++
 			if logger != nil {
 				logger.Warn("startup indexing skipped project with empty path", "project_id", projectID)
 			}
-			continue
+			return nil
 		case namespaceKind == "user":
 			skippedPersonalProject++
 			if logger != nil {
@@ -100,7 +96,7 @@ func enqueueStartupIndexingIfEmpty(
 					"path_with_namespace", pathWithNamespace,
 				)
 			}
-			continue
+			return nil
 		case defaultBranch == "":
 			skippedNoDefaultBranch++
 			if logger != nil {
@@ -110,7 +106,7 @@ func enqueueStartupIndexingIfEmpty(
 					"path_with_namespace", pathWithNamespace,
 				)
 			}
-			continue
+			return nil
 		}
 
 		branch, err := gitlabClient.GetBranch(ctx, projectID, defaultBranch)
@@ -125,7 +121,7 @@ func enqueueStartupIndexingIfEmpty(
 						"default_branch", defaultBranch,
 					)
 				}
-				continue
+				return nil
 			}
 			return fmt.Errorf(
 				"resolve startup indexing branch head for project %d (%s): %w",
@@ -146,7 +142,7 @@ func enqueueStartupIndexingIfEmpty(
 					"default_branch", defaultBranch,
 				)
 			}
-			continue
+			return nil
 		}
 
 		payloadJSON, err := json.Marshal(startupIndexingPayload{
@@ -177,15 +173,19 @@ func enqueueStartupIndexingIfEmpty(
 		}
 		if result.Duplicate {
 			duplicates++
-			continue
+			return nil
 		}
 		enqueued++
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("list gitlab projects for startup indexing: %w", err)
 	}
 
 	if logger != nil {
 		logger.Info(
 			"startup indexing finished",
-			"project_count", len(projects),
+			"project_count", projectCount,
 			"enqueued", enqueued,
 			"duplicates", duplicates,
 			"skipped_invalid_project", skippedInvalidProject,
