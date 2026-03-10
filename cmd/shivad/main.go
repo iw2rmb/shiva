@@ -71,10 +71,6 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("initialize gitlab client: %w", err)
 	}
 
-	if err := enqueueStartupIndexingIfEmpty(ctx, cfg, logger, storeInstance, gitLabClient); err != nil {
-		return err
-	}
-
 	openAPIResolver, err := openapi.NewResolver(openapi.ResolverConfig{
 		IncludeGlobs:              cfg.OpenAPIPathGlobs,
 		MaxFetches:                cfg.OpenAPIRefMaxFetches,
@@ -105,7 +101,9 @@ func run(ctx context.Context) error {
 			tracer:  telemetry.Tracer(),
 		}),
 	)
-	if err := workerManager.Start(ctx); err != nil {
+	if err := startIngestRuntime(ctx, logger, workerManager, func(startupCtx context.Context) error {
+		return enqueueStartupIndexingIfEmpty(startupCtx, cfg, logger, storeInstance, gitLabClient)
+	}); err != nil {
 		return err
 	}
 
@@ -140,6 +138,49 @@ func run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+type workerStarter interface {
+	Start(ctx context.Context) error
+}
+
+func startIngestRuntime(
+	ctx context.Context,
+	logger *slog.Logger,
+	workerManager workerStarter,
+	startupIndexing func(context.Context) error,
+) error {
+	if workerManager == nil {
+		return errors.New("worker manager is not configured")
+	}
+	if err := workerManager.Start(ctx); err != nil {
+		return err
+	}
+	runStartupIndexingAsync(ctx, logger, startupIndexing)
+	return nil
+}
+
+func runStartupIndexingAsync(ctx context.Context, logger *slog.Logger, run func(context.Context) error) {
+	if run == nil {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	go func() {
+		err := run(ctx)
+		switch {
+		case err == nil:
+			return
+		case ctx.Err() != nil:
+			return
+		case errors.Is(err, context.Canceled):
+			return
+		default:
+			logger.Error("startup indexing failed", "error", err)
+		}
+	}()
 }
 
 type storeQueueAdapter struct {
