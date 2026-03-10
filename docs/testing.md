@@ -19,7 +19,7 @@ Current baseline should be validated by running `go test ./...`.
 - Worker behavior:
   - `go test ./internal/worker`
 - End-to-end pipeline integration test package:
-  - `go test ./cmd/shiva`
+  - `go test ./cmd/shivad`
 
 ## Coverage Areas
 - Config parsing and defaults.
@@ -40,12 +40,12 @@ Current baseline should be validated by running `go test ./...`.
   - selector fallback behavior on `/v1/routes`,
   - `/v1/specs/{tenant}/{repo}/apis` and selector variant listing responses.
 - Outbound notifier signing, retries, and terminal state behavior.
-- End-to-end ingest-to-notify flow in `cmd/shiva/webhook_to_notify_integration_test.go`.
-- Delete-only incremental integration path in `cmd/shiva/webhook_to_notify_integration_test.go`:
+- End-to-end ingest-to-notify flow in `cmd/shivad/webhook_to_notify_integration_test.go`.
+- Delete-only incremental integration path in `cmd/shivad/webhook_to_notify_integration_test.go`:
   no artifact persisted, `openapi_changed=true`, `spec_changes` persisted, and outbound emits diff-only event.
-- Bootstrap ingest regression guard in `cmd/shiva/webhook_to_notify_integration_test.go`:
+- Bootstrap ingest regression guard in `cmd/shivad/webhook_to_notify_integration_test.go`:
   compare has no OpenAPI paths, repository-tree bootstrap still persists artifact/index, and zero-root bootstrap emits no notifications.
-- Incremental impact orchestration in `cmd/shiva/revision_processor_incremental_impact_test.go`:
+- Incremental impact orchestration in `cmd/shivad/revision_processor_incremental_impact_test.go`:
   dependency-intersection impact-only rebuild, unrelated change no rebuild, deleted-root deactivation, fallback discovery for create/rename changes, and per-API permanent-failure isolation (failed API + successful API in one revision).
 - Resolver-level incremental behavior in `internal/openapi/resolver_test.go`:
   `ResolveRootOpenAPIAtSHA` strict root validation and fallback discovery (`ResolveDiscoveredRootsAtPaths`) candidate filtering/collapse on changed path inputs.

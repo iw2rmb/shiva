@@ -2,20 +2,20 @@
 
 Scope: Implement `design/mono.md` end-to-end for multi-OpenAPI repositories, including per-API persistence, per-API processing/diff/notify, and `/v1/specs` + `/v1/routes` read contracts with `/-/{api}/-/` delimiters and optional short-SHA selector.
 
-Documentation: `design/mono.md`, `design/init.md`, `design/inc.md`, `docs/database.md`, `docs/gitlab.md`, `docs/endpoints.md`, `docs/webhooks.md`, `docs/testing.md`, `sql/schema/000001_initial.sql`, `internal/store`, `cmd/shiva/main.go`, `internal/http`, `internal/notify`
+Documentation: `design/mono.md`, `design/init.md`, `design/inc.md`, `docs/database.md`, `docs/gitlab.md`, `docs/endpoints.md`, `docs/webhooks.md`, `docs/testing.md`, `sql/schema/000001_initial.sql`, `internal/store`, `cmd/shivad/main.go`, `internal/http`, `internal/notify`
 
 Legend: [ ] todo, [x] done.
 
 ## Baseline Confirmation
 - [x] Confirm current codebase gaps against `design/mono.md` before refactor — lock exact mismatch set and prevent scope drift
   - Repository: `shiva`
-  - Component: `internal/store`, `cmd/shiva`, `internal/http`, `internal/notify`, `docs`
+  - Component: `internal/store`, `cmd/shivad`, `internal/http`, `internal/notify`, `docs`
   - Scope: verify current revision-scoped artifact/index/change keys, current read route shapes, current selector semantics, and notification payload identity
   - Locked mismatch notes:
     - Route shape: current read routes are registered in `internal/http/server.go`/`internal/http/read_routes.go` as legacy `/:tenant/:repo` and `/:tenant/:repo/:selector/*` without `/v1/specs`, `/v1/routes`, or `/-/{api}/-/` API-delimited segments.
     - Selector semantics: selector is optional legacy mode; accepted selectors include 40-char SHA, `latest`, and arbitrary branch names, with no-selector defaulting to `main`; design requires optional short SHA only and optional omitted selector defaulting to `HEAD` on `main`.
     - Store key scopes: `spec_artifacts`, `endpoint_index`, and `spec_changes` are still revision-scoped via `revision_id`/`to_revision_id` in schema, SQL, and store calls (`PersistCanonicalSpec`, `PersistSpecChange`, `GetSpecArtifactByRevisionID`, `ListEndpointIndexByRevision`, etc.).
-    - Notification identity: outbound events are revision-scoped and include `revision_id` only; payload/key identity does not include `api` root, `api_spec_id`, or API-scoped revision id in `internal/notify` or `cmd/shiva` notification flow.
+    - Notification identity: outbound events are revision-scoped and include `revision_id` only; payload/key identity does not include `api` root, `api_spec_id`, or API-scoped revision id in `internal/notify` or `cmd/shivad` notification flow.
   - Snippets: map current paths in `internal/http/routes.go` and selector flow in `internal/store/read_selector.go`
   - Tests: `go test ./...` baseline must pass before refactor
 
@@ -47,7 +47,7 @@ Legend: [ ] todo, [x] done.
 ## Revision Processor Per-API Execution
 - [x] Move build/persist/diff/notify orchestration to per-API loops — one API failure must not block others
   - Repository: `shiva`
-  - Component: `cmd/shiva/main.go`
+  - Component: `cmd/shivad/main.go`
   - Scope:
     - process impacted APIs independently in incremental mode
     - persist artifacts/index per `api_spec_revision_id`
@@ -55,7 +55,7 @@ Legend: [ ] todo, [x] done.
     - keep repo revision `openapi_changed=true` when any API changed
     - preserve infra-failure behavior as revision-scoped failure
   - Snippets: split current revision-scoped persist/diff/notify calls into API-scoped units keyed by `api_spec_id` and `api_spec_revision_id`
-  - Tests: `go test ./cmd/shiva` with multi-root fixtures proving independent success/failure and independent diff state
+  - Tests: `go test ./cmd/shivad` with multi-root fixtures proving independent success/failure and independent diff state
 
 ## HTTP Route Namespace and Parser
 - [x] Implement `/v1/specs` and `/v1/routes` route families with delimiter-safe monorepo API segment — eliminate ambiguity between API path and endpoint path
@@ -98,7 +98,7 @@ Legend: [ ] todo, [x] done.
 ## Notification Contract Refactor
 - [x] Move outbound notifications to API-scoped payload identity — subscribers must identify changed API instance directly
   - Repository: `shiva`
-  - Component: `internal/notify`, `cmd/shiva/main.go`
+  - Component: `internal/notify`, `cmd/shivad/main.go`
   - Scope:
     - include `api` root path and `api_revision_id` in payload
     - key delivery attempt identity with `api_spec_id`

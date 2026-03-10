@@ -2,7 +2,7 @@
 
 Scope: Implement `design/init.md` end-to-end against the current delta-only ingestion pipeline, including bootstrap trigger logic, full-tree discovery, `.shivaignore` filtering, and per-root bootstrap build persistence.
 
-Documentation: `design/init.md`, `design/mono.md`, `design/inc.md`, `docs/gitlab.md`, `docs/database.md`, `internal/gitlab/client.go`, `internal/openapi/resolver.go`, `cmd/shiva/main.go`, `sql/schema/000001_initial.sql`
+Documentation: `design/init.md`, `design/mono.md`, `design/inc.md`, `docs/gitlab.md`, `docs/database.md`, `internal/gitlab/client.go`, `internal/openapi/resolver.go`, `cmd/shivad/main.go`, `sql/schema/000001_initial.sql`
 
 Legend: [ ] todo, [x] done.
 
@@ -14,8 +14,8 @@ Legend: [ ] todo, [x] done.
 ## Codebase Confirmation
 - [x] Confirm current resolver is delta-only and cannot bootstrap existing specs when first processed revision is unrelated — establishes root-cause baseline from code, not assumptions
   - Repository: `shiva`
-  - Component: `cmd/shiva`, `internal/openapi`, `internal/gitlab`
-  - Scope: `cmd/shiva/main.go` exits early with `openapi_changed=false` when `parent_sha` is empty; resolver path is `ResolveChangedOpenAPI` only; GitLab client supports compare + file fetch only
+  - Component: `cmd/shivad`, `internal/openapi`, `internal/gitlab`
+  - Scope: `cmd/shivad/main.go` exits early with `openapi_changed=false` when `parent_sha` is empty; resolver path is `ResolveChangedOpenAPI` only; GitLab client supports compare + file fetch only
   - Snippets: `revisionProcessor.Process` currently calls `MarkRevisionProcessed(..., false)` when `parent_sha == ""`; when `parent_sha != ""`, resolver uses `CompareChangedPaths(parent_sha, sha)` and candidate filtering from changed files
   - Tests: Existing resolver tests in `internal/openapi/resolver_test.go` cover changed-path flow only — no full-tree bootstrap coverage
 
@@ -74,7 +74,7 @@ Legend: [ ] todo, [x] done.
 ## Revision Processor Orchestration
 - [x] Replace current `parent_sha == ""` short-circuit with bootstrap decision flow — current behavior directly causes missed initial discovery
   - Repository: `shiva`
-  - Component: `cmd/shiva/main.go` (`revisionProcessor.Process`)
+  - Component: `cmd/shivad/main.go` (`revisionProcessor.Process`)
   - Scope: Compute ingestion mode before compare:
     - bootstrap when `active_api_specs == 0` or `openapi_force_rescan == true`,
     - incremental otherwise;
@@ -84,7 +84,7 @@ Legend: [ ] todo, [x] done.
 
 - [x] Persist bootstrap outputs per discovered root and finalize revision status — bootstrap result semantics must match design
   - Repository: `shiva`
-  - Component: `cmd/shiva`, `internal/store`
+  - Component: `cmd/shivad`, `internal/store`
   - Scope: For each discovered root:
     - upsert API instance,
     - create per-API revision row,
@@ -105,10 +105,10 @@ Legend: [ ] todo, [x] done.
 ## Verification and Documentation
 - [x] Add end-to-end coverage for initial bootstrap path and regression guards — prevents fallback to delta-only behavior
   - Repository: `shiva`
-  - Component: `cmd/shiva`, `internal/openapi`, `internal/gitlab`
+  - Component: `cmd/shivad`, `internal/openapi`, `internal/gitlab`
   - Scope: Add integration test case where compare diff has no OpenAPI files but repo tree does; assert artifact/index persisted and notifications sent only when `openapi_changed=true`
   - Snippets: fake GitLab client implementing both compare and repository-tree endpoints
-  - Tests: `go test ./cmd/shiva ./internal/openapi ./internal/gitlab`
+  - Tests: `go test ./cmd/shivad ./internal/openapi ./internal/gitlab`
 
 - [x] Update runtime/state docs after implementation — keep `docs/` synchronized with actual behavior in commit series
   - Repository: `shiva`

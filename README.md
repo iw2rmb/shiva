@@ -32,7 +32,7 @@ Operation-slice semantics:
    - `SHIVA_GITLAB_BASE_URL`
    - `SHIVA_GITLAB_WEBHOOK_SECRET`
 2. Start:
-   - `go run ./cmd/shiva`
+   - `go run ./cmd/shivad`
 3. Validate:
    - `go test ./...`
 

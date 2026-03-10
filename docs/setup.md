@@ -10,7 +10,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 
 ## Run
 - Start service:
-  - `go run ./cmd/shiva`
+  - `go run ./cmd/shivad`
 - Run tests:
   - `go test ./...`
 
