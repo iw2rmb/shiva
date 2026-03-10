@@ -3,8 +3,10 @@ package gitlab
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -236,8 +238,67 @@ func TestClientCompareChangedPathsLimiterSerializesRequests(t *testing.T) {
 	}
 }
 
+func TestClientDoKeepsSuccessfulResponseReadableUntilClose(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewClient(
+		"https://gitlab.example.com",
+		"",
+		WithHTTPClient(httpClientFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: &contextAwareReadCloser{
+					ctx:    req.Context(),
+					reader: strings.NewReader(`{"ok":true}`),
+				},
+			}, nil
+		})),
+		withSleep(noopSleep),
+		withTimeout(5*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+
+	request, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"https://gitlab.example.com/api/v4/projects",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() unexpected error: %v", err)
+	}
+
+	response, statusErr, err := client.do(request)
+	if err != nil {
+		t.Fatalf("do() unexpected error: %v", err)
+	}
+	if statusErr != nil {
+		t.Fatalf("do() returned unexpected status error: %#v", statusErr)
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll(response.Body) unexpected error: %v", err)
+	}
+	if string(body) != `{"ok":true}` {
+		t.Fatalf("response body = %q, want %q", string(body), `{"ok":true}`)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("response.Body.Close() unexpected error: %v", err)
+	}
+}
+
 func noopSleep(_ context.Context, _ time.Duration) error {
 	return nil
+}
+
+type httpClientFunc func(req *http.Request) (*http.Response, error)
+
+func (f httpClientFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 type flakyHTTPClient struct {
@@ -251,4 +312,22 @@ func (c *flakyHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		return nil, errors.New("temporary network failure")
 	}
 	return c.delegate.Do(req)
+}
+
+type contextAwareReadCloser struct {
+	ctx    context.Context
+	reader *strings.Reader
+}
+
+func (r *contextAwareReadCloser) Read(p []byte) (int, error) {
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	default:
+	}
+	return r.reader.Read(p)
+}
+
+func (r *contextAwareReadCloser) Close() error {
+	return nil
 }

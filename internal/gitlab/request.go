@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -67,10 +68,10 @@ func (c *Client) doOnce(request *http.Request) (*http.Response, *requestStatusEr
 	if c.timeout > 0 {
 		requestCtx, cancel = context.WithTimeout(request.Context(), c.timeout)
 	}
-	defer cancel()
 
 	release, err := c.limiter.Acquire(requestCtx, request.URL.Host)
 	if err != nil {
+		cancel()
 		return nil, nil, err
 	}
 	defer release()
@@ -87,19 +88,37 @@ func (c *Client) doOnce(request *http.Request) (*http.Response, *requestStatusEr
 
 	response, err := c.httpClient.Do(attempt)
 	if err != nil {
+		cancel()
 		return nil, nil, err
 	}
 	if response.StatusCode >= 200 && response.StatusCode <= 299 {
+		response.Body = &cancelOnCloseReadCloser{
+			ReadCloser: response.Body,
+			cancel:     cancel,
+		}
 		return response, nil, nil
 	}
 
 	body, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBodyBytes))
 	_ = response.Body.Close()
+	cancel()
 	return nil, &requestStatusError{
 		StatusCode: response.StatusCode,
 		Body:       strings.TrimSpace(string(body)),
 		RetryAfter: strings.TrimSpace(response.Header.Get("Retry-After")),
 	}, nil
+}
+
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel func()
+	once   sync.Once
+}
+
+func (r *cancelOnCloseReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	r.once.Do(r.cancel)
+	return err
 }
 
 func (c *Client) shouldRetry(reqErr error, statusErr *requestStatusError, attempt int, non4294xxRetries *int) bool {

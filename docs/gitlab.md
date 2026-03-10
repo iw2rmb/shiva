@@ -75,6 +75,7 @@ No clone/archive strategy is used.
 ## GitLab Client Request Policy
 - Shiva serializes GitLab API calls per configured GitLab host with an in-process limiter.
 - Each request uses retry/backoff locally before the worker-level retry loop sees the error.
+- Successful responses keep their request timeout context alive until the response body is consumed and closed.
 - Transport failures and GitLab `5xx` responses retry with exponential backoff starting at `500ms` and capped at `30s`.
 - GitLab `429 Too Many Requests` responses honor `Retry-After` when GitLab returns either delta-seconds or an HTTP date.
 - Other GitLab `4xx` responses get one confirmation retry, then surface as permanent GitLab errors.
