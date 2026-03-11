@@ -10,7 +10,7 @@ This document describes the current test layout and practical test commands.
 Current baseline should be validated by running `go test ./...`.
 
 ## Focused Commands
-- HTTP routes and webhook handlers:
+- HTTP query endpoints and webhook handlers:
   - `go test ./internal/http`
 - Draft CLI parser, service logic, and completion generation:
   - `go test ./internal/cli ./cmd/shiva`
@@ -38,13 +38,14 @@ Current baseline should be validated by running `go test ./...`.
   - `$ref` recursion/cycle/fetch limit guards.
 - Canonical spec build and endpoint extraction.
 - Semantic diff computation.
-- Read route selector resolution and endpoint slice responses.
+- Query endpoint validation, snapshot resolution, ambiguity reporting, and catalog payload mapping.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
-- Route contract tests for:
-  - short-SHA selector validation,
-  - monorepo delimiter parsing (`/-/{api}/-/`) for spec and route families,
-  - selector fallback behavior on `/v1/routes`,
-  - `/v1/specs/{repo}/apis` and selector variant listing responses.
+- Endpoint contract tests for:
+  - shared `repo`/`api`/`revision_id`/`sha` query validation,
+  - `/v1/spec` format and `ETag` behavior,
+  - `/v1/operation` operation-id vs method/path resolution rules,
+  - `/v1/apis`, `/v1/operations`, `/v1/repos`, and `/v1/catalog/status` response shapes,
+  - removal of legacy `/v1/specs` and `/v1/routes` read surfaces.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shivad/webhook_to_notify_integration_test.go`.
 - Startup queue seeding in `cmd/shivad/startup_indexer_test.go`:
@@ -63,7 +64,7 @@ Current baseline should be validated by running `go test ./...`.
 ## Cross-Checks
 - `docs/cli.md`: draft CLI surface, output, and current limits.
 - `docs/database.md`: API-scoped artifact/index/change and listing behavior.
-- `docs/endpoints.md`: read route contract matrix and delimiter/selector semantics.
+- `docs/endpoints.md`: query endpoint contract, selector semantics, and response shapes.
 - `docs/webhooks.md`: API-scoped notification identity and payload.
 - `docs/gitlab.md`: per-API changed revision flow and notification emission conditions.
 

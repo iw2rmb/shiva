@@ -44,9 +44,9 @@ This document describes current schema layout and SQL code generation workflow.
 - `delivery_attempts` read/write contracts include `api_spec_id` in the dedupe/lookup identity.
 
 ### Read Compatibility Behavior
-- `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained for legacy read routes.
+- `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained only as compatibility helpers for store-level callers and tests.
 - They resolve the latest processed API-scoped row for the requested canonical `ingest_events.id` across all APIs in that ingest event, then return that row only when a matching method/path exists.
-- Monorepo read routes (`/-/{api}/-/`) still resolve explicitly via API root and revision ID, so same revision + different API returns different results.
+- The HTTP read surface no longer uses these helpers; query endpoints resolve through API-scoped snapshot primitives instead.
 - Read resolution identifies repos directly by `repos.path_with_namespace`.
 - No-selector reads resolve against the repo's persisted `default_branch`, not a global branch constant.
 

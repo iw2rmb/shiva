@@ -6,28 +6,27 @@ Shiva is a Go service that ingests GitLab push events, detects OpenAPI changes, 
 - Stack: Go + Fiber + PostgreSQL (`pgx` + `sqlc`).
 - Processing model: async DB-backed worker with retry/backoff.
 - OpenAPI detection: compare-based candidate resolution from GitLab APIs (no full-tree bootstrap discovery yet).
-- Read API: selector-based full spec fetch and endpoint operation slices.
+- Read API: query-driven spec, operation, API inventory, operation inventory, repo inventory, and catalog freshness endpoints.
 - Draft CLI: repo spec fetch and `#operationId` lookup for repos with exactly one active API root.
 
 ## HTTP Routes
 - `POST /internal/webhooks/gitlab`
 - `GET /healthz`
 - `GET /internal/metrics` (or configured `SHIVA_METRICS_PATH`)
-- `GET /v1/specs/{repo}/{openapi|index}.{json|yaml}`
-- `GET /v1/specs/{repo}/{selector}/{openapi|index}.{json|yaml}`
-- `GET /v1/specs/{repo}/apis`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{selector}/{path}`
+- `GET /v1/spec`
+- `GET /v1/operation`
+- `GET /v1/apis`
+- `GET /v1/operations`
+- `GET /v1/repos`
+- `GET /v1/catalog/status`
 
-Selector semantics:
-- `selector` is an 8-character lowercase commit SHA prefix.
-- no-selector routes resolve to the latest processed revision on the repo's stored default branch.
-
-Operation-slice semantics:
-- request HTTP verb is the endpoint method selector,
-- response is JSON by default,
-- `{path}.json` and `{path}.yaml` are supported format addons.
-- `repo` uses GitLab `path_with_namespace` and must be URL-escaped when it contains `/`.
+Query semantics:
+- `repo` uses raw GitLab `path_with_namespace`.
+- optional snapshot selection uses either `revision_id`, `sha`, or neither.
+- `sha` is an 8-character lowercase commit SHA prefix.
+- omitting snapshot selectors resolves the latest processed OpenAPI snapshot on the repo's stored default branch.
+- `/v1/operation` accepts either `operation_id` or `method` plus `path`.
+- `/v1/spec` supports `format=json|yaml` and `ETag`/`If-None-Match`.
 
 ## Quick Start
 1. Set required envs for full mode:
@@ -43,7 +42,7 @@ Operation-slice semantics:
 - Setup and configuration: [docs/setup.md](docs/setup.md)
 - Draft CLI behavior: [docs/cli.md](docs/cli.md)
 - GitLab spec ingestion flow: [docs/gitlab.md](docs/gitlab.md)
-- Endpoint extraction and read routes: [docs/endpoints.md](docs/endpoints.md)
+- Endpoint extraction and query transport: [docs/endpoints.md](docs/endpoints.md)
 - Inbound/outbound webhook contracts: [docs/webhooks.md](docs/webhooks.md)
 - Test layout and commands: [docs/testing.md](docs/testing.md)
 - Database schema and sqlc generation: [docs/database.md](docs/database.md)

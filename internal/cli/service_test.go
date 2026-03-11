@@ -145,44 +145,6 @@ func TestDraftServiceGetOperationDownloadsFullSpecAndScansClientSide(t *testing.
 	}
 }
 
-func TestEncodeDelimitedPath(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "preserves path separators",
-			input:    "service-catalog/allure-api.yaml",
-			expected: "service-catalog/allure-api.yaml",
-		},
-		{
-			name:     "escapes segment content",
-			input:    "api docs/spec file.yaml",
-			expected: "api%20docs/spec%20file.yaml",
-		},
-		{
-			name:     "drops empty segments",
-			input:    "/api//specs/openapi.yaml/",
-			expected: "api/specs/openapi.yaml",
-		},
-	}
-
-	for _, testCase := range testCases {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			actual := encodeDelimitedPath(testCase.input)
-			if actual != testCase.expected {
-				t.Fatalf("expected encoded path %q, got %q", testCase.expected, actual)
-			}
-		})
-	}
-}
-
 func TestOperationPayloadByID(t *testing.T) {
 	t.Parallel()
 

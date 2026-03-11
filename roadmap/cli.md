@@ -26,7 +26,7 @@ Legend: [ ] todo, [x] done.
 3. Add `operation_id` lookup paths scoped to one API snapshot and to one repo snapshot, and return candidate rows for ambiguity reporting instead of collapsing them too early.
 4. Add catalog-freshness store data keyed by repo default-branch latest state so the CLI can refresh inventories without downloading full specs on every run.
 
-- [ ] 1.3 Replace legacy read routes with the query transport contract
+- [x] 1.3 Replace legacy read routes with the query transport contract
   - Repository: `shiva`
   - Component: `internal/http`, `internal/store`
   - Reasoning: `xhigh`

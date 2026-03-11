@@ -23,7 +23,7 @@ type Server struct {
 	logger         *slog.Logger
 	store          *store.Store
 	gitlabIngestor gitlabWebhookIngestor
-	readStore      readRouteStore
+	readStore      queryReadStore
 	metrics        *observability.Metrics
 	tracer         trace.Tracer
 }
@@ -113,15 +113,12 @@ func (s *Server) registerRoutes() {
 	webhookGroup.Post("/gitlab", s.handleGitLabWebhook)
 
 	v1 := s.app.Group("/v1")
-	specGroup := v1.Group("/specs/:repo")
-	specGroup.Get("/apis", s.handleListAPISpecsByRepo)
-	specGroup.Get("/:selector/apis", s.handleListAPISpecsByRepoAtRevision)
-	specGroup.Get("/*", s.handleGetSpec)
-
-	routeGroup := v1.Group("/routes/:repo")
-	for _, method := range readOperationHTTPMethods {
-		routeGroup.Add(method, "/*", s.handleOperationRoute)
-	}
+	v1.Get("/spec", s.handleGetSpec)
+	v1.Get("/operation", s.handleGetOperation)
+	v1.Get("/apis", s.handleListAPIs)
+	v1.Get("/operations", s.handleListOperations)
+	v1.Get("/repos", s.handleListRepos)
+	v1.Get("/catalog/status", s.handleGetCatalogStatus)
 }
 
 type healthResponse struct {

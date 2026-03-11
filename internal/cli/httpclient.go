@@ -44,7 +44,10 @@ func NewHTTPClient(cfg Config) (*HTTPClient, error) {
 }
 
 func (c *HTTPClient) ListAPISpecs(ctx context.Context, repoPath string) ([]APISpecListing, error) {
-	body, err := c.get(ctx, fmt.Sprintf("/v1/specs/%s/apis", url.PathEscape(repoPath)))
+	query := url.Values{}
+	query.Set("repo", repoPath)
+
+	body, err := c.get(ctx, "/v1/apis?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -64,26 +67,14 @@ func (c *HTTPClient) GetSpec(ctx context.Context, repoPath string, apiRoot strin
 		return nil, &InvalidInputError{Message: fmt.Sprintf("unsupported spec format %q", format)}
 	}
 
-	targetPath := fmt.Sprintf("/v1/specs/%s", url.PathEscape(repoPath))
+	query := url.Values{}
+	query.Set("repo", repoPath)
 	if strings.TrimSpace(apiRoot) != "" {
-		targetPath += fmt.Sprintf("/-/%s/-", encodeDelimitedPath(apiRoot))
+		query.Set("api", apiRoot)
 	}
-	targetPath += fmt.Sprintf("/openapi.%s", format)
+	query.Set("format", string(format))
 
-	return c.get(ctx, targetPath)
-}
-
-func encodeDelimitedPath(value string) string {
-	segments := strings.Split(strings.TrimSpace(value), "/")
-	encoded := make([]string, 0, len(segments))
-	for _, segment := range segments {
-		trimmed := strings.TrimSpace(segment)
-		if trimmed == "" {
-			continue
-		}
-		encoded = append(encoded, url.PathEscape(trimmed))
-	}
-	return strings.Join(encoded, "/")
+	return c.get(ctx, "/v1/spec?"+query.Encode())
 }
 
 func (c *HTTPClient) get(ctx context.Context, requestPath string) ([]byte, error) {

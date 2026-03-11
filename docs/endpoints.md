@@ -1,7 +1,7 @@
 # Endpoints
 
 ## Scope
-This document describes how endpoint paths are built from canonical OpenAPI specs and how endpoint slices are served by read routes.
+This document describes how canonical OpenAPI specs are indexed and how Shiva serves query-driven read endpoints.
 
 ## Build-Time Endpoint Extraction
 Canonical build:
@@ -22,87 +22,148 @@ Endpoints are sorted by `(method, path)` and persisted to `endpoint_index` with 
 
 Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifacts` and replaces the full `endpoint_index` for an API revision.
 
-## Read Routes
+## Read Endpoints
 
-### Full Spec
-- `GET /v1/specs/{repo}/{openapi|index}.{yaml|json}`
-- `GET /v1/specs/{repo}/{selector}/{openapi|index}.{yaml|json}`
-- `GET /v1/specs/{repo}/-/{api}/-/{openapi|index}.{yaml|json}`
-- `GET /v1/specs/{repo}/-/{api}/-/{selector}/{openapi|index}.{yaml|json}`
+### Registered Surface
+- `GET /v1/spec`
+- `GET /v1/operation`
+- `GET /v1/apis`
+- `GET /v1/operations`
+- `GET /v1/repos`
+- `GET /v1/catalog/status`
 
-### API Inventory
-- `GET /v1/specs/{repo}/apis`
-- `GET /v1/specs/{repo}/{selector}/apis`
+Legacy path-segment endpoints were removed:
+- `/v1/specs/...`
+- `/v1/routes/...`
 
-### Endpoint Operation Slice
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{selector}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/-/{api}/-/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/-/{api}/-/{selector}/{path}`
+### Shared Query Parameters
+- `repo`
+  - required on `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, and `/v1/catalog/status`
+  - value is the raw GitLab `path_with_namespace`
+- `api`
+  - optional on `/v1/spec`, `/v1/operation`, and `/v1/operations`
+  - value is the raw `api_specs.root_path`
+- `revision_id`
+  - optional positive integer ingest-event id
+- `sha`
+  - optional 8-character lowercase hex SHA prefix
+- exactly one of `revision_id`, `sha`, or neither is allowed
+- `neither` means latest processed OpenAPI snapshot on `repos.default_branch`
+- invalid query combinations return `400`
 
-Route identity notes:
-- `repo` is the GitLab `path_with_namespace`.
-- callers must URL-escape `repo` when it contains `/`, for example `group%2Fservice`.
+### Snapshot Resolution
+- repo lookup uses `repos.path_with_namespace`
+- `revision_id` resolves the exact ingest-event row and rejects repo mismatches
+- `sha` resolves one repo-scoped short SHA prefix
+- no selector resolves the latest processed OpenAPI snapshot on the repo default branch
+- unresolved snapshots return `404`
+- unprocessed head or selector targets return `409`
+- there is no selector fallback behavior on query endpoints
 
-Monorepo `api` is the raw root path, bounded by `/-/{api}/-/` in the URL.
-- `api` is decoded and may contain slashes (for example `platform/api`).
-- both delimiter segments must be present and in order (`.../-/{api}/-/...`).
+## Endpoint Contracts
 
-Malformed delimiter shapes are rejected as `400`:
-- missing closing delimiter `/-/{api}/` (example: `/-/{api}/pets`),
-- empty `api` (example: `/-/-/openapi.json`).
+### `GET /v1/spec`
+- supported query parameters:
+  - `repo`
+  - optional `api`
+  - optional `revision_id` or `sha`
+  - optional `format=json|yaml` (default `json`)
+- response body is the canonical spec body for one resolved API snapshot
+- `ETag` and `If-None-Match` are supported
+- omitting `api` is valid only when the selected repo snapshot resolves to exactly one API snapshot
+- ambiguous no-`api` resolution returns `409` with candidate API rows
 
-Route method is the endpoint method selector.
-`/v1/routes/...` applies fallback semantics when selector is present but not found:
-- first resolves `/.../{selector}/...`
-- if `selector` resolves with `not_found`, resolves again without selector against the same `/{api}/-/...` context.
+### `GET /v1/operation`
+- supported query parameters:
+  - `repo`
+  - optional `api`
+  - optional `revision_id` or `sha`
+  - either:
+    - `operation_id`
+    - or `method` plus `path`
+- `operation_id` is mutually exclusive with `method` and `path`
+- `method` is normalized to lowercase and must be one of:
+  - `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `trace`
+- `path` is normalized to include a leading `/`
+- response body is the raw canonical operation object
+- ambiguous cross-API or duplicate-operation matches return `409` with candidate rows
 
-## Selector Semantics
-- selector can only be an 8-character lowercase commit SHA (short SHA prefix).
-- no-selector routes resolve to the latest processed `HEAD` on the repo's stored `default_branch`.
-- selector operation route is attempted first; if selector is not found it falls through to no-selector operation route.
-- spec routes do not fallback: `/v1/specs/.../{selector}/...` resolves selector only; 404 on selector failure.
+### `GET /v1/apis`
+- supported query parameters:
+  - `repo`
+  - optional `revision_id` or `sha`
+- response body is an array of API snapshot rows
+- rows include current API status plus resolved snapshot metadata when present:
+  - `api`
+  - `status`
+  - `display_name`
+  - `has_snapshot`
+  - `api_spec_revision_id`
+  - `ingest_event_id`
+  - `ingest_event_sha`
+  - `ingest_event_branch`
+  - `spec_etag`
+  - `spec_size_bytes`
+  - `operation_count`
 
-Route parser behavior:
-- non-monorepo: `/v1/specs/{repo}/...` and `/v1/routes/{repo}/...`
-- monorepo: `/v1/specs/{repo}/-/{api}/-/...` and `/v1/routes/{repo}/-/{api}/-/...`
-- compatibility: no `/-/{api}/-/` means single-API/legacy behavior based on latest processed API-scoped row for revision.
+### `GET /v1/operations`
+- supported query parameters:
+  - `repo`
+  - optional `api`
+  - optional `revision_id` or `sha`
+- response body is an array of operation inventory rows
+- rows include:
+  - `api`
+  - `status`
+  - `api_spec_revision_id`
+  - `ingest_event_id`
+  - `ingest_event_sha`
+  - `ingest_event_branch`
+  - `method`
+  - `path`
+  - `operation_id`
+  - `summary`
+  - `deprecated`
+  - `operation` (raw canonical operation object)
+- explicit `api` selection is validated before listing so `404` is reserved for missing API snapshots, not empty inventories
 
-## Path Normalization on Reads
-- path parameter is URL-decoded,
-- `.json` or `.yaml` suffix on `{path}` is treated as output-format addon,
-- if decoded path has no leading slash, `/` is prefixed.
+### `GET /v1/repos`
+- takes no repo/snapshot selector parameters
+- response body is an array of repo catalog rows
+- rows include:
+  - `repo`
+  - `gitlab_project_id`
+  - `default_branch`
+  - `openapi_force_rescan`
+  - `active_api_count`
+  - `head_revision`
+  - `snapshot_revision`
 
-Default operation-slice format is JSON.
+### `GET /v1/catalog/status`
+- supported query parameters:
+  - `repo`
+- returns the current default-branch freshness row for that repo
+- payload shape matches one `/v1/repos` row
+- this endpoint does not accept `api`, `revision_id`, or `sha`
 
-## API Listing Response Shape
-- `GET /v1/specs/{repo}/apis`
-- `GET /v1/specs/{repo}/{selector}/apis`
-- HTTP `200` with `application/json` body:
-  - `api`: root path of the API spec (`root_path`)
-  - `status`: `active` or `deleted`
-  - `last_processed_revision`:
-    - `api_spec_revision_id`
-    - `ingest_event_id` (canonical ingest-event id, backed by `ingest_events.id`)
-    - `ingest_event_sha`
-    - `ingest_event_branch`
-- selector form uses selector-resolved snapshot:
-  - the snapshot is derived from `/{selector}/` and list entries include last processed state as of that ingest event
-- selector form requires an 8-character lowercase hex selector. Other selector values return `400`.
-
-## Operation Slice Response Shape
-Response body shape:
-- `{ "paths": { "<path>": { "<method>": <operation-object> } } }`
-
-Status behavior:
-- `404` when endpoint key `(method, path)` is absent,
-- selector errors map to `404/409` depending on state,
-- full-spec routes support `ETag` and `If-None-Match` (`304`).
+## Error Behavior
+- `400`
+  - malformed or unsupported query combinations
+- `404`
+  - repo, snapshot, API snapshot, spec, or operation not found
+- `409`
+  - unprocessed snapshot targets
+  - ambiguous no-`api` spec resolution
+  - ambiguous operation resolution
+- `503`
+  - database is not configured
+- `500`
+  - unexpected server failures
 
 ## References
-- Draft CLI behavior on top of current routes: `docs/cli.md`
+- CLI behavior on top of the current transport: `docs/cli.md`
 - Ingestion/build flow: `docs/gitlab.md`
 - Runtime setup and selector defaults: `docs/setup.md`
 - Webhook-triggered processing context: `docs/webhooks.md`
 - Storage schema: `docs/database.md`
-- Route tests: `docs/testing.md`
+- Endpoint tests: `docs/testing.md`

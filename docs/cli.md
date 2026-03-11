@@ -1,7 +1,7 @@
 # CLI
 
 ## Scope
-This document describes the shipped draft `shiva` CLI.
+This document describes the current draft `shiva` CLI and the read transport it uses today.
 
 ## Command Surface
 - `shiva <repo-path>`
@@ -24,12 +24,12 @@ This document describes the shipped draft `shiva` CLI.
 
 ## Resolution Rules
 - `repo-path` is the GitLab `path_with_namespace`, for example `allure/allure-deployment`.
-- The draft CLI resolves the repo snapshot through `GET /v1/specs/{repo}/apis`.
+- The draft CLI resolves the repo snapshot through `GET /v1/apis?repo=...`.
 - The repo must have exactly one active API root on the default-branch latest processed snapshot.
 - Repos with zero active API roots return not found.
 - Repos with multiple active API roots return an ambiguity error that lists candidate API roots.
 - After API resolution, the CLI fetches the API-scoped canonical spec from
-  `GET /v1/specs/{repo}/-/{api}/-/openapi.{yaml|json}`.
+  `GET /v1/spec?repo=...&api=...&format={json|yaml}`.
 - `#operationId` lookup is exact-match and case-sensitive.
 - `#operationId` resolution is client-side in the draft CLI: it scans the canonical spec JSON with the same endpoint extraction rules used during ingestion.
 
@@ -61,16 +61,16 @@ This document describes the shipped draft `shiva` CLI.
 - The draft CLI does not keep a local catalog or refresh cache.
 
 ## Endpoint and Completion Decisions
-- No new read endpoint was required to ship the draft CLI.
-- The draft CLI reuses the current API listing route plus API-scoped spec fetch routes.
-- Query-style read endpoints are not shipped yet:
+- The backend now ships query-style read endpoints:
   - `/v1/spec`
   - `/v1/operation`
   - `/v1/apis`
   - `/v1/operations`
   - `/v1/repos`
   - `/v1/catalog/status`
-- Dedicated query-style inventory or freshness endpoints become necessary when the CLI starts doing dynamic repo/API/operation completion or local catalog refresh.
+- The draft CLI uses `/v1/apis` and `/v1/spec`.
+- The draft CLI does not use `/v1/operation`, `/v1/operations`, `/v1/repos`, or `/v1/catalog/status` yet.
+- Dedicated inventory and freshness endpoints are in place for later catalog and dynamic-completion work.
 - Static completion generation is correct to ship now because the command tree is stable.
 - Dynamic completions should be added only after the CLI has a local catalog plus cheap server-side inventory/freshness reads.
 
