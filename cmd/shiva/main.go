@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/iw2rmb/shiva/internal/cli"
+	"github.com/iw2rmb/shiva/internal/cli/catalog"
+	"github.com/iw2rmb/shiva/internal/cli/config"
 )
 
 func main() {
@@ -22,19 +24,27 @@ func run(ctx context.Context, stdout *os.File, stderr *os.File) int {
 
 	command := cli.NewRootCommand(func() (cli.Service, error) {
 		once.Do(func() {
-			cfg, err := cli.LoadConfigFromEnv()
+			paths, err := config.ResolvePaths()
 			if err != nil {
-				serviceError = err
+				serviceError = &cli.InvalidInputError{Message: err.Error()}
 				return
 			}
 
-			httpClient, err := cli.NewHTTPClient(cfg)
+			document, err := config.LoadDocument(config.LoadOptions{
+				ConfigHome: paths.ConfigHome,
+			})
 			if err != nil {
-				serviceError = err
+				serviceError = &cli.InvalidInputError{Message: err.Error()}
 				return
 			}
 
-			service = cli.NewService(httpClient)
+			catalogStore, err := catalog.NewStore(paths.CacheHome)
+			if err != nil {
+				serviceError = &cli.InvalidInputError{Message: err.Error()}
+				return
+			}
+
+			service = cli.NewService(document, catalogStore)
 		})
 
 		return service, serviceError

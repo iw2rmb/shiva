@@ -62,12 +62,38 @@ This document describes the current shipped `shiva` CLI surface, the selector gr
 - Errors write to stderr.
 
 ## Configuration
+- Source profiles and execution targets are loaded from `$XDG_CONFIG_HOME/shiva/profiles.yaml` or `~/.config/shiva/profiles.yaml`.
+- If no config file exists, the CLI synthesizes one default source profile from the environment-backed fallback below.
+- The config file supports:
+  - top-level `active_profile`
+  - `profiles.<name>.base_url`
+  - `profiles.<name>.token` or `profiles.<name>.token_env`
+  - `profiles.<name>.timeout`
+  - `targets.<name>.mode`
+  - `targets.<name>.source_profile`
+  - `targets.<name>.base_url`, `token`, `token_env`, and `timeout` for `direct` targets
+- A built-in `shiva` target always exists even when it is not declared in the config file.
+- `--profile <name>` overrides the active profile.
+- A configured target may override the source profile used for selector resolution.
 - `SHIVA_BASE_URL`
-  - Shiva HTTP base URL for the CLI
+  - fallback base URL used only when `~/.config/shiva/profiles.yaml` is absent
   - default: `http://127.0.0.1:8080`
 - `SHIVA_REQUEST_TIMEOUT_SECONDS`
-  - per-request timeout
+  - fallback timeout used only when `~/.config/shiva/profiles.yaml` is absent
   - default: `10`
+
+## Catalog Cache
+- Catalog data is cached under `$XDG_CACHE_HOME/shiva/catalog/v1` or `~/.cache/shiva/catalog/v1`.
+- The cache stores:
+  - repo inventory from `/v1/repos`
+  - default-branch freshness rows from `/v1/catalog/status`
+  - API inventory from `/v1/apis`
+  - operation inventory from `/v1/operations`
+  - explicit spec, operation, and call-plan responses for offline reuse
+- Floating selectors without `--sha` or `--rev` refresh lazily from `/v1/catalog/status` before refreshing catalog slices.
+- Pinned `--sha` and `--rev` selectors reuse immutable cache entries.
+- `--refresh` forces catalog refresh before the explicit spec/operation/call request.
+- `--offline` forbids network refreshes and serves only cached catalog and explicit response data.
 
 ## Exit Codes
 - `0`: success
@@ -78,7 +104,6 @@ This document describes the current shipped `shiva` CLI surface, the selector gr
 - `11`: internal client or server error
 
 ## Current Limits
-- `--profile`, `--refresh`, and `--offline` are parsed now so the command grammar is stable, but profile loading and catalog refresh behavior are not implemented yet.
 - Call shorthand currently exposes Shiva call planning only. Direct-target execution, final request dispatch, and dry-run executor formatting are not shipped yet.
 - Dynamic repo/API/operation/profile/target completions are not shipped yet.
 - `ls`, `sync`, and `batch` are not shipped yet beyond their explicit command placeholders.

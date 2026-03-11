@@ -184,29 +184,34 @@ type fakeService struct {
 	healthCalls    int
 	lastRequest    request.Envelope
 	lastFormat     SpecFormat
+	lastOptions    RequestOptions
 }
 
-func (s *fakeService) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {
+func (s *fakeService) GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error) {
 	s.specCalls++
 	s.lastRequest = selector
 	s.lastFormat = format
+	s.lastOptions = options
 	return s.specBody, nil
 }
 
-func (s *fakeService) GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error) {
+func (s *fakeService) GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error) {
 	s.operationCalls++
 	s.lastRequest = selector
+	s.lastOptions = options
 	return s.operationBody, nil
 }
 
-func (s *fakeService) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
+func (s *fakeService) PlanCall(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error) {
 	s.callCalls++
 	s.lastRequest = selector
 	s.lastFormat = SpecFormatJSON
+	s.lastOptions = options
 	return s.callBody, nil
 }
 
-func (s *fakeService) Health(ctx context.Context) ([]byte, error) {
+func (s *fakeService) Health(ctx context.Context, options RequestOptions) ([]byte, error) {
 	s.healthCalls++
+	s.lastOptions = options
 	return s.healthBody, nil
 }

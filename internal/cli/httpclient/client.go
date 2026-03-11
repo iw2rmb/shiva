@@ -1,18 +1,26 @@
-package cli
+package httpclient
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
+
+type Config struct {
+	BaseURL        string
+	RequestTimeout time.Duration
+	Token          string
+}
 
 type SpecFormat string
 
@@ -21,33 +29,37 @@ const (
 	SpecFormatYAML SpecFormat = "yaml"
 )
 
-type HTTPClient struct {
+type Client struct {
 	baseURL    string
+	token      string
 	httpClient *http.Client
 }
 
-func NewHTTPClient(cfg Config) (*HTTPClient, error) {
+var errEmptyResponseBody = errors.New("empty response body")
+
+func New(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.BaseURL) == "" {
-		return nil, &InvalidInputError{Message: "base url must not be empty"}
+		return nil, fmt.Errorf("base url must not be empty")
 	}
 	if cfg.RequestTimeout <= 0 {
-		return nil, &InvalidInputError{Message: "request timeout must be greater than zero"}
+		return nil, fmt.Errorf("request timeout must be greater than zero")
 	}
 
-	return &HTTPClient{
-		baseURL: cfg.BaseURL,
+	return &Client{
+		baseURL: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		token:   strings.TrimSpace(cfg.Token),
 		httpClient: &http.Client{
 			Timeout: cfg.RequestTimeout,
 		},
 	}, nil
 }
 
-func (c *HTTPClient) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {
+func (c *Client) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {
 	if strings.TrimSpace(selector.Repo) == "" {
-		return nil, &InvalidInputError{Message: "repo path must not be empty"}
+		return nil, fmt.Errorf("repo path must not be empty")
 	}
 	if format != SpecFormatJSON && format != SpecFormatYAML {
-		return nil, &InvalidInputError{Message: fmt.Sprintf("unsupported spec format %q", format)}
+		return nil, fmt.Errorf("unsupported spec format %q", format)
 	}
 
 	query := snapshotQuery(selector)
@@ -56,9 +68,9 @@ func (c *HTTPClient) GetSpec(ctx context.Context, selector request.Envelope, for
 	return c.get(ctx, "/v1/spec?"+query.Encode())
 }
 
-func (c *HTTPClient) GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error) {
+func (c *Client) GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	if strings.TrimSpace(selector.Repo) == "" {
-		return nil, &InvalidInputError{Message: "repo path must not be empty"}
+		return nil, fmt.Errorf("repo path must not be empty")
 	}
 
 	query := snapshotQuery(selector)
@@ -72,7 +84,7 @@ func (c *HTTPClient) GetOperation(ctx context.Context, selector request.Envelope
 	return c.get(ctx, "/v1/operation?"+query.Encode())
 }
 
-func (c *HTTPClient) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
+func (c *Client) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	body, err := json.Marshal(selector)
 	if err != nil {
 		return nil, fmt.Errorf("encode call request: %w", err)
@@ -81,7 +93,32 @@ func (c *HTTPClient) PlanCall(ctx context.Context, selector request.Envelope) ([
 	return c.postJSON(ctx, "/v1/call", body)
 }
 
-func (c *HTTPClient) Health(ctx context.Context) ([]byte, error) {
+func (c *Client) ListRepos(ctx context.Context) ([]byte, error) {
+	return c.get(ctx, "/v1/repos")
+}
+
+func (c *Client) GetCatalogStatus(ctx context.Context, repo string) ([]byte, error) {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return nil, fmt.Errorf("repo path must not be empty")
+	}
+
+	query := url.Values{}
+	query.Set("repo", repo)
+	return c.get(ctx, "/v1/catalog/status?"+query.Encode())
+}
+
+func (c *Client) ListAPIs(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	query := snapshotQuery(selector)
+	return c.get(ctx, "/v1/apis?"+query.Encode())
+}
+
+func (c *Client) ListOperations(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	query := snapshotQuery(selector)
+	return c.get(ctx, "/v1/operations?"+query.Encode())
+}
+
+func (c *Client) Health(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/healthz")
 }
 
@@ -100,7 +137,7 @@ func snapshotQuery(selector request.Envelope) url.Values {
 	return query
 }
 
-func (c *HTTPClient) get(ctx context.Context, requestPath string) ([]byte, error) {
+func (c *Client) get(ctx context.Context, requestPath string) ([]byte, error) {
 	if c == nil || c.httpClient == nil {
 		return nil, fmt.Errorf("http client is not configured")
 	}
@@ -109,10 +146,11 @@ func (c *HTTPClient) get(ctx context.Context, requestPath string) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+	c.applyHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, &TransportError{Err: err}
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -133,7 +171,7 @@ func (c *HTTPClient) get(ctx context.Context, requestPath string) ([]byte, error
 	return body, nil
 }
 
-func (c *HTTPClient) postJSON(ctx context.Context, requestPath string, body []byte) ([]byte, error) {
+func (c *Client) postJSON(ctx context.Context, requestPath string, body []byte) ([]byte, error) {
 	if c == nil || c.httpClient == nil {
 		return nil, fmt.Errorf("http client is not configured")
 	}
@@ -143,10 +181,11 @@ func (c *HTTPClient) postJSON(ctx context.Context, requestPath string, body []by
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.applyHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, &TransportError{Err: err}
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -165,6 +204,30 @@ func (c *HTTPClient) postJSON(ctx context.Context, requestPath string, body []by
 	}
 
 	return responseBody, nil
+}
+
+func (c *Client) applyHeaders(req *http.Request) {
+	if c == nil || req == nil {
+		return
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+}
+
+type HTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	if e == nil {
+		return "http request failed"
+	}
+	if strings.TrimSpace(e.Message) == "" {
+		return fmt.Sprintf("http request failed with status %d", e.StatusCode)
+	}
+	return e.Message
 }
 
 func decodeErrorMessage(statusCode int, body []byte) string {

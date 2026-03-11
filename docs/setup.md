@@ -11,7 +11,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 ## Run
 - Start service:
   - `go run ./cmd/shivad`
-- Run draft CLI against a running Shiva instance:
+- Run the CLI against a running Shiva instance:
   - `go run ./cmd/shiva allure/allure-deployment`
   - `go run ./cmd/shiva allure/allure-deployment#findAll_42`
 - Run tests:
@@ -60,9 +60,51 @@ This document describes runtime setup, configuration, and startup behavior of th
 - `SHIVA_TRACING_ENABLED` (default `true`).
 - `SHIVA_TRACING_STDOUT` (default `false`).
 
-### Draft CLI
+### CLI Fallbacks
 - `SHIVA_BASE_URL` (default `http://127.0.0.1:8080`).
 - `SHIVA_REQUEST_TIMEOUT_SECONDS` (default `10`).
+
+## CLI Runtime Files
+- Config file:
+  - `$XDG_CONFIG_HOME/shiva/profiles.yaml` or `~/.config/shiva/profiles.yaml`
+- Cache root:
+  - `$XDG_CACHE_HOME/shiva/catalog/v1` or `~/.cache/shiva/catalog/v1`
+
+The CLI loads source profiles and execution targets from `profiles.yaml`.
+
+Minimal profile shape:
+- `base_url`
+- `token` or `token_env` (optional today)
+- `timeout`
+
+Minimal target shape:
+- `mode`
+- `source_profile` (optional)
+- `base_url`, `token`, `token_env`, `timeout` for `direct` targets
+
+Example:
+
+```yaml
+active_profile: default
+profiles:
+  default:
+    base_url: http://127.0.0.1:8080
+    timeout: 10s
+targets:
+  prod:
+    mode: direct
+    base_url: https://api.example
+    timeout: 10s
+    source_profile: default
+```
+
+If `profiles.yaml` is absent, the CLI synthesizes one `default` profile from `SHIVA_BASE_URL` and `SHIVA_REQUEST_TIMEOUT_SECONDS`.
+
+Current CLI cache behavior:
+- floating selectors refresh repo/API/operation catalog slices lazily
+- pinned `--sha` and `--rev` selectors reuse immutable cache entries
+- `--refresh` forces network refresh
+- `--offline` serves only cached catalog and explicit response data
 
 ## Health and Metrics
 - `GET /healthz`
@@ -73,7 +115,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 - Kubernetes manifest example: `deploy/k8s/shiva.yaml`.
 
 ## References
-- Draft CLI behavior: `docs/cli.md`
+- CLI behavior: `docs/cli.md`
 - GitLab ingest flow: `docs/gitlab.md`
 - Endpoint/index and read routes: `docs/endpoints.md`
 - Webhook contracts: `docs/webhooks.md`

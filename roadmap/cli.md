@@ -56,7 +56,7 @@ Legend: [ ] todo, [x] done.
 3. Add shared flag parsing and validation for `--api`, `--sha`, `--rev`, `--profile`, `--via`, `--refresh`, `--offline`, `--dry-run`, and output mode selection.
 4. Keep exit-code mapping centralized so shorthand, utility subcommands, and completion all return the design contract of `0`, `2`, `3`, `4`, `10`, or `11`.
 
-- [ ] 1.6 Add XDG-backed profiles, targets, and catalog cache
+- [x] 1.6 Add XDG-backed profiles, targets, and catalog cache
   - Repository: `shiva`
   - Component: `internal/cli/profile`, `internal/cli/target`, `internal/cli/catalog`, `internal/cli/httpclient`, `internal/cli/config`
   - Reasoning: `xhigh`

@@ -28,6 +28,7 @@ Current baseline should be validated by running `go test ./...`.
 ## Coverage Areas
 - Config parsing and defaults.
 - CLI shorthand parsing, request-envelope normalization, query-transport dispatch, health command wiring, and static completion generation.
+- XDG-backed CLI config loading, source-profile selection, target source-profile overrides, catalog refresh policy, and offline cache reuse.
 - GitLab API client behavior.
 - Startup schema migration bootstrap and checksum validation.
 - Startup indexing orchestration and checkpoint resume behavior.

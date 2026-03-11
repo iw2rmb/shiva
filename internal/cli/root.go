@@ -53,7 +53,7 @@ func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
 		newSyncCommand(),
 		newBatchCommand(),
 		newCompletionCommand(rootCmd),
-		newHealthCommand(serviceFactory),
+		newHealthCommand(serviceFactory, flags),
 	)
 	return rootCmd
 }
@@ -71,19 +71,25 @@ func addSharedFlags(command *cobra.Command, flags *RootFlags) {
 }
 
 func executeInvocation(ctx context.Context, service Service, invocation ShorthandInvocation, flags RootFlags) ([]byte, error) {
+	options := RequestOptions{
+		Profile: flags.Profile,
+		Refresh: flags.Refresh,
+		Offline: flags.Offline,
+	}
+
 	switch invocation.Envelope.Kind {
 	case request.KindSpec:
 		format, err := resolveOutputMode(invocation.Envelope.Kind, flags.Output)
 		if err != nil {
 			return nil, err
 		}
-		return service.GetSpec(ctx, invocation.Envelope, format)
+		return service.GetSpec(ctx, invocation.Envelope, options, format)
 	case request.KindOperation:
 		format, err := resolveOutputMode(invocation.Envelope.Kind, flags.Output)
 		if err != nil {
 			return nil, err
 		}
-		body, err := service.GetOperation(ctx, invocation.Envelope)
+		body, err := service.GetOperation(ctx, invocation.Envelope, options)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +101,7 @@ func executeInvocation(ctx context.Context, service Service, invocation Shorthan
 		if _, err := resolveOutputMode(invocation.Envelope.Kind, flags.Output); err != nil {
 			return nil, err
 		}
-		return service.PlanCall(ctx, invocation.Envelope)
+		return service.PlanCall(ctx, invocation.Envelope, options)
 	default:
 		return nil, fmt.Errorf("unsupported command kind %q", invocation.Envelope.Kind)
 	}
@@ -172,7 +178,7 @@ func newBatchCommand() *cobra.Command {
 	}
 }
 
-func newHealthCommand(serviceFactory func() (Service, error)) *cobra.Command {
+func newHealthCommand(serviceFactory func() (Service, error), flags *RootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:           "health",
 		Short:         "Check Shiva CLI source health",
@@ -185,7 +191,9 @@ func newHealthCommand(serviceFactory func() (Service, error)) *cobra.Command {
 				return err
 			}
 
-			body, err := service.Health(cmd.Context())
+			body, err := service.Health(cmd.Context(), RequestOptions{
+				Profile: flags.Profile,
+			})
 			if err != nil {
 				return err
 			}
