@@ -11,6 +11,9 @@ This document describes runtime setup, configuration, and startup behavior of th
 ## Run
 - Start service:
   - `go run ./cmd/shivad`
+- Run draft CLI against a running Shiva instance:
+  - `go run ./cmd/shiva allure/allure-deployment`
+  - `go run ./cmd/shiva allure/allure-deployment#findAll_42`
 - Run tests:
   - `go test ./...`
 
@@ -57,6 +60,10 @@ This document describes runtime setup, configuration, and startup behavior of th
 - `SHIVA_TRACING_ENABLED` (default `true`).
 - `SHIVA_TRACING_STDOUT` (default `false`).
 
+### Draft CLI
+- `SHIVA_BASE_URL` (default `http://127.0.0.1:8080`).
+- `SHIVA_REQUEST_TIMEOUT_SECONDS` (default `10`).
+
 ## Health and Metrics
 - `GET /healthz`
   - returns service status and DB health (`ok`, `unreachable`).
@@ -66,6 +73,7 @@ This document describes runtime setup, configuration, and startup behavior of th
 - Kubernetes manifest example: `deploy/k8s/shiva.yaml`.
 
 ## References
+- Draft CLI behavior: `docs/cli.md`
 - GitLab ingest flow: `docs/gitlab.md`
 - Endpoint/index and read routes: `docs/endpoints.md`
 - Webhook contracts: `docs/webhooks.md`

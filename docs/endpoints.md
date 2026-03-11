@@ -100,6 +100,7 @@ Status behavior:
 - full-spec routes support `ETag` and `If-None-Match` (`304`).
 
 ## References
+- Draft CLI behavior on top of current routes: `docs/cli.md`
 - Ingestion/build flow: `docs/gitlab.md`
 - Runtime setup and selector defaults: `docs/setup.md`
 - Webhook-triggered processing context: `docs/webhooks.md`

@@ -7,6 +7,7 @@ Shiva is a Go service that ingests GitLab push events, detects OpenAPI changes, 
 - Processing model: async DB-backed worker with retry/backoff.
 - OpenAPI detection: compare-based candidate resolution from GitLab APIs (no full-tree bootstrap discovery yet).
 - Read API: selector-based full spec fetch and endpoint operation slices.
+- Draft CLI: repo spec fetch and `#operationId` lookup for repos with exactly one active API root.
 
 ## HTTP Routes
 - `POST /internal/webhooks/gitlab`
@@ -40,6 +41,7 @@ Operation-slice semantics:
 
 ## Documentation
 - Setup and configuration: [docs/setup.md](docs/setup.md)
+- Draft CLI behavior: [docs/cli.md](docs/cli.md)
 - GitLab spec ingestion flow: [docs/gitlab.md](docs/gitlab.md)
 - Endpoint extraction and read routes: [docs/endpoints.md](docs/endpoints.md)
 - Inbound/outbound webhook contracts: [docs/webhooks.md](docs/webhooks.md)

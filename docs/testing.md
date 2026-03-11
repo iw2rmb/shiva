@@ -12,6 +12,8 @@ Current baseline should be validated by running `go test ./...`.
 ## Focused Commands
 - HTTP routes and webhook handlers:
   - `go test ./internal/http`
+- Draft CLI parser, service logic, and completion generation:
+  - `go test ./internal/cli ./cmd/shiva`
 - OpenAPI resolver/build/diff:
   - `go test ./internal/openapi`
 - Store + selector behavior:
@@ -23,6 +25,7 @@ Current baseline should be validated by running `go test ./...`.
 
 ## Coverage Areas
 - Config parsing and defaults.
+- Draft CLI selector parsing, single-active-API resolution, client-side `operationId` lookup, and static completion generation.
 - GitLab API client behavior.
 - Startup schema migration bootstrap and checksum validation.
 - Startup indexing orchestration and checkpoint resume behavior.
@@ -57,6 +60,7 @@ Current baseline should be validated by running `go test ./...`.
   API-scoped payload contract fields (`api`, `api_revision_id`), per-API event-id identity, and mixed API deliveries in a single repo revision.
 
 ## Cross-Checks
+- `docs/cli.md`: draft CLI surface, output, and current limits.
 - `docs/database.md`: API-scoped artifact/index/change and listing behavior.
 - `docs/endpoints.md`: read route contract matrix and delimiter/selector semantics.
 - `docs/webhooks.md`: API-scoped notification identity and payload.
@@ -69,6 +73,7 @@ When SQL schema/query files change:
 3. Run full suite (`go test ./...`).
 
 ## References
+- Draft CLI behavior: `docs/cli.md`
 - Runtime/setup details: `docs/setup.md`
 - Ingest behavior under test: `docs/gitlab.md`
 - Endpoint route behavior under test: `docs/endpoints.md`
