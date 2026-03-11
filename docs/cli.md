@@ -13,11 +13,13 @@ This document describes the current shipped `shiva` CLI surface, the selector gr
 - Explicit subcommands:
   - `shiva completion bash|zsh|fish|powershell`
   - `shiva health`
-  - `shiva ls`
+  - `shiva ls repos`
+  - `shiva ls apis <repo-ref>`
+  - `shiva ls ops <repo-ref>`
   - `shiva sync <repo-ref>`
   - `shiva batch`
 
-`completion` and `health` are implemented end-to-end. `ls`, `sync`, and `batch` are explicit commands already, but they still return `not implemented yet` until later CLI roadmap items land.
+`completion`, `health`, `ls`, and `sync` are implemented end-to-end. `batch` is still a placeholder until the later CLI roadmap item lands.
 
 ## Selector Grammar
 - `repo-ref` uses the raw GitLab `path_with_namespace`, for example `allure/allure-deployment`.
@@ -58,6 +60,12 @@ This document describes the current shipped `shiva` CLI surface, the selector gr
   - current output: normalized call-plan JSON from `POST /v1/call`
   - supported `-o/--output`: `json`
   - `--dry-run` is forwarded into the call envelope, but the current backend remains planning-only and does not dispatch upstream requests
+- `shiva ls repos`, `shiva ls apis`, `shiva ls ops`
+  - supported `-o/--output`: `table`, `tsv`, `json`, `ndjson`
+  - default output: `table` on TTY, `ndjson` otherwise
+  - `ls ops` rows include repo, API, method, path, operation id, summary, and deprecated state
+- `shiva sync <repo-ref>`
+  - output: JSON summary with repo, cache scope, resolved snapshot revision when known, API count, and refreshed operation-catalog count
 - Success writes to stdout.
 - Errors write to stderr.
 
@@ -106,7 +114,11 @@ This document describes the current shipped `shiva` CLI surface, the selector gr
 ## Current Limits
 - Call shorthand currently exposes Shiva call planning only. Direct-target execution, final request dispatch, and dry-run executor formatting are not shipped yet.
 - Dynamic repo/API/operation/profile/target completions are not shipped yet.
-- `ls`, `sync`, and `batch` are not shipped yet beyond their explicit command placeholders.
+- `batch` is not shipped yet beyond its explicit command placeholder.
+
+## Ambiguity Reporting
+- Multi-API spec ambiguity is surfaced as CLI invalid-input output with candidate API rows from the query transport.
+- Duplicate operation-id and method/path ambiguity is surfaced as CLI invalid-input output with candidate API, method, path, and operation id data from the query transport.
 
 ## Zsh Installation
 - Generate the completion file with:

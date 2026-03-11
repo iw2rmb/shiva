@@ -11,6 +11,7 @@ import (
 	"github.com/iw2rmb/shiva/internal/cli/catalog"
 	"github.com/iw2rmb/shiva/internal/cli/config"
 	"github.com/iw2rmb/shiva/internal/cli/httpclient"
+	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/profile"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,10 @@ type Service interface {
 	GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
 	PlanCall(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
+	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
+	ListAPIs(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
+	ListOperations(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
+	Sync(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
 	Health(ctx context.Context, options RequestOptions) ([]byte, error)
 }
 
@@ -399,6 +404,9 @@ func normalizeServiceError(err error) error {
 
 	var httpErr *httpclient.HTTPError
 	if errors.As(err, &httpErr) {
+		if conflictErr := normalizeHTTPConflict(httpErr); conflictErr != nil {
+			return conflictErr
+		}
 		return &HTTPError{
 			StatusCode: httpErr.StatusCode,
 			Message:    httpErr.Message,

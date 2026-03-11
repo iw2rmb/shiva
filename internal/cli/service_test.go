@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/iw2rmb/shiva/internal/cli/catalog"
 	"github.com/iw2rmb/shiva/internal/cli/config"
+	"github.com/iw2rmb/shiva/internal/cli/httpclient"
+	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/profile"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/iw2rmb/shiva/internal/cli/target"
@@ -331,6 +335,211 @@ func TestConvertJSONToYAML(t *testing.T) {
 	}
 }
 
+func TestRuntimeServiceListOperationsUsesCatalogAndAddsRepoField(t *testing.T) {
+	t.Parallel()
+
+	store, err := catalog.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create catalog store: %v", err)
+	}
+
+	client := &recordingTransportClient{
+		reposBody:      []byte(`[{"repo":"acme/platform"}]`),
+		statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
+		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","summary":"List pets","deprecated":false}]`),
+	}
+	service := &RuntimeService{
+		document: config.Document{
+			ActiveProfile: "default",
+			Profiles: map[string]profile.Source{
+				"default": {Name: "default", BaseURL: "http://default.example", Timeout: 5 * time.Second},
+			},
+			Targets: map[string]target.Entry{
+				target.BuiltinShivaName: target.BuiltinShiva(),
+			},
+		},
+		catalogService: catalog.NewService(store),
+		catalogStore:   store,
+		newClient: func(source profile.Source) (transportClient, error) {
+			_ = source
+			return client, nil
+		},
+	}
+
+	body, err := service.ListOperations(context.Background(), request.Envelope{
+		Repo: "acme/platform",
+	}, RequestOptions{}, clioutput.ListFormatNDJSON)
+	if err != nil {
+		t.Fatalf("list operations failed: %v", err)
+	}
+	if string(body) != "{\"repo\":\"acme/platform\",\"api\":\"apis/pets/openapi.yaml\",\"status\":\"\",\"api_spec_revision_id\":0,\"ingest_event_id\":0,\"ingest_event_sha\":\"\",\"ingest_event_branch\":\"\",\"method\":\"get\",\"path\":\"/pets\",\"operation_id\":\"listPets\",\"summary\":\"List pets\",\"deprecated\":false}\n" {
+		t.Fatalf("unexpected list ops body %q", string(body))
+	}
+	if client.operationsCalls != 1 {
+		t.Fatalf("expected one operations refresh, got %d", client.operationsCalls)
+	}
+}
+
+func TestRuntimeServiceSyncRefreshesRepoWideAndPerAPIOperationCatalogs(t *testing.T) {
+	t.Parallel()
+
+	store, err := catalog.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create catalog store: %v", err)
+	}
+
+	client := &recordingTransportClient{
+		reposBody:  []byte(`[{"repo":"acme/platform"}]`),
+		statusBody: []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		apisBody: []byte(`[
+			{"api":"apis/pets/openapi.yaml","has_snapshot":true},
+			{"api":"apis/orders/openapi.yaml","has_snapshot":true},
+			{"api":"apis/removed/openapi.yaml","has_snapshot":false}
+		]`),
+		operationsBody: []byte(`[]`),
+	}
+	service := &RuntimeService{
+		document: config.Document{
+			ActiveProfile: "default",
+			Profiles: map[string]profile.Source{
+				"default": {Name: "default", BaseURL: "http://default.example", Timeout: 5 * time.Second},
+			},
+			Targets: map[string]target.Entry{
+				target.BuiltinShivaName: target.BuiltinShiva(),
+			},
+		},
+		catalogService: catalog.NewService(store),
+		catalogStore:   store,
+		newClient: func(source profile.Source) (transportClient, error) {
+			_ = source
+			return client, nil
+		},
+	}
+
+	body, err := service.Sync(context.Background(), request.Envelope{
+		Repo: "acme/platform",
+	}, RequestOptions{})
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+	if !strings.Contains(string(body), `"operation_catalog_count":3`) {
+		t.Fatalf("expected sync result to include repo-wide plus per-api catalogs, got %q", string(body))
+	}
+	if client.operationsCalls != 3 {
+		t.Fatalf("expected repo-wide plus two api-scoped operations refreshes, got %d", client.operationsCalls)
+	}
+}
+
+func TestRuntimeServiceNormalizesAmbiguousConflictsIntoCLIInputErrors(t *testing.T) {
+	t.Parallel()
+
+	store, err := catalog.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create catalog store: %v", err)
+	}
+
+	client := &recordingTransportClient{
+		reposBody:      []byte(`[{"repo":"acme/platform"}]`),
+		statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
+		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","operation_id":"listPets"}]`),
+		operationErr: &httpclient.HTTPError{
+			StatusCode: 409,
+			Message:    "operation selector matched multiple operations",
+			Body:       []byte(`{"error":"operation selector matched multiple operations","candidates":[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets"},{"api":"apis/orders/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets"}]}`),
+		},
+	}
+	service := &RuntimeService{
+		document: config.Document{
+			ActiveProfile: "default",
+			Profiles: map[string]profile.Source{
+				"default": {Name: "default", BaseURL: "http://default.example", Timeout: 5 * time.Second},
+			},
+			Targets: map[string]target.Entry{
+				target.BuiltinShivaName: target.BuiltinShiva(),
+			},
+		},
+		catalogService: catalog.NewService(store),
+		catalogStore:   store,
+		newClient: func(source profile.Source) (transportClient, error) {
+			_ = source
+			return client, nil
+		},
+	}
+
+	_, err = service.GetOperation(context.Background(), request.Envelope{
+		Repo:        "acme/platform",
+		OperationID: "listPets",
+	}, RequestOptions{})
+	if err == nil {
+		t.Fatalf("expected ambiguity error")
+	}
+
+	ambiguousErr := &AmbiguousOperationError{}
+	if !errors.As(err, &ambiguousErr) {
+		t.Fatalf("expected ambiguous operation error, got %T", err)
+	}
+	if !strings.Contains(err.Error(), "apis/orders/openapi.yaml") {
+		t.Fatalf("expected candidate api names in error, got %q", err.Error())
+	}
+}
+
+func TestRuntimeServiceNormalizesAPIAmbiguityIntoAPIError(t *testing.T) {
+	t.Parallel()
+
+	store, err := catalog.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create catalog store: %v", err)
+	}
+
+	client := &recordingTransportClient{
+		reposBody:  []byte(`[{"repo":"acme/platform"}]`),
+		statusBody: []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		apisBody: []byte(`[
+			{"api":"apis/pets/openapi.yaml","status":"active","has_snapshot":true},
+			{"api":"apis/orders/openapi.yaml","status":"active","has_snapshot":true}
+		]`),
+		specErr: &httpclient.HTTPError{
+			StatusCode: 409,
+			Message:    "multiple APIs matched the selector",
+			Body:       []byte(`{"error":"multiple APIs matched the selector","candidates":[{"api":"apis/pets/openapi.yaml","status":"active"},{"api":"apis/orders/openapi.yaml","status":"active"}]}`),
+		},
+	}
+	service := &RuntimeService{
+		document: config.Document{
+			ActiveProfile: "default",
+			Profiles: map[string]profile.Source{
+				"default": {Name: "default", BaseURL: "http://default.example", Timeout: 5 * time.Second},
+			},
+			Targets: map[string]target.Entry{
+				target.BuiltinShivaName: target.BuiltinShiva(),
+			},
+		},
+		catalogService: catalog.NewService(store),
+		catalogStore:   store,
+		newClient: func(source profile.Source) (transportClient, error) {
+			_ = source
+			return client, nil
+		},
+	}
+
+	_, err = service.GetSpec(context.Background(), request.Envelope{
+		Repo: "acme/platform",
+	}, RequestOptions{}, SpecFormatJSON)
+	if err == nil {
+		t.Fatalf("expected api ambiguity error")
+	}
+
+	ambiguousErr := &AmbiguousAPIError{}
+	if !errors.As(err, &ambiguousErr) {
+		t.Fatalf("expected ambiguous api error, got %T", err)
+	}
+	if !strings.Contains(err.Error(), "apis/orders/openapi.yaml") {
+		t.Fatalf("expected candidate api names in error, got %q", err.Error())
+	}
+}
+
 type recordingTransportClient struct {
 	reposBody             []byte
 	statusBody            []byte
@@ -340,6 +549,13 @@ type recordingTransportClient struct {
 	operationBody         []byte
 	callBody              []byte
 	healthBody            []byte
+	specErr               error
+	operationErr          error
+	callErr               error
+	reposErr              error
+	statusErr             error
+	apisErr               error
+	operationsErr         error
 	reposCalls            int
 	statusCalls           int
 	apisCalls             int
@@ -357,41 +573,62 @@ func (c *recordingTransportClient) GetSpec(ctx context.Context, selector request
 	c.specCalls++
 	c.lastSpecSelector = selector
 	_ = format
+	if c.specErr != nil {
+		return nil, c.specErr
+	}
 	return c.specBody, nil
 }
 
 func (c *recordingTransportClient) GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	c.operationCalls++
 	c.lastOperationSelector = selector
+	if c.operationErr != nil {
+		return nil, c.operationErr
+	}
 	return c.operationBody, nil
 }
 
 func (c *recordingTransportClient) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	c.callCalls++
 	c.lastCallSelector = selector
+	if c.callErr != nil {
+		return nil, c.callErr
+	}
 	return c.callBody, nil
 }
 
 func (c *recordingTransportClient) ListRepos(ctx context.Context) ([]byte, error) {
 	c.reposCalls++
+	if c.reposErr != nil {
+		return nil, c.reposErr
+	}
 	return c.reposBody, nil
 }
 
 func (c *recordingTransportClient) GetCatalogStatus(ctx context.Context, repo string) ([]byte, error) {
 	c.statusCalls++
 	c.lastCatalogRepo = repo
+	if c.statusErr != nil {
+		return nil, c.statusErr
+	}
 	return c.statusBody, nil
 }
 
 func (c *recordingTransportClient) ListAPIs(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	c.apisCalls++
 	c.lastSpecSelector = selector
+	if c.apisErr != nil {
+		return nil, c.apisErr
+	}
 	return c.apisBody, nil
 }
 
 func (c *recordingTransportClient) ListOperations(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	c.operationsCalls++
 	c.lastOperationSelector = selector
+	if c.operationsErr != nil {
+		return nil, c.operationsErr
+	}
 	return c.operationsBody, nil
 }
 

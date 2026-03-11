@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
@@ -173,18 +174,194 @@ func TestRootCommandHealthUsesService(t *testing.T) {
 	}
 }
 
+func TestRootCommandListAndSyncSubcommands(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name               string
+		args               []string
+		expectedStdout     string
+		expectedListRepos  int
+		expectedListAPIs   int
+		expectedListOps    int
+		expectedSync       int
+		expectedFormat     string
+		expectListTarget   bool
+		expectedListTarget request.Envelope
+	}{
+		{
+			name:              "ls repos defaults to ndjson on non tty",
+			args:              []string{"ls", "repos"},
+			expectedStdout:    "{\"repo\":\"acme/platform\"}\n",
+			expectedListRepos: 1,
+			expectedFormat:    "ndjson",
+		},
+		{
+			name:             "ls apis accepts snapshot selector",
+			args:             []string{"ls", "apis", "--rev", "42", "-o", "json", "acme/platform"},
+			expectedStdout:   "[{\"repo\":\"acme/platform\",\"api\":\"apis/pets/openapi.yaml\"}]\n",
+			expectedListAPIs: 1,
+			expectedFormat:   "json",
+			expectListTarget: true,
+			expectedListTarget: request.Envelope{
+				Repo:       "acme/platform",
+				RevisionID: 42,
+			},
+		},
+		{
+			name:             "ls ops forwards api selector",
+			args:             []string{"ls", "ops", "--api", "apis/pets/openapi.yaml", "-o", "tsv", "acme/platform"},
+			expectedStdout:   "repo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n",
+			expectedListOps:  1,
+			expectedFormat:   "tsv",
+			expectListTarget: true,
+			expectedListTarget: request.Envelope{
+				Repo: "acme/platform",
+				API:  "apis/pets/openapi.yaml",
+			},
+		},
+		{
+			name:             "sync refreshes repo snapshot",
+			args:             []string{"sync", "--rev", "42", "acme/platform"},
+			expectedStdout:   "{\"repo\":\"acme/platform\",\"scope\":\"rev:42\"}\n",
+			expectedSync:     1,
+			expectListTarget: true,
+			expectedListTarget: request.Envelope{
+				Repo:       "acme/platform",
+				RevisionID: 42,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := &fakeService{
+				listReposBody: []byte("{\"repo\":\"acme/platform\"}\n"),
+				listAPIsBody:  []byte("[{\"repo\":\"acme/platform\",\"api\":\"apis/pets/openapi.yaml\"}]"),
+				listOpsBody:   []byte("repo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n"),
+				syncBody:      []byte("{\"repo\":\"acme/platform\",\"scope\":\"rev:42\"}"),
+			}
+
+			stdout := &bytes.Buffer{}
+			command := NewRootCommand(func() (Service, error) {
+				return service, nil
+			})
+			command.SetOut(stdout)
+			command.SetErr(&bytes.Buffer{})
+			command.SetArgs(testCase.args)
+
+			if err := command.ExecuteContext(context.Background()); err != nil {
+				t.Fatalf("execute command failed: %v", err)
+			}
+			if stdout.String() != testCase.expectedStdout {
+				t.Fatalf("expected stdout %q, got %q", testCase.expectedStdout, stdout.String())
+			}
+			if service.listReposCalls != testCase.expectedListRepos {
+				t.Fatalf("expected list repos calls %d, got %d", testCase.expectedListRepos, service.listReposCalls)
+			}
+			if service.listAPIsCalls != testCase.expectedListAPIs {
+				t.Fatalf("expected list apis calls %d, got %d", testCase.expectedListAPIs, service.listAPIsCalls)
+			}
+			if service.listOpsCalls != testCase.expectedListOps {
+				t.Fatalf("expected list ops calls %d, got %d", testCase.expectedListOps, service.listOpsCalls)
+			}
+			if service.syncCalls != testCase.expectedSync {
+				t.Fatalf("expected sync calls %d, got %d", testCase.expectedSync, service.syncCalls)
+			}
+			if testCase.expectedFormat != "" && service.lastListFormat != testCase.expectedFormat {
+				t.Fatalf("expected list format %q, got %q", testCase.expectedFormat, service.lastListFormat)
+			}
+			if testCase.expectListTarget && !reflect.DeepEqual(service.lastListRequest, testCase.expectedListTarget) {
+				t.Fatalf("expected list request %+v, got %+v", testCase.expectedListTarget, service.lastListRequest)
+			}
+		})
+	}
+}
+
+func TestRootCommandListAndSyncRejectRefreshOfflineCombination(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "ls repos",
+			args: []string{"ls", "repos", "--refresh", "--offline"},
+		},
+		{
+			name: "sync",
+			args: []string{"sync", "--refresh", "--offline", "acme/platform"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			command := NewRootCommand(func() (Service, error) {
+				return &fakeService{}, nil
+			})
+			command.SetOut(&bytes.Buffer{})
+			command.SetErr(&bytes.Buffer{})
+			command.SetArgs(testCase.args)
+
+			err := command.ExecuteContext(context.Background())
+			if err == nil {
+				t.Fatalf("expected invalid input error")
+			}
+			if err.Error() != "--refresh and --offline are mutually exclusive" {
+				t.Fatalf("unexpected error %q", err.Error())
+			}
+		})
+	}
+}
+
+func TestRootCommandListNDJSONLeavesEmptyResultsEmpty(t *testing.T) {
+	t.Parallel()
+
+	command := NewRootCommand(func() (Service, error) {
+		return &fakeService{}, nil
+	})
+	stdout := &bytes.Buffer{}
+	command.SetOut(stdout)
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"ls", "repos"})
+
+	if err := command.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("execute command failed: %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected empty ndjson output, got %q", stdout.String())
+	}
+}
+
 type fakeService struct {
-	specBody       []byte
-	operationBody  []byte
-	callBody       []byte
-	healthBody     []byte
-	specCalls      int
-	operationCalls int
-	callCalls      int
-	healthCalls    int
-	lastRequest    request.Envelope
-	lastFormat     SpecFormat
-	lastOptions    RequestOptions
+	specBody        []byte
+	operationBody   []byte
+	callBody        []byte
+	listReposBody   []byte
+	listAPIsBody    []byte
+	listOpsBody     []byte
+	syncBody        []byte
+	healthBody      []byte
+	specCalls       int
+	operationCalls  int
+	callCalls       int
+	listReposCalls  int
+	listAPIsCalls   int
+	listOpsCalls    int
+	syncCalls       int
+	healthCalls     int
+	lastRequest     request.Envelope
+	lastListRequest request.Envelope
+	lastFormat      SpecFormat
+	lastListFormat  string
+	lastOptions     RequestOptions
 }
 
 func (s *fakeService) GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error) {
@@ -208,6 +385,36 @@ func (s *fakeService) PlanCall(ctx context.Context, selector request.Envelope, o
 	s.lastFormat = SpecFormatJSON
 	s.lastOptions = options
 	return s.callBody, nil
+}
+
+func (s *fakeService) ListRepos(ctx context.Context, options RequestOptions, format output.ListFormat) ([]byte, error) {
+	s.listReposCalls++
+	s.lastListFormat = string(format)
+	s.lastOptions = options
+	return s.listReposBody, nil
+}
+
+func (s *fakeService) ListAPIs(ctx context.Context, selector request.Envelope, options RequestOptions, format output.ListFormat) ([]byte, error) {
+	s.listAPIsCalls++
+	s.lastListRequest = selector
+	s.lastListFormat = string(format)
+	s.lastOptions = options
+	return s.listAPIsBody, nil
+}
+
+func (s *fakeService) ListOperations(ctx context.Context, selector request.Envelope, options RequestOptions, format output.ListFormat) ([]byte, error) {
+	s.listOpsCalls++
+	s.lastListRequest = selector
+	s.lastListFormat = string(format)
+	s.lastOptions = options
+	return s.listOpsBody, nil
+}
+
+func (s *fakeService) Sync(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error) {
+	s.syncCalls++
+	s.lastListRequest = selector
+	s.lastOptions = options
+	return s.syncBody, nil
 }
 
 func (s *fakeService) Health(ctx context.Context, options RequestOptions) ([]byte, error) {

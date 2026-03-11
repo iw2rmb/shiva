@@ -39,30 +39,59 @@ func (e *NotFoundError) Error() string {
 }
 
 type AmbiguousAPIError struct {
-	Repo string
-	APIs []string
+	Message    string
+	Candidates []APICandidate
+}
+
+type APICandidate struct {
+	API    string
+	Status string
+}
+
+func (c APICandidate) String() string {
+	if strings.TrimSpace(c.Status) == "" {
+		return c.API
+	}
+	return fmt.Sprintf("%s (%s)", c.API, c.Status)
 }
 
 func (e *AmbiguousAPIError) Error() string {
 	if e == nil {
 		return "multiple active apis matched"
 	}
-	return fmt.Sprintf(
-		"repo %q has multiple active apis; draft CLI requires exactly one: %s",
-		e.Repo,
-		strings.Join(e.APIs, ", "),
-	)
+
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		message = "multiple APIs matched the selector"
+	}
+	if len(e.Candidates) == 0 {
+		return message
+	}
+	return message + "\n" + formatCandidates(e.Candidates)
 }
 
 type OperationCandidate struct {
-	Method string
-	Path   string
+	API         string
+	Method      string
+	Path        string
+	OperationID string
+}
+
+func (c OperationCandidate) String() string {
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(c.API) != "" {
+		parts = append(parts, c.API)
+	}
+	parts = append(parts, strings.TrimSpace(c.Method)+" "+strings.TrimSpace(c.Path))
+	if strings.TrimSpace(c.OperationID) != "" {
+		parts = append(parts, "operation_id="+c.OperationID)
+	}
+	return strings.Join(parts, " ")
 }
 
 type AmbiguousOperationError struct {
-	Repo        string
-	OperationID string
-	Candidates  []OperationCandidate
+	Message    string
+	Candidates []OperationCandidate
 }
 
 func (e *AmbiguousOperationError) Error() string {
@@ -70,17 +99,14 @@ func (e *AmbiguousOperationError) Error() string {
 		return "operation id is ambiguous"
 	}
 
-	parts := make([]string, 0, len(e.Candidates))
-	for _, candidate := range e.Candidates {
-		parts = append(parts, fmt.Sprintf("%s %s", candidate.Method, candidate.Path))
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		message = "operation selector matched multiple operations"
 	}
-
-	return fmt.Sprintf(
-		"operation %q in repo %q matched multiple endpoints: %s",
-		e.OperationID,
-		e.Repo,
-		strings.Join(parts, ", "),
-	)
+	if len(e.Candidates) == 0 {
+		return message
+	}
+	return message + "\n" + formatCandidates(e.Candidates)
 }
 
 type HTTPError struct {

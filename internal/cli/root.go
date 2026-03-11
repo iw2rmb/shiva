@@ -49,8 +49,8 @@ func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
 
 	addSharedFlags(rootCmd, flags)
 	rootCmd.AddCommand(
-		newListCommand(),
-		newSyncCommand(),
+		newListCommand(serviceFactory, flags),
+		newSyncCommand(serviceFactory, flags),
 		newBatchCommand(),
 		newCompletionCommand(rootCmd),
 		newHealthCommand(serviceFactory, flags),
@@ -141,31 +141,6 @@ func resolveOutputMode(kind request.Kind, output string) (SpecFormat, error) {
 	}
 }
 
-func newListCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:           "ls",
-		Short:         "List Shiva inventory",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("ls is not implemented yet")
-		},
-	}
-}
-
-func newSyncCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:           "sync <repo-ref>",
-		Short:         "Refresh Shiva catalog data",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		Args:          cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("sync is not implemented yet")
-		},
-	}
-}
-
 func newBatchCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:           "batch",
@@ -224,6 +199,9 @@ func writeOutput(writer io.Writer, body []byte) error {
 
 	if _, err := writer.Write(body); err != nil {
 		return fmt.Errorf("write output: %w", err)
+	}
+	if len(body) == 0 {
+		return nil
 	}
 	if len(body) > 0 && body[len(body)-1] == '\n' {
 		return nil

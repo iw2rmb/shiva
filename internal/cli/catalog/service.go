@@ -59,6 +59,38 @@ func NewService(store *Store) *Service {
 	}
 }
 
+func (s *Service) PrepareRepos(
+	ctx context.Context,
+	client inventoryClient,
+	profile string,
+	options RefreshOptions,
+) error {
+	if s == nil || s.store == nil {
+		return errors.New("catalog service is not configured")
+	}
+	return s.ensureRepos(ctx, client, profile, options)
+}
+
+func (s *Service) PrepareAPIs(
+	ctx context.Context,
+	client inventoryClient,
+	profile string,
+	selector request.Envelope,
+	options RefreshOptions,
+) (PreparedSnapshot, error) {
+	return s.prepare(ctx, client, profile, selector, options, false)
+}
+
+func (s *Service) PrepareOperations(
+	ctx context.Context,
+	client inventoryClient,
+	profile string,
+	selector request.Envelope,
+	options RefreshOptions,
+) (PreparedSnapshot, error) {
+	return s.prepare(ctx, client, profile, selector, options, true)
+}
+
 func (s *Service) PrepareSpec(
 	ctx context.Context,
 	client inventoryClient,

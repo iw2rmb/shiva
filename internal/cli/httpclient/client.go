@@ -162,6 +162,7 @@ func (c *Client) get(ctx context.Context, requestPath string) ([]byte, error) {
 		return nil, &HTTPError{
 			StatusCode: resp.StatusCode,
 			Message:    decodeErrorMessage(resp.StatusCode, body),
+			Body:       append([]byte(nil), body...),
 		}
 	}
 	if len(body) == 0 {
@@ -197,6 +198,7 @@ func (c *Client) postJSON(ctx context.Context, requestPath string, body []byte) 
 		return nil, &HTTPError{
 			StatusCode: resp.StatusCode,
 			Message:    decodeErrorMessage(resp.StatusCode, responseBody),
+			Body:       append([]byte(nil), responseBody...),
 		}
 	}
 	if len(responseBody) == 0 {
@@ -218,6 +220,7 @@ func (c *Client) applyHeaders(req *http.Request) {
 type HTTPError struct {
 	StatusCode int
 	Message    string
+	Body       []byte
 }
 
 func (e *HTTPError) Error() string {

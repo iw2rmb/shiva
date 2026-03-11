@@ -66,7 +66,7 @@ Legend: [ ] todo, [x] done.
 3. Refresh catalog slices through `/v1/catalog/status`, `/v1/repos`, `/v1/apis`, and `/v1/operations` before fetching full specs or executing calls.
 4. Enforce refresh behavior in one catalog service so floating snapshots auto-refresh when stale, `--refresh` forces network, and `--offline` forbids network.
 
-- [ ] 1.7 Implement inspect, list, and sync flows on top of the catalog
+- [x] 1.7 Implement inspect, list, and sync flows on top of the catalog
   - Repository: `shiva`
   - Component: `internal/cli/service`, `internal/cli/output`, `internal/cli/catalog`, `cmd/shiva`
   - Reasoning: `high`
