@@ -12,14 +12,14 @@ func (s *Server) handleGetSpec(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	resolved, err := s.readStore.ResolveSpecSnapshots(c.Context(), query.Snapshot)
+	resolved, err := s.readStore.ResolveSpecSnapshots(c.Context(), snapshotInputFromEnvelope(query.Envelope))
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
 
 	switch len(resolved.Candidates) {
 	case 0:
-		return s.writeQueryError(c, fmt.Errorf("%w: repo=%q", errSpecNotFound, query.Snapshot.RepoPath))
+		return s.writeQueryError(c, fmt.Errorf("%w: repo=%q", errSpecNotFound, query.Envelope.Repo))
 	case 1:
 	default:
 		return writeAPIAmbiguity(c, "spec query is ambiguous across APIs", resolved.Candidates)

@@ -1,7 +1,7 @@
 # Endpoints
 
 ## Scope
-This document describes how canonical OpenAPI specs are indexed and how Shiva serves query-driven read endpoints.
+This document describes how canonical OpenAPI specs are indexed and how Shiva serves query-driven read and call-planning endpoints.
 
 ## Build-Time Endpoint Extraction
 Canonical build:
@@ -27,6 +27,7 @@ Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifac
 ### Registered Surface
 - `GET /v1/spec`
 - `GET /v1/operation`
+- `POST /v1/call`
 - `GET /v1/apis`
 - `GET /v1/operations`
 - `GET /v1/repos`
@@ -87,6 +88,42 @@ Legacy path-segment endpoints were removed:
 - `path` is normalized to include a leading `/`
 - response body is the raw canonical operation object
 - ambiguous cross-API or duplicate-operation matches return `409` with candidate rows
+
+### `POST /v1/call`
+- request body is one JSON object using the shared CLI request-envelope shape
+- accepted request fields:
+  - `kind`
+  - `repo`
+  - optional `api`
+  - optional `revision_id` or `sha`
+  - optional `target`
+  - either:
+    - `operation_id`
+    - or `method` plus `path`
+  - optional `path_params`
+  - optional `query_params`
+  - optional `headers`
+  - optional `json`
+  - optional `body`
+  - optional `dry_run`
+- input validation matches the query read surface:
+  - `repo` is required
+  - `kind`, when present, must be `call`
+  - `target`, when present, must be `shiva`
+  - `operation_id` is mutually exclusive with `method` and `path`
+  - `revision_id` and `sha` are mutually exclusive on input
+  - `json` and `body` are mutually exclusive
+- the handler resolves the target operation through the same snapshot and operation-selection rules used by `GET /v1/operation`
+- response body is a normalized call plan:
+  - `request`
+    - explicit `repo`, resolved `api`, resolved `revision_id`, resolved `sha`, resolved `method`, resolved `path`, chosen `target`, optional resolved `operation_id`, and request-input fields
+  - `dispatch`
+    - `mode`
+    - `dry_run`
+    - `network`
+- `target` defaults to `shiva` when omitted
+- the current endpoint is planning-only: it does not dispatch an outbound call and always reports `dispatch.network=false`
+- ambiguous resolution returns `409` with operation candidate rows
 
 ### `GET /v1/apis`
 - supported query parameters:
@@ -149,12 +186,14 @@ Legacy path-segment endpoints were removed:
 ## Error Behavior
 - `400`
   - malformed or unsupported query combinations
+  - malformed call-envelope bodies
 - `404`
   - repo, snapshot, API snapshot, spec, or operation not found
 - `409`
   - unprocessed snapshot targets
   - ambiguous no-`api` spec resolution
   - ambiguous operation resolution
+  - ambiguous call resolution
 - `503`
   - database is not configured
 - `500`

@@ -115,6 +115,7 @@ func (s *Server) registerRoutes() {
 	v1 := s.app.Group("/v1")
 	v1.Get("/spec", s.handleGetSpec)
 	v1.Get("/operation", s.handleGetOperation)
+	v1.Post("/call", s.handlePostCall)
 	v1.Get("/apis", s.handleListAPIs)
 	v1.Get("/operations", s.handleListOperations)
 	v1.Get("/repos", s.handleListRepos)

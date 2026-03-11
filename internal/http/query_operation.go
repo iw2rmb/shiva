@@ -4,35 +4,15 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-
-	"github.com/iw2rmb/shiva/internal/store"
 )
 
 func (s *Server) handleGetOperation(c *fiber.Ctx) error {
-	snapshot, selector, err := parseOperationEndpointQuery(c)
+	envelope, err := parseOperationEndpointQuery(c)
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
 
-	var resolved store.ResolvedOperationCandidates
-	if selector.OperationID != "" {
-		resolved, err = s.readStore.ResolveOperationCandidatesByOperationID(
-			c.Context(),
-			store.ResolveOperationByIDInput{
-				ResolveReadSnapshotInput: snapshot,
-				OperationID:              selector.OperationID,
-			},
-		)
-	} else {
-		resolved, err = s.readStore.ResolveOperationCandidatesByMethodPath(
-			c.Context(),
-			store.ResolveOperationByMethodPathInput{
-				ResolveReadSnapshotInput: snapshot,
-				Method:                   selector.Method,
-				Path:                     selector.Path,
-			},
-		)
-	}
+	resolved, err := s.resolveOperationCandidates(c.Context(), envelope)
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}

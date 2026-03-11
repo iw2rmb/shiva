@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/iw2rmb/shiva/internal/store"
 )
 
@@ -273,9 +274,14 @@ func mapCatalogRevisionState(item *store.CatalogRevisionState) *catalogRevisionS
 
 func (s *Server) writeQueryError(c *fiber.Ctx, err error) error {
 	var validationErr *queryValidationError
+	var requestValidationErr *request.ValidationError
 
 	switch {
 	case errors.As(err, &validationErr):
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	case errors.As(err, &requestValidationErr):
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})

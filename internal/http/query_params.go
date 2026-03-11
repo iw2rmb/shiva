@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/iw2rmb/shiva/internal/store"
 )
 
@@ -23,14 +24,8 @@ func (e *queryValidationError) Error() string {
 }
 
 type normalizedSpecQuery struct {
-	Snapshot store.ResolveReadSnapshotInput
+	Envelope request.Envelope
 	Format   contentFormat
-}
-
-type normalizedOperationSelector struct {
-	OperationID string
-	Method      string
-	Path        string
 }
 
 func parseSpecQuery(c *fiber.Ctx) (normalizedSpecQuery, error) {
@@ -57,28 +52,52 @@ func parseSpecQuery(c *fiber.Ctx) (normalizedSpecQuery, error) {
 		format = parsedFormat
 	}
 
+	envelope, err := request.NormalizeEnvelope(request.Envelope{
+		Kind:       request.KindSpec,
+		Repo:       snapshot.RepoPath,
+		API:        snapshot.APIPath,
+		RevisionID: snapshot.RevisionID,
+		SHA:        snapshot.SHA,
+	}, request.NormalizeOptions{
+		DefaultKind: request.KindSpec,
+	})
+	if err != nil {
+		return normalizedSpecQuery{}, err
+	}
+
 	return normalizedSpecQuery{
-		Snapshot: snapshot,
+		Envelope: envelope,
 		Format:   format,
 	}, nil
 }
 
-func parseOperationEndpointQuery(c *fiber.Ctx) (store.ResolveReadSnapshotInput, normalizedOperationSelector, error) {
+func parseOperationEndpointQuery(c *fiber.Ctx) (request.Envelope, error) {
 	if err := rejectUnsupportedQueryParams(c, "format"); err != nil {
-		return store.ResolveReadSnapshotInput{}, normalizedOperationSelector{}, err
+		return request.Envelope{}, err
 	}
 
 	snapshot, err := parseSnapshotQuery(c, snapshotQueryOptions{allowAPI: true})
 	if err != nil {
-		return store.ResolveReadSnapshotInput{}, normalizedOperationSelector{}, err
+		return request.Envelope{}, err
 	}
 
-	selector, err := parseOperationSelectorQuery(c)
+	envelope, err := request.NormalizeEnvelope(request.Envelope{
+		Kind:        request.KindOperation,
+		Repo:        snapshot.RepoPath,
+		API:         snapshot.APIPath,
+		RevisionID:  snapshot.RevisionID,
+		SHA:         snapshot.SHA,
+		OperationID: strings.TrimSpace(c.Query("operation_id")),
+		Method:      c.Query("method"),
+		Path:        c.Query("path"),
+	}, request.NormalizeOptions{
+		DefaultKind: request.KindOperation,
+	})
 	if err != nil {
-		return store.ResolveReadSnapshotInput{}, normalizedOperationSelector{}, err
+		return request.Envelope{}, err
 	}
 
-	return snapshot, selector, nil
+	return envelope, nil
 }
 
 func parseAPIsQuery(c *fiber.Ctx) (store.ResolveReadSnapshotInput, error) {
@@ -145,7 +164,7 @@ func parseSnapshotQuery(c *fiber.Ctx, options snapshotQueryOptions) (store.Resol
 	if revisionID > 0 && sha != "" {
 		return store.ResolveReadSnapshotInput{}, invalidQuery("revision_id and sha are mutually exclusive")
 	}
-	if sha != "" && !isShortSHA(sha) {
+	if sha != "" && !request.IsShortSHA(sha) {
 		return store.ResolveReadSnapshotInput{}, invalidQuery("sha must be exactly 8 lowercase hex characters")
 	}
 
@@ -154,45 +173,6 @@ func parseSnapshotQuery(c *fiber.Ctx, options snapshotQueryOptions) (store.Resol
 		APIPath:    apiPath,
 		RevisionID: revisionID,
 		SHA:        sha,
-	}, nil
-}
-
-func parseOperationSelectorQuery(c *fiber.Ctx) (normalizedOperationSelector, error) {
-	operationIDPresent := hasQueryParam(c, "operation_id")
-	methodPresent := hasQueryParam(c, "method")
-	pathPresent := hasQueryParam(c, "path")
-
-	if operationIDPresent {
-		operationID := strings.TrimSpace(c.Query("operation_id"))
-		if operationID == "" {
-			return normalizedOperationSelector{}, invalidQuery("operation_id must not be empty")
-		}
-		if methodPresent || pathPresent {
-			return normalizedOperationSelector{}, invalidQuery("operation_id is mutually exclusive with method and path")
-		}
-		return normalizedOperationSelector{OperationID: operationID}, nil
-	}
-
-	if !methodPresent && !pathPresent {
-		return normalizedOperationSelector{}, invalidQuery("either operation_id or method and path are required")
-	}
-	if !methodPresent || !pathPresent {
-		return normalizedOperationSelector{}, invalidQuery("method and path must be provided together")
-	}
-
-	method := normalizeHTTPMethod(c.Query("method"))
-	if method == "" {
-		return normalizedOperationSelector{}, invalidQuery("method must be one of get, post, put, patch, delete, head, options, trace")
-	}
-
-	path := normalizeLookupPath(c.Query("path"))
-	if path == "" {
-		return normalizedOperationSelector{}, invalidQuery("path must not be empty")
-	}
-
-	return normalizedOperationSelector{
-		Method: method,
-		Path:   path,
 	}, nil
 }
 
@@ -230,36 +210,8 @@ func hasQueryParam(c *fiber.Ctx, name string) bool {
 	return c.Request().URI().QueryArgs().Has(name)
 }
 
-func normalizeLookupPath(value string) string {
-	path := strings.TrimSpace(value)
-	if path == "" {
-		return ""
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return path
-}
-
 func invalidQuery(message string) error {
 	return &queryValidationError{message: message}
-}
-
-func isShortSHA(value string) bool {
-	if len(value) != 8 {
-		return false
-	}
-	for _, character := range value {
-		switch {
-		case character >= '0' && character <= '9':
-			continue
-		case character >= 'a' && character <= 'f':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 var errOperationNotFound = errors.New("operation not found")

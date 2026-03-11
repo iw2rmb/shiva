@@ -38,15 +38,17 @@ func TestServer_QueryReadSurfaceIsRegistered(t *testing.T) {
 	s := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), &store.Store{})
 
 	testCases := []struct {
-		name string
-		path string
+		name   string
+		method string
+		path   string
 	}{
-		{name: "spec query endpoint", path: "/v1/spec?repo=acme%2Fplatform"},
-		{name: "operation query endpoint", path: "/v1/operation?repo=acme%2Fplatform&operation_id=listPets"},
-		{name: "apis query endpoint", path: "/v1/apis?repo=acme%2Fplatform"},
-		{name: "operations query endpoint", path: "/v1/operations?repo=acme%2Fplatform"},
-		{name: "repos query endpoint", path: "/v1/repos"},
-		{name: "catalog status endpoint", path: "/v1/catalog/status?repo=acme%2Fplatform"},
+		{name: "spec query endpoint", method: http.MethodGet, path: "/v1/spec?repo=acme%2Fplatform"},
+		{name: "operation query endpoint", method: http.MethodGet, path: "/v1/operation?repo=acme%2Fplatform&operation_id=listPets"},
+		{name: "call endpoint", method: http.MethodPost, path: "/v1/call"},
+		{name: "apis query endpoint", method: http.MethodGet, path: "/v1/apis?repo=acme%2Fplatform"},
+		{name: "operations query endpoint", method: http.MethodGet, path: "/v1/operations?repo=acme%2Fplatform"},
+		{name: "repos query endpoint", method: http.MethodGet, path: "/v1/repos"},
+		{name: "catalog status endpoint", method: http.MethodGet, path: "/v1/catalog/status?repo=acme%2Fplatform"},
 	}
 
 	for _, testCase := range testCases {
@@ -54,7 +56,7 @@ func TestServer_QueryReadSurfaceIsRegistered(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(http.MethodGet, testCase.path, nil)
+			req := httptest.NewRequest(testCase.method, testCase.path, nil)
 			resp, err := s.App().Test(req, -1)
 			if err != nil {
 				t.Fatalf("http test request failed: %v", err)

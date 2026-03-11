@@ -12,6 +12,8 @@ Current baseline should be validated by running `go test ./...`.
 ## Focused Commands
 - HTTP query endpoints and webhook handlers:
   - `go test ./internal/http`
+- Shared CLI request-envelope and call-planning packages:
+  - `go test ./internal/cli/request ./internal/cli/executor`
 - Draft CLI parser, service logic, and completion generation:
   - `go test ./internal/cli ./cmd/shiva`
 - OpenAPI resolver/build/diff:
@@ -39,11 +41,13 @@ Current baseline should be validated by running `go test ./...`.
 - Canonical spec build and endpoint extraction.
 - Semantic diff computation.
 - Query endpoint validation, snapshot resolution, ambiguity reporting, and catalog payload mapping.
+- Shared call-envelope normalization and Shiva call-plan generation.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
 - Endpoint contract tests for:
   - shared `repo`/`api`/`revision_id`/`sha` query validation,
   - `/v1/spec` format and `ETag` behavior,
   - `/v1/operation` operation-id vs method/path resolution rules,
+  - `/v1/call` request-envelope validation, ambiguity reporting, and resolved planning payloads,
   - `/v1/apis`, `/v1/operations`, `/v1/repos`, and `/v1/catalog/status` response shapes,
   - removal of legacy `/v1/specs` and `/v1/routes` read surfaces.
 - Outbound notifier signing, retries, and terminal state behavior.

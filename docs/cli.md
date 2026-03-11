@@ -59,17 +59,21 @@ This document describes the current draft `shiva` CLI and the read transport it 
 - Generated completion scripts are static; current completion covers only the stable command tree and shell-name arguments.
 - Dynamic repo/API/operation completions are not shipped yet.
 - The draft CLI does not keep a local catalog or refresh cache.
+- The draft CLI does not send request envelopes yet, even though the backend now accepts normalized call envelopes on `POST /v1/call`.
 
 ## Endpoint and Completion Decisions
 - The backend now ships query-style read endpoints:
   - `/v1/spec`
   - `/v1/operation`
+  - `/v1/call`
   - `/v1/apis`
   - `/v1/operations`
   - `/v1/repos`
   - `/v1/catalog/status`
 - The draft CLI uses `/v1/apis` and `/v1/spec`.
-- The draft CLI does not use `/v1/operation`, `/v1/operations`, `/v1/repos`, or `/v1/catalog/status` yet.
+- The draft CLI does not use `/v1/operation`, `/v1/call`, `/v1/operations`, `/v1/repos`, or `/v1/catalog/status` yet.
+- The shared request-envelope model now lives in code and already normalizes `spec`, `operation`, and `call` selector fields for later direct-call, Shiva-call, `ls --emit request`, and `batch` work.
+- `POST /v1/call` currently resolves and normalizes a call plan without dispatching upstream network traffic.
 - Dedicated inventory and freshness endpoints are in place for later catalog and dynamic-completion work.
 - Static completion generation is correct to ship now because the command tree is stable.
 - Dynamic completions should be added only after the CLI has a local catalog plus cheap server-side inventory/freshness reads.

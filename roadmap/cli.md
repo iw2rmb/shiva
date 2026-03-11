@@ -36,7 +36,7 @@ Legend: [ ] todo, [x] done.
 3. Add one shared query-normalization layer that validates `repo`, optional `api`, exclusive `revision_id|sha`, and `operation_id` vs `method+path` rules before calling the store.
 4. Remove the legacy path-segment read handlers and compatibility fallbacks once the query handlers use the new API-scoped store primitives end-to-end.
 
-- [ ] 1.4 Add a shared request envelope and Shiva call transport
+- [x] 1.4 Add a shared request envelope and Shiva call transport
   - Repository: `shiva`
   - Component: `internal/http`, `internal/cli/request`, `internal/cli/executor`
   - Reasoning: `high`
