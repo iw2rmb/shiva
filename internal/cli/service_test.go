@@ -101,6 +101,50 @@ func TestDraftServiceGetRepoSpecUsesResolvedAPI(t *testing.T) {
 	}
 }
 
+func TestDraftServiceGetOperationDownloadsFullSpecAndScansClientSide(t *testing.T) {
+	t.Parallel()
+
+	client := &recordingSpecClient{
+		listings: []APISpecListing{
+			{API: "service-catalog/allure-api.yaml", Status: "active"},
+		},
+		specBody: []byte(`{
+			"openapi":"3.1.0",
+			"paths":{
+				"/pets":{"get":{"operationId":"listPets","summary":"List pets","responses":{"200":{"description":"ok"}}}}
+			}
+		}`),
+	}
+
+	service := &DraftService{client: client}
+	body, err := service.GetOperation(context.Background(), "allure/allure-deployment", "listPets")
+	if err != nil {
+		t.Fatalf("get operation failed: %v", err)
+	}
+
+	var payload map[string]map[string]map[string]map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal operation payload failed: %v", err)
+	}
+
+	methodMap, ok := payload["paths"]["/pets"]
+	if !ok {
+		t.Fatalf("expected /pets path in payload, got %#v", payload)
+	}
+	if _, ok := methodMap["get"]; !ok {
+		t.Fatalf("expected get method in payload, got %#v", methodMap)
+	}
+	if client.lastRepoPath != "allure/allure-deployment" {
+		t.Fatalf("expected repo path to be recorded, got %q", client.lastRepoPath)
+	}
+	if client.lastAPIRoot != "service-catalog/allure-api.yaml" {
+		t.Fatalf("expected api root to be recorded, got %q", client.lastAPIRoot)
+	}
+	if client.lastFormat != SpecFormatJSON {
+		t.Fatalf("expected json format, got %q", client.lastFormat)
+	}
+}
+
 func TestEncodeDelimitedPath(t *testing.T) {
 	t.Parallel()
 

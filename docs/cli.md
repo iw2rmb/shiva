@@ -63,6 +63,13 @@ This document describes the shipped draft `shiva` CLI.
 ## Endpoint and Completion Decisions
 - No new read endpoint was required to ship the draft CLI.
 - The draft CLI reuses the current API listing route plus API-scoped spec fetch routes.
+- Query-style read endpoints are not shipped yet:
+  - `/v1/spec`
+  - `/v1/operation`
+  - `/v1/apis`
+  - `/v1/operations`
+  - `/v1/repos`
+  - `/v1/catalog/status`
 - Dedicated query-style inventory or freshness endpoints become necessary when the CLI starts doing dynamic repo/API/operation completion or local catalog refresh.
 - Static completion generation is correct to ship now because the command tree is stable.
 - Dynamic completions should be added only after the CLI has a local catalog plus cheap server-side inventory/freshness reads.

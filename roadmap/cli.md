@@ -6,7 +6,7 @@ Documentation: [`design/cli.md`](../design/cli.md), [`docs/cli.md`](../docs/cli.
 
 Legend: [ ] todo, [x] done.
 
-- [ ] 1.1 Lock the current CLI and transport gap set
+- [x] 1.1 Lock the current CLI and transport gap set
   - Repository: `shiva`
   - Component: `cmd/shiva`, `internal/cli`, `internal/http`, `internal/store`, `docs`
   - Reasoning: `medium`
