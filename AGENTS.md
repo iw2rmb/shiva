@@ -14,4 +14,4 @@
 - With every commit of any diff it is mandatory to ensure that `docs/` reflect changes in that commit.
 - When updating `docs/`, ensure that every file in that folder is limited within it's specific domain.
 - Keep all documents cross-refereced.
-- When creating file in `roadmap/`, use template from `/Users/vk/@iw2rmb/auto/ROADMAP.md` if not specified otherwise.
+- When creating file in `roadmap/`, use template from `~/@iw2rmb/auto/ROADMAP.md` if not specified otherwise.
