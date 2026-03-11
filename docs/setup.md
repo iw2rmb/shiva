@@ -15,6 +15,7 @@ This document describes runtime setup, configuration, and startup behavior of th
   - `go run ./cmd/shiva allure/allure-deployment`
   - `go run ./cmd/shiva allure/allure-deployment#findAll_42`
   - `go run ./cmd/shiva allure/allure-deployment@prod#getUsers --path id=42`
+  - `go run ./cmd/shiva allure/allure-deployment get /accessgroup/:id`
   - `go run ./cmd/shiva batch --from requests.ndjson`
 - Run tests:
   - `go test ./...`

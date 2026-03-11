@@ -1,7 +1,7 @@
 # CLI
 
 ## Scope
-This document describes the current shipped `shiva` CLI surface, selector grammar, call execution behavior, request-envelope pipelines, and remaining gaps.
+This document describes the shipped `shiva` CLI surface, selector grammar, catalog/cache behavior, and inspect/call execution modes.
 
 ## Command Surface
 - Root shorthand:
@@ -56,7 +56,7 @@ Rules:
 ## Transport and Execution
 - Spec fetch uses `GET /v1/spec`.
 - Operation fetch uses `GET /v1/operation`.
-- `@shiva` calls use `POST /v1/call`.
+- `@shiva` calls dispatch to `POST /v1/call`.
 - Direct targets resolve the operation from cached catalog data and dispatch the final HTTP request from the CLI process.
 - `shiva health` uses `GET /healthz`.
 - The CLI no longer resolves `operationId` by downloading a full spec and scanning it client-side.
@@ -167,3 +167,4 @@ Success writes to stdout. Errors write to stderr.
 - Endpoint transport contract: `docs/endpoints.md`
 - Runtime configuration: `docs/setup.md`
 - Test coverage and commands: `docs/testing.md`
+- Storage and snapshot selectors: `docs/database.md`

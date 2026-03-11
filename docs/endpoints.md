@@ -1,7 +1,7 @@
 # Endpoints
 
 ## Scope
-This document describes how canonical OpenAPI specs are indexed and how Shiva serves query-driven read and call-planning endpoints.
+This document describes how canonical OpenAPI specs are indexed and how Shiva serves the shipped query-driven inspect, inventory, and call-planning endpoints.
 
 ## Build-Time Endpoint Extraction
 Canonical build:
@@ -22,7 +22,7 @@ Endpoints are sorted by `(method, path)` and persisted to `endpoint_index` with 
 
 Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifacts` and replaces the full `endpoint_index` for an API revision.
 
-## Read Endpoints
+## Query and Call Endpoints
 
 ### Registered Surface
 - `GET /v1/spec`

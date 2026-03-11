@@ -12,6 +12,8 @@ Current baseline should be validated by running `go test ./...`.
 ## Focused Commands
 - HTTP query endpoints and webhook handlers:
   - `go test ./internal/http`
+- End-to-end CLI contract and entrypoint wiring:
+  - `go test ./cmd/shiva`
 - Shared CLI request-envelope, call-planning, and executor packages:
   - `go test ./internal/cli/request ./internal/cli/executor`
 - CLI parser, request transport, and command entrypoint:
@@ -24,6 +26,8 @@ Current baseline should be validated by running `go test ./...`.
   - `go test ./internal/worker`
 - End-to-end pipeline integration test package:
   - `go test ./cmd/shivad`
+- Documentation cross-reference check:
+  - `~/@iw2rmb/auto/scripts/check_docs_links.sh`
 
 ## Coverage Areas
 - Config parsing and defaults.
@@ -68,7 +72,7 @@ Current baseline should be validated by running `go test ./...`.
   API-scoped payload contract fields (`api`, `api_revision_id`), per-API event-id identity, and mixed API deliveries in a single repo revision.
 
 ## Cross-Checks
-- `docs/cli.md`: draft CLI surface, output, and current limits.
+- `docs/cli.md`: shipped CLI surface, output, and current limits.
 - `docs/database.md`: API-scoped artifact/index/change and listing behavior.
 - `docs/endpoints.md`: query endpoint contract, selector semantics, and response shapes.
 - `docs/webhooks.md`: API-scoped notification identity and payload.
