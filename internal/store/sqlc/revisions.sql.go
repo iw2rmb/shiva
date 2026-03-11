@@ -11,18 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countRevisions = `-- name: CountRevisions :one
-SELECT COUNT(*)::BIGINT
-FROM ingest_events
-`
-
-func (q *Queries) CountRevisions(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countRevisions)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const getLatestProcessedOpenAPIRevisionByBranchExcludingID = `-- name: GetLatestProcessedOpenAPIRevisionByBranchExcludingID :one
 SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events

@@ -1,7 +1,3 @@
--- name: CountRevisions :one
-SELECT COUNT(*)::BIGINT
-FROM ingest_events;
-
 -- name: GetRevisionByRepoSHA :one
 SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events

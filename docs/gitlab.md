@@ -5,9 +5,12 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 
 ## Inbound to Build Pipeline
 Startup initialization:
-1. If no canonical repo revision rows exist in `ingest_events`, Shiva launches startup indexing in the background during service startup, paginates accessible GitLab projects, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events` as each page is consumed.
-2. Synthetic startup events reuse the same worker path as inbound webhooks and rely on bootstrap mode when the repo has no active APIs yet.
-3. Worker startup does not wait for startup indexing to finish, so processed canonical repo revisions in `ingest_events` can begin appearing while project pagination is still in progress.
+1. Shiva launches startup indexing in the background during every service startup.
+2. Startup indexing loads `startup_index_state.last_project_id`; when no checkpoint row exists it uses `0`.
+3. Shiva paginates accessible GitLab projects with `order_by=id`, `sort=asc`, and `id_after=<last_project_id>`, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events` as each page is consumed.
+4. After each project is fully handled (enqueued, deduplicated, or skipped by startup-index rules), Shiva advances `startup_index_state.last_project_id` to that project's ID. Projects that fail branch resolution or enqueue do not advance the checkpoint, so the next startup retries them.
+5. Synthetic startup events reuse the same worker path as inbound webhooks and rely on bootstrap mode when the repo has no active APIs yet.
+6. Worker startup does not wait for startup indexing to finish, so processed canonical repo revisions in `ingest_events` can begin appearing while project pagination is still in progress.
 
 Webhook / worker pipeline:
 1. `POST /internal/webhooks/gitlab` persists ingest event and repo metadata.
@@ -76,6 +79,7 @@ No clone/archive strategy is used.
 
 ## GitLab Client Request Policy
 - Shiva serializes GitLab API calls per configured GitLab host with an in-process limiter.
+- Startup project traversal requests GitLab projects in ascending ID order and resumes with `id_after` from `startup_index_state.last_project_id`.
 - Each request uses retry/backoff locally before the worker-level retry loop sees the error.
 - Successful responses keep their request timeout context alive until the response body is consumed and closed.
 - Transport failures and GitLab `5xx` responses retry with exponential backoff starting at `500ms` and capped at `30s`.

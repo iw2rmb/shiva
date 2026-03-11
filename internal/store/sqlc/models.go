@@ -114,6 +114,12 @@ type SpecChange struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 }
 
+type StartupIndexState struct {
+	Singleton     bool               `json:"singleton"`
+	LastProjectID int64              `json:"last_project_id"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Subscription struct {
 	ID                    int64              `json:"id"`
 	RepoID                int64              `json:"repo_id"`

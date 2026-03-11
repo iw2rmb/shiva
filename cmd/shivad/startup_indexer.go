@@ -16,12 +16,13 @@ import (
 const startupIndexingEventType = "startup.index"
 
 type startupIndexingStore interface {
-	CountRevisions(ctx context.Context) (int64, error)
+	GetStartupIndexLastProjectID(ctx context.Context) (int64, error)
+	AdvanceStartupIndexLastProjectID(ctx context.Context, lastProjectID int64) error
 	PersistGitLabWebhook(ctx context.Context, input store.GitLabIngestInput) (store.GitLabIngestResult, error)
 }
 
 type startupIndexingGitLabClient interface {
-	VisitProjects(ctx context.Context, visit func(gitlab.Project) error) (int, error)
+	VisitProjects(ctx context.Context, options gitlab.ProjectListOptions, visit func(gitlab.Project) error) (int, error)
 	GetBranch(ctx context.Context, projectID int64, branch string) (gitlab.Branch, error)
 }
 
@@ -33,7 +34,7 @@ type startupIndexingPayload struct {
 	Sha               string `json:"sha"`
 }
 
-func enqueueStartupIndexingIfEmpty(
+func enqueueStartupIndexing(
 	ctx context.Context,
 	cfg config.Config,
 	logger *slog.Logger,
@@ -47,16 +48,13 @@ func enqueueStartupIndexingIfEmpty(
 		return errors.New("startup indexing gitlab client is not configured")
 	}
 
-	existingRevisionCount, err := storeInstance.CountRevisions(ctx)
+	lastProjectID, err := storeInstance.GetStartupIndexLastProjectID(ctx)
 	if err != nil {
-		return fmt.Errorf("count canonical revisions before startup indexing: %w", err)
-	}
-	if existingRevisionCount > 0 {
-		return nil
+		return fmt.Errorf("load startup indexing checkpoint: %w", err)
 	}
 
 	if logger != nil {
-		logger.Info("startup indexing started", "reason", "no canonical revisions recorded")
+		logger.Info("startup indexing started", "id_after", lastProjectID)
 	}
 
 	var (
@@ -68,115 +66,139 @@ func enqueueStartupIndexingIfEmpty(
 		skippedMissingBranchSHA int
 	)
 
-	projectCount, err := gitlabClient.VisitProjects(ctx, func(project gitlab.Project) error {
-		projectID := project.ID
-		pathWithNamespace := strings.TrimSpace(project.PathWithNamespace)
-		defaultBranch := strings.TrimSpace(project.DefaultBranch)
-		namespaceKind := strings.TrimSpace(project.NamespaceKind)
+	projectCount, err := gitlabClient.VisitProjects(
+		ctx,
+		gitlab.ProjectListOptions{IDAfter: lastProjectID},
+		func(project gitlab.Project) error {
+			projectID := project.ID
+			pathWithNamespace := strings.TrimSpace(project.PathWithNamespace)
+			defaultBranch := strings.TrimSpace(project.DefaultBranch)
+			namespaceKind := strings.TrimSpace(project.NamespaceKind)
 
-		switch {
-		case projectID < 1:
-			skippedInvalidProject++
-			if logger != nil {
-				logger.Warn("startup indexing skipped project with invalid id")
+			advanceCheckpoint := func() error {
+				if projectID < 1 {
+					return nil
+				}
+
+				if err := storeInstance.AdvanceStartupIndexLastProjectID(ctx, projectID); err != nil {
+					if pathWithNamespace == "" {
+						return fmt.Errorf("advance startup indexing checkpoint after project %d: %w", projectID, err)
+					}
+					return fmt.Errorf(
+						"advance startup indexing checkpoint after project %d (%s): %w",
+						projectID,
+						pathWithNamespace,
+						err,
+					)
+				}
+
+				return nil
 			}
-			return nil
-		case pathWithNamespace == "":
-			skippedInvalidProject++
-			if logger != nil {
-				logger.Warn("startup indexing skipped project with empty path", "project_id", projectID)
+
+			switch {
+			case projectID < 1:
+				skippedInvalidProject++
+				if logger != nil {
+					logger.Warn("startup indexing skipped project with invalid id")
+				}
+				return nil
+			case pathWithNamespace == "":
+				skippedInvalidProject++
+				if logger != nil {
+					logger.Warn("startup indexing skipped project with empty path", "project_id", projectID)
+				}
+				return advanceCheckpoint()
+			case namespaceKind == "user":
+				skippedPersonalProject++
+				if logger != nil {
+					logger.Info(
+						"startup indexing skipped personal project",
+						"project_id", projectID,
+						"path_with_namespace", pathWithNamespace,
+					)
+				}
+				return advanceCheckpoint()
+			case defaultBranch == "":
+				skippedNoDefaultBranch++
+				if logger != nil {
+					logger.Info(
+						"startup indexing skipped project without default branch",
+						"project_id", projectID,
+						"path_with_namespace", pathWithNamespace,
+					)
+				}
+				return advanceCheckpoint()
 			}
-			return nil
-		case namespaceKind == "user":
-			skippedPersonalProject++
-			if logger != nil {
-				logger.Info(
-					"startup indexing skipped personal project",
-					"project_id", projectID,
-					"path_with_namespace", pathWithNamespace,
+
+			branch, err := gitlabClient.GetBranch(ctx, projectID, defaultBranch)
+			if err != nil {
+				if errors.Is(err, gitlab.ErrNotFound) {
+					skippedMissingBranchSHA++
+					if logger != nil {
+						logger.Warn(
+							"startup indexing skipped project with missing default branch",
+							"project_id", projectID,
+							"path_with_namespace", pathWithNamespace,
+							"default_branch", defaultBranch,
+						)
+					}
+					return advanceCheckpoint()
+				}
+				return fmt.Errorf(
+					"resolve startup indexing branch head for project %d (%s): %w",
+					projectID,
+					pathWithNamespace,
+					err,
 				)
 			}
-			return nil
-		case defaultBranch == "":
-			skippedNoDefaultBranch++
-			if logger != nil {
-				logger.Info(
-					"startup indexing skipped project without default branch",
-					"project_id", projectID,
-					"path_with_namespace", pathWithNamespace,
-				)
-			}
-			return nil
-		}
 
-		branch, err := gitlabClient.GetBranch(ctx, projectID, defaultBranch)
-		if err != nil {
-			if errors.Is(err, gitlab.ErrNotFound) {
+			sha := strings.TrimSpace(branch.CommitID)
+			if sha == "" {
 				skippedMissingBranchSHA++
 				if logger != nil {
 					logger.Warn(
-						"startup indexing skipped project with missing default branch",
+						"startup indexing skipped project with empty default branch head",
 						"project_id", projectID,
 						"path_with_namespace", pathWithNamespace,
 						"default_branch", defaultBranch,
 					)
 				}
-				return nil
+				return advanceCheckpoint()
 			}
-			return fmt.Errorf(
-				"resolve startup indexing branch head for project %d (%s): %w",
-				projectID,
-				pathWithNamespace,
-				err,
-			)
-		}
 
-		sha := strings.TrimSpace(branch.CommitID)
-		if sha == "" {
-			skippedMissingBranchSHA++
-			if logger != nil {
-				logger.Warn(
-					"startup indexing skipped project with empty default branch head",
-					"project_id", projectID,
-					"path_with_namespace", pathWithNamespace,
-					"default_branch", defaultBranch,
-				)
+			payloadJSON, err := json.Marshal(startupIndexingPayload{
+				Source:            "startup_indexer",
+				GitLabProjectID:   projectID,
+				PathWithNamespace: pathWithNamespace,
+				DefaultBranch:     defaultBranch,
+				Sha:               sha,
+			})
+			if err != nil {
+				return fmt.Errorf("marshal startup indexing payload for project %d (%s): %w", projectID, pathWithNamespace, err)
 			}
-			return nil
-		}
 
-		payloadJSON, err := json.Marshal(startupIndexingPayload{
-			Source:            "startup_indexer",
-			GitLabProjectID:   projectID,
-			PathWithNamespace: pathWithNamespace,
-			DefaultBranch:     defaultBranch,
-			Sha:               sha,
-		})
-		if err != nil {
-			return fmt.Errorf("marshal startup indexing payload for project %d (%s): %w", projectID, pathWithNamespace, err)
-		}
-
-		result, err := storeInstance.PersistGitLabWebhook(ctx, store.GitLabIngestInput{
-			GitLabProjectID:   projectID,
-			PathWithNamespace: pathWithNamespace,
-			DefaultBranch:     defaultBranch,
-			Sha:               sha,
-			Branch:            defaultBranch,
-			ParentSha:         "",
-			EventType:         startupIndexingEventType,
-			DeliveryID:        startupIndexingDeliveryID(projectID, sha),
-			PayloadJSON:       payloadJSON,
-		})
-		if err != nil {
-			return fmt.Errorf("enqueue startup indexing event for project %d (%s): %w", projectID, pathWithNamespace, err)
-		}
-		if result.Duplicate {
-			duplicates++
-			return nil
-		}
-		enqueued++
-		return nil
-	})
+			result, err := storeInstance.PersistGitLabWebhook(ctx, store.GitLabIngestInput{
+				GitLabProjectID:   projectID,
+				PathWithNamespace: pathWithNamespace,
+				DefaultBranch:     defaultBranch,
+				Sha:               sha,
+				Branch:            defaultBranch,
+				ParentSha:         "",
+				EventType:         startupIndexingEventType,
+				DeliveryID:        startupIndexingDeliveryID(projectID, sha),
+				PayloadJSON:       payloadJSON,
+			})
+			if err != nil {
+				return fmt.Errorf("enqueue startup indexing event for project %d (%s): %w", projectID, pathWithNamespace, err)
+			}
+			if result.Duplicate {
+				duplicates++
+				return advanceCheckpoint()
+			}
+			enqueued++
+			return advanceCheckpoint()
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("list gitlab projects for startup indexing: %w", err)
 	}
@@ -184,6 +206,7 @@ func enqueueStartupIndexingIfEmpty(
 	if logger != nil {
 		logger.Info(
 			"startup indexing finished",
+			"id_after", lastProjectID,
 			"project_count", projectCount,
 			"enqueued", enqueued,
 			"duplicates", duplicates,

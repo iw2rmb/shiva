@@ -19,8 +19,9 @@ This document describes runtime setup, configuration, and startup behavior of th
 - Missing DB URL or DB connection failure is a startup error.
 - Shiva applies the embedded initial database schema at startup before any worker or startup-indexing queries run.
 - Worker pipeline is always enabled when the service starts.
-- When no canonical repository revision rows exist yet in `ingest_events`, Shiva launches startup indexing in the background:
-  it paginates accessible GitLab projects, skips projects in personal (`user`) namespaces by default, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into the normal DB-backed queue as pages are consumed.
+- Shiva launches startup indexing in the background on every service start.
+- Startup indexing resumes from `startup_index_state.last_project_id`; when no checkpoint row exists it starts with GitLab `id_after=0`.
+- Startup indexing paginates accessible GitLab projects, skips projects in personal (`user`) namespaces by default, resolves each remaining default-branch head SHA, enqueues synthetic ingest events into the normal DB-backed queue as pages are consumed, and advances the checkpoint after each fully handled project.
 - Worker processing and startup indexing run independently, so processed canonical repo revisions can appear before startup indexing finishes.
 
 ## Environment Variables

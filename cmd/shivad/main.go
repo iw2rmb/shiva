@@ -103,7 +103,7 @@ func run(ctx context.Context) error {
 		}),
 	)
 	if err := startIngestRuntime(ctx, logger, workerManager, func(startupCtx context.Context) error {
-		return enqueueStartupIndexingIfEmpty(startupCtx, cfg, logger, storeInstance, gitLabClient)
+		return enqueueStartupIndexing(startupCtx, cfg, logger, storeInstance, gitLabClient)
 	}); err != nil {
 		return err
 	}

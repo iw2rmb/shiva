@@ -252,6 +252,9 @@ func TestClientListProjects(t *testing.T) {
 			if got := r.URL.Query().Get("sort"); got != "asc" {
 				t.Fatalf("expected sort=asc, got %q", got)
 			}
+			if got := r.URL.Query().Get("id_after"); got != "10" {
+				t.Fatalf("expected id_after=10, got %q", got)
+			}
 			w.Header().Set("X-Next-Page", "2")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[
@@ -274,7 +277,7 @@ func TestClientListProjects(t *testing.T) {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
 
-	projects, err := client.ListProjects(context.Background())
+	projects, err := client.ListProjects(context.Background(), ProjectListOptions{IDAfter: 10})
 	if err != nil {
 		t.Fatalf("ListProjects() unexpected error: %v", err)
 	}
@@ -323,7 +326,7 @@ func TestClientVisitProjectsProcessesPageBeforeFetchingNextPage(t *testing.T) {
 	}
 
 	visited := make([]Project, 0, 2)
-	count, err := client.VisitProjects(context.Background(), func(project Project) error {
+	count, err := client.VisitProjects(context.Background(), ProjectListOptions{}, func(project Project) error {
 		visited = append(visited, project)
 		if project.ID == 11 {
 			close(firstProjectVisited)

@@ -72,6 +72,10 @@ type Project struct {
 	NamespaceKind     string
 }
 
+type ProjectListOptions struct {
+	IDAfter int64
+}
+
 type Branch struct {
 	Name     string
 	CommitID string
@@ -274,9 +278,9 @@ func (c *Client) GetFileContent(ctx context.Context, projectID int64, filePath, 
 	return decoded, nil
 }
 
-func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
+func (c *Client) ListProjects(ctx context.Context, options ProjectListOptions) ([]Project, error) {
 	projects := make([]Project, 0)
-	_, err := c.VisitProjects(ctx, func(project Project) error {
+	_, err := c.VisitProjects(ctx, options, func(project Project) error {
 		projects = append(projects, project)
 		return nil
 	})
@@ -286,9 +290,12 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
-func (c *Client) VisitProjects(ctx context.Context, visit func(Project) error) (int, error) {
+func (c *Client) VisitProjects(ctx context.Context, options ProjectListOptions, visit func(Project) error) (int, error) {
 	if visit == nil {
 		return 0, errors.New("project visitor is not configured")
+	}
+	if options.IDAfter < 0 {
+		return 0, errors.New("id_after must not be negative")
 	}
 
 	query := url.Values{}
@@ -298,6 +305,9 @@ func (c *Client) VisitProjects(ctx context.Context, visit func(Project) error) (
 	query.Set("archived", "false")
 	query.Set("order_by", "id")
 	query.Set("sort", "asc")
+	if options.IDAfter > 0 {
+		query.Set("id_after", strconv.FormatInt(options.IDAfter, 10))
+	}
 
 	projectCount := 0
 	for {

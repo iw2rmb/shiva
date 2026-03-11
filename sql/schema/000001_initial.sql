@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS repos (
     UNIQUE (path_with_namespace)
 );
 
+CREATE TABLE IF NOT EXISTS startup_index_state (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    last_project_id BIGINT NOT NULL CHECK (last_project_id >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS subscriptions (
     id BIGSERIAL PRIMARY KEY,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,

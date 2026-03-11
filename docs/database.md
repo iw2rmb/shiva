@@ -11,6 +11,7 @@ This document describes current schema layout and SQL code generation workflow.
 ## Core Tables
 - `schema_migrations`: startup schema bootstrap record (`version`, `checksum`, `applied_at`).
 - `repos`: repo identity (`gitlab_project_id`, `path_with_namespace`, `default_branch`, `openapi_force_rescan`).
+- `startup_index_state`: singleton startup-index checkpoint (`last_project_id`).
 - `subscriptions`: outbound webhook subscribers and retry policy.
 - `ingest_events`: inbound queue records and canonical repo revision rows (`sha`, `branch`, retry state, terminal processing result).
 - `api_specs`: durable API root identity per repo (`root_path`, `status`, optional `display_name`).
@@ -29,6 +30,7 @@ This document describes current schema layout and SQL code generation workflow.
 - `api_spec_revisions.build_status`: processor writes `processing | processed | failed` during per-root build execution in both bootstrap and incremental loops.
 - `delivery_attempts.status`: `pending | retry_scheduled | succeeded | failed`
 - `repos.openapi_force_rescan`: `true` when next bootstrap decision should force full repository scan.
+- `startup_index_state.last_project_id`: highest GitLab project ID fully handled by startup indexing; startup resumes with GitLab `id_after=<last_project_id>`.
 
 ## API Spec Store Primitives
 - `ListActiveAPISpecsWithLatestDependencies(repo_id)`: returns active `api_specs` in `root_path` order with dependency file paths from each spec's latest `api_spec_revisions` row where `build_status='processed'` (ties resolved by `ingest_event_id DESC, id DESC`); specs without processed revisions return an empty dependency list.

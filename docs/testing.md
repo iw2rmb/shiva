@@ -25,7 +25,7 @@ Current baseline should be validated by running `go test ./...`.
 - Config parsing and defaults.
 - GitLab API client behavior.
 - Startup schema migration bootstrap and checksum validation.
-- Startup indexing orchestration when revision history is empty.
+- Startup indexing orchestration and checkpoint resume behavior.
 - Inbound webhook validation + ingest persistence behavior.
 - Worker retry and permanent-failure handling.
 - OpenAPI resolver:
@@ -44,7 +44,7 @@ Current baseline should be validated by running `go test ./...`.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shivad/webhook_to_notify_integration_test.go`.
 - Startup queue seeding in `cmd/shivad/startup_indexer_test.go`:
-  empty-revision startup seeding, personal-project skip behavior, skip rules for missing default branch/head, and failure behavior for project discovery / enqueue.
+  zero-checkpoint startup seeding, checkpoint resume via `id_after`, personal-project skip behavior, skip rules for missing default branch/head, checkpoint advancement, and failure behavior for checkpoint load / project discovery / enqueue.
 - Delete-only incremental integration path in `cmd/shivad/webhook_to_notify_integration_test.go`:
   no artifact persisted, `openapi_changed=true`, `spec_changes` persisted, and outbound emits diff-only event.
 - Bootstrap ingest regression guard in `cmd/shivad/webhook_to_notify_integration_test.go`:
