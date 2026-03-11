@@ -50,6 +50,26 @@ This document describes current schema layout and SQL code generation workflow.
 - Read resolution identifies repos directly by `repos.path_with_namespace`.
 - No-selector reads resolve against the repo's persisted `default_branch`, not a global branch constant.
 
+## CLI Snapshot Read Primitives
+- `ResolveReadSnapshot(repo, api?, revision_id|sha|default-branch-latest)`: resolves the canonical repo snapshot used by the query-style CLI read contract.
+  - `revision_id` and `sha` both anchor to an exact processed repo snapshot, even when `openapi_changed=false`.
+  - default-branch reads still resolve through the repo's stored `default_branch` and then pick the latest processed OpenAPI snapshot on that branch.
+- Snapshot-scoped API and operation queries for the CLI walk the selected revision's `parent_sha` ancestry chain; they do not assume that `ingest_events.id` ordering alone defines repo history across branches.
+- `ListRepoCatalogInventory()`: returns repo catalog rows with repo identity, `active_api_count`, default-branch head state, and latest processed OpenAPI snapshot state.
+- `GetRepoCatalogFreshnessByPath(path_with_namespace)`: returns the same freshness metadata for one repo so the CLI can decide whether a cached default-branch catalog slice is stale.
+- `ListAPISnapshotInventoryByRepoRevision(repo_id, snapshot_revision_id)`: returns API inventory at a repo snapshot with optional resolved API revision metadata, artifact metadata (`etag`, `size_bytes`), and operation counts.
+- `GetAPISnapshotByRepoRevisionAndAPI(repo_id, api, snapshot_revision_id)`: resolves one API row inside a repo snapshot without collapsing “API exists but has no processed snapshot yet” into a lookup error.
+- `ListOperationInventoryByRepoRevision(repo_id, snapshot_revision_id)` and `ListOperationInventoryByRepoRevisionAndAPI(...)`: return operation inventory rows with `api`, `method`, `path`, `operation_id`, `summary`, `deprecated`, and `raw_json`.
+- `FindOperationCandidatesByRepoRevisionAndOperationID(...)` and API-scoped counterpart: preserve zero/one/many candidate rows so multi-API ambiguity is reported by the caller instead of hidden in the store.
+- `FindOperationCandidatesByRepoRevisionAndMethodPath(...)` and API-scoped counterpart: provide the same candidate-preserving lookup for canonical `(method, path)` resolution.
+
+### Query Source Layout
+- `sql/query/cli_reads.sql`: snapshot-oriented repo/API/operation inventory and candidate lookup queries used by the CLI/query transport work.
+- `sql/schema/000001_initial.sql` includes supporting indexes for:
+  - default-branch head and latest processed OpenAPI lookups on `ingest_events`,
+  - latest snapshot selection on `api_spec_revisions`,
+  - `operation_id` lookup inside `endpoint_index`.
+
 ## Generation
 sqlc config:
 - `sqlc.yaml`

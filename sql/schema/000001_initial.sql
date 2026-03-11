@@ -62,6 +62,10 @@ CREATE INDEX IF NOT EXISTS ingest_events_status_retry_idx ON ingest_events(statu
 CREATE INDEX IF NOT EXISTS ingest_events_repo_id_idx ON ingest_events(repo_id, id);
 CREATE INDEX IF NOT EXISTS ingest_events_repo_branch_processed_idx ON ingest_events(repo_id, branch, processed_at DESC);
 CREATE INDEX IF NOT EXISTS ingest_events_repo_received_idx ON ingest_events(repo_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS ingest_events_repo_branch_received_idx ON ingest_events(repo_id, branch, received_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS ingest_events_repo_branch_openapi_processed_idx
+    ON ingest_events(repo_id, branch, processed_at DESC, id DESC)
+    WHERE status = 'processed' AND openapi_changed = TRUE;
 
 CREATE TABLE IF NOT EXISTS api_specs (
     id BIGSERIAL PRIMARY KEY,
@@ -89,6 +93,8 @@ CREATE TABLE IF NOT EXISTS api_spec_revisions (
 );
 
 CREATE INDEX IF NOT EXISTS api_spec_revisions_ingest_event_id_idx ON api_spec_revisions(ingest_event_id);
+CREATE INDEX IF NOT EXISTS api_spec_revisions_api_spec_snapshot_idx
+    ON api_spec_revisions(api_spec_id, ingest_event_id DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS api_spec_dependencies (
     api_spec_revision_id BIGINT NOT NULL REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
@@ -121,6 +127,9 @@ CREATE TABLE IF NOT EXISTS endpoint_index (
 
 CREATE INDEX IF NOT EXISTS endpoint_index_api_spec_revision_idx ON endpoint_index(api_spec_revision_id);
 CREATE INDEX IF NOT EXISTS endpoint_index_lookup_idx ON endpoint_index(api_spec_revision_id, method, path);
+CREATE INDEX IF NOT EXISTS endpoint_index_operation_lookup_idx
+    ON endpoint_index(api_spec_revision_id, operation_id)
+    WHERE operation_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS spec_changes (
     id BIGSERIAL PRIMARY KEY,

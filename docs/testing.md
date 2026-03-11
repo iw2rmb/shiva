@@ -39,6 +39,7 @@ Current baseline should be validated by running `go test ./...`.
 - Canonical spec build and endpoint extraction.
 - Semantic diff computation.
 - Read route selector resolution and endpoint slice responses.
+- CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
 - Route contract tests for:
   - short-SHA selector validation,
   - monorepo delimiter parsing (`/-/{api}/-/`) for spec and route families,

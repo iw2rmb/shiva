@@ -16,7 +16,7 @@ Legend: [ ] todo, [x] done.
 3. Confirm `DraftService` still resolves operations by downloading the full spec and scanning `operation_id` client-side.
 4. Lock the missing scope to the design items that are not shipped yet: query transport, explicit revision/api selectors, catalog cache, targets, calls, batch, and dynamic completion.
 
-- [ ] 1.2 Add store and query primitives for CLI snapshot reads
+- [x] 1.2 Add store and query primitives for CLI snapshot reads
   - Repository: `shiva`
   - Component: `sql/query`, `internal/store/sqlc`, `internal/store`
   - Reasoning: `high`
