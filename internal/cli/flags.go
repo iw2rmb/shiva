@@ -10,4 +10,9 @@ type RootFlags struct {
 	Offline    bool
 	DryRun     bool
 	Output     string
+	Path       []string
+	Query      []string
+	Header     []string
+	JSON       string
+	Body       string
 }

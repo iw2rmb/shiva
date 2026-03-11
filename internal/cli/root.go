@@ -26,12 +26,17 @@ func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
 			"  shiva allure/allure-deployment",
 			"  shiva allure/allure-deployment#findAll_42",
 			"  shiva allure/allure-deployment get /accessgroup/:id",
+			"  shiva allure/allure-deployment@prod#getUsers --path id=42",
 			"  shiva allure/allure-deployment@shiva#getUsers --dry-run",
 		}, "\n"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			invocation, err := ParseShorthandInvocation(args, *flags)
 			if err != nil {
 				return err
+			}
+			invocation.Envelope, err = request.ApplyCLIInputs(invocation.Envelope, requestInputsFromFlags(*flags))
+			if err != nil {
+				return normalizeCLIValidation(err)
 			}
 
 			service, err := loadService(serviceFactory)
@@ -51,7 +56,7 @@ func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
 	rootCmd.AddCommand(
 		newListCommand(serviceFactory, flags),
 		newSyncCommand(serviceFactory, flags),
-		newBatchCommand(),
+		newBatchCommand(serviceFactory, flags),
 		newCompletionCommand(rootCmd),
 		newHealthCommand(serviceFactory, flags),
 	)
@@ -68,6 +73,11 @@ func addSharedFlags(command *cobra.Command, flags *RootFlags) {
 	command.PersistentFlags().BoolVar(&flags.Offline, "offline", false, "forbid network refreshes")
 	command.PersistentFlags().BoolVar(&flags.DryRun, "dry-run", false, "print the normalized plan without dispatch")
 	command.PersistentFlags().StringVarP(&flags.Output, "output", "o", "", "output mode")
+	command.PersistentFlags().StringArrayVar(&flags.Path, "path", nil, "request path parameter key=value")
+	command.PersistentFlags().StringArrayVar(&flags.Query, "query", nil, "request query parameter key=value")
+	command.PersistentFlags().StringArrayVar(&flags.Header, "header", nil, "request header Name=value")
+	command.PersistentFlags().StringVar(&flags.JSON, "json", "", "inline json or @file request body")
+	command.PersistentFlags().StringVar(&flags.Body, "body", "", "@file request body")
 }
 
 func executeInvocation(ctx context.Context, service Service, invocation ShorthandInvocation, flags RootFlags) ([]byte, error) {
@@ -98,10 +108,11 @@ func executeInvocation(ctx context.Context, service Service, invocation Shorthan
 		}
 		return body, nil
 	case request.KindCall:
-		if _, err := resolveOutputMode(invocation.Envelope.Kind, flags.Output); err != nil {
+		format, err := resolveCallOutputMode(invocation.Envelope.DryRun, flags.Output)
+		if err != nil {
 			return nil, err
 		}
-		return service.PlanCall(ctx, invocation.Envelope, options)
+		return service.ExecuteCall(ctx, invocation.Envelope, options, format)
 	default:
 		return nil, fmt.Errorf("unsupported command kind %q", invocation.Envelope.Kind)
 	}
@@ -141,15 +152,27 @@ func resolveOutputMode(kind request.Kind, output string) (SpecFormat, error) {
 	}
 }
 
-func newBatchCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:           "batch",
-		Short:         "Execute Shiva request envelopes in batch",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("batch is not implemented yet")
-		},
+func resolveCallOutputMode(dryRun bool, output string) (CallFormat, error) {
+	mode := strings.TrimSpace(output)
+
+	if dryRun {
+		switch mode {
+		case "", string(CallFormatJSON):
+			return CallFormatJSON, nil
+		case string(CallFormatCurl):
+			return CallFormatCurl, nil
+		default:
+			return "", &InvalidInputError{Message: "dry-run output must be one of: json, curl"}
+		}
+	}
+
+	switch mode {
+	case "", string(CallFormatBody):
+		return CallFormatBody, nil
+	case string(CallFormatJSON):
+		return CallFormatJSON, nil
+	default:
+		return "", &InvalidInputError{Message: "call output must be one of: body, json"}
 	}
 }
 
@@ -161,6 +184,10 @@ func newHealthCommand(serviceFactory func() (Service, error), flags *RootFlags) 
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateHealthFlags(*flags); err != nil {
+				return err
+			}
+
 			service, err := loadService(serviceFactory)
 			if err != nil {
 				return err
@@ -174,6 +201,27 @@ func newHealthCommand(serviceFactory func() (Service, error), flags *RootFlags) 
 			}
 			return writeOutput(cmd.OutOrStdout(), body)
 		},
+	}
+}
+
+func validateHealthFlags(flags RootFlags) error {
+	switch {
+	case flags.API != "":
+		return &InvalidInputError{Message: "health does not accept --api"}
+	case flags.SHA != "" || flags.RevisionID > 0:
+		return &InvalidInputError{Message: "health does not accept --sha or --rev"}
+	case flags.Target != "":
+		return &InvalidInputError{Message: "health does not accept --via"}
+	case flags.Refresh:
+		return &InvalidInputError{Message: "health does not accept --refresh"}
+	case flags.Offline:
+		return &InvalidInputError{Message: "health does not accept --offline"}
+	case flags.DryRun:
+		return &InvalidInputError{Message: "health does not accept --dry-run"}
+	case flags.Output != "":
+		return &InvalidInputError{Message: "health does not accept --output"}
+	default:
+		return validateNoCallInputFlags(flags, "health")
 	}
 }
 

@@ -76,7 +76,7 @@ Legend: [ ] todo, [x] done.
 3. Implement `ls repos`, `ls apis`, `ls ops`, and `sync` against the new inventory endpoints and catalog service.
 4. Make multi-API ambiguity and duplicate-operation errors print candidate data from the query transport instead of ad hoc client guesses.
 
-- [ ] 1.8 Implement call execution, dry-run, and NDJSON batch flows
+- [x] 1.8 Implement call execution, dry-run, and NDJSON batch flows
   - Repository: `shiva`
   - Component: `internal/cli/request`, `internal/cli/executor`, `internal/cli/output`, `cmd/shiva`
   - Reasoning: `xhigh`

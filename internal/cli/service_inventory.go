@@ -39,7 +39,7 @@ func (s *RuntimeService) ListRepos(
 		return nil, err
 	}
 
-	if err := s.catalogService.PrepareRepos(ctx, client, source.Name, catalogRefreshOptions(options)); err != nil {
+	if err := s.catalogService.PrepareRepos(ctx, client, source.Name, s.refreshOptions("repos", source.Name, request.Envelope{}, options)); err != nil {
 		return nil, normalizeServiceError(err)
 	}
 
@@ -83,7 +83,7 @@ func (s *RuntimeService) ListAPIs(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, catalogRefreshOptions(options))
+	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, s.refreshOptions("apis", source.Name, normalized, options))
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
@@ -132,7 +132,7 @@ func (s *RuntimeService) ListOperations(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, catalogRefreshOptions(options))
+	prepared, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, s.refreshOptions("ops", source.Name, normalized, options))
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
@@ -186,7 +186,7 @@ func (s *RuntimeService) Sync(
 		return nil, err
 	}
 
-	refreshOptions := catalogRefreshOptions(options)
+	refreshOptions := s.refreshOptions("apis", source.Name, normalized, options)
 	refreshOptions.Refresh = true
 
 	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, refreshOptions)
@@ -271,12 +271,5 @@ func revisionStateFromFingerprint(fingerprint catalog.SnapshotFingerprint) *clio
 	return &clioutput.RevisionState{
 		ID:  fingerprint.RevisionID,
 		SHA: strings.TrimSpace(fingerprint.SHA),
-	}
-}
-
-func catalogRefreshOptions(options RequestOptions) catalog.RefreshOptions {
-	return catalog.RefreshOptions{
-		Refresh: options.Refresh,
-		Offline: options.Offline,
 	}
 }

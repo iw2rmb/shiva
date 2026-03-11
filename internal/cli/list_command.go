@@ -4,13 +4,19 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/spf13/cobra"
 )
 
+type ListFlags struct {
+	Emit string
+}
+
 func newListCommand(serviceFactory func() (Service, error), flags *RootFlags) *cobra.Command {
+	listFlags := &ListFlags{}
 	command := &cobra.Command{
 		Use:           "ls",
 		Short:         "List Shiva inventory",
@@ -20,16 +26,17 @@ func newListCommand(serviceFactory func() (Service, error), flags *RootFlags) *c
 			return &InvalidInputError{Message: "ls requires one of: repos, apis, ops"}
 		},
 	}
+	command.PersistentFlags().StringVar(&listFlags.Emit, "emit", "", "emit request envelopes")
 
 	command.AddCommand(
-		newListReposCommand(serviceFactory, flags),
-		newListAPIsCommand(serviceFactory, flags),
-		newListOperationsCommand(serviceFactory, flags),
+		newListReposCommand(serviceFactory, flags, listFlags),
+		newListAPIsCommand(serviceFactory, flags, listFlags),
+		newListOperationsCommand(serviceFactory, flags, listFlags),
 	)
 	return command
 }
 
-func newListReposCommand(serviceFactory func() (Service, error), flags *RootFlags) *cobra.Command {
+func newListReposCommand(serviceFactory func() (Service, error), flags *RootFlags, listFlags *ListFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:           "repos",
 		Short:         "List cached repos",
@@ -40,13 +47,20 @@ func newListReposCommand(serviceFactory func() (Service, error), flags *RootFlag
 			if err := validateRefreshOfflineFlags(*flags); err != nil {
 				return err
 			}
-			if err := validateListReposFlags(*flags); err != nil {
+			if err := validateListReposFlags(*flags, listFlags.Emit); err != nil {
 				return err
 			}
 
 			service, err := loadService(serviceFactory)
 			if err != nil {
 				return err
+			}
+			if listFlags.Emit == "request" {
+				body, err := service.EmitRepoRequests(cmd.Context(), requestOptionsFromFlags(*flags))
+				if err != nil {
+					return err
+				}
+				return writeOutput(cmd.OutOrStdout(), body)
 			}
 
 			format, err := resolveListOutputMode(flags.Output, cmd.OutOrStdout())
@@ -63,7 +77,7 @@ func newListReposCommand(serviceFactory func() (Service, error), flags *RootFlag
 	}
 }
 
-func newListAPIsCommand(serviceFactory func() (Service, error), flags *RootFlags) *cobra.Command {
+func newListAPIsCommand(serviceFactory func() (Service, error), flags *RootFlags, listFlags *ListFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:           "apis <repo-ref>",
 		Short:         "List APIs for one repo snapshot",
@@ -74,17 +88,24 @@ func newListAPIsCommand(serviceFactory func() (Service, error), flags *RootFlags
 			if err := validateRefreshOfflineFlags(*flags); err != nil {
 				return err
 			}
-			selector, err := parseRepoSnapshotSelector(args[0], *flags, false)
+			selector, err := parseRepoSnapshotSelector(args[0], *flags, false, false)
 			if err != nil {
 				return err
 			}
-			if err := validateListAPIsFlags(*flags); err != nil {
+			if err := validateListAPIsFlags(*flags, listFlags.Emit); err != nil {
 				return err
 			}
 
 			service, err := loadService(serviceFactory)
 			if err != nil {
 				return err
+			}
+			if listFlags.Emit == "request" {
+				body, err := service.EmitAPIRequests(cmd.Context(), selector, requestOptionsFromFlags(*flags))
+				if err != nil {
+					return err
+				}
+				return writeOutput(cmd.OutOrStdout(), body)
 			}
 
 			format, err := resolveListOutputMode(flags.Output, cmd.OutOrStdout())
@@ -101,7 +122,7 @@ func newListAPIsCommand(serviceFactory func() (Service, error), flags *RootFlags
 	}
 }
 
-func newListOperationsCommand(serviceFactory func() (Service, error), flags *RootFlags) *cobra.Command {
+func newListOperationsCommand(serviceFactory func() (Service, error), flags *RootFlags, listFlags *ListFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:           "ops <repo-ref>",
 		Short:         "List operations for one repo snapshot",
@@ -112,17 +133,24 @@ func newListOperationsCommand(serviceFactory func() (Service, error), flags *Roo
 			if err := validateRefreshOfflineFlags(*flags); err != nil {
 				return err
 			}
-			selector, err := parseRepoSnapshotSelector(args[0], *flags, true)
+			selector, err := parseRepoSnapshotSelector(args[0], *flags, true, listFlags.Emit == "request")
 			if err != nil {
 				return err
 			}
-			if err := validateListOperationsFlags(*flags); err != nil {
+			if err := validateListOperationsFlags(*flags, listFlags.Emit); err != nil {
 				return err
 			}
 
 			service, err := loadService(serviceFactory)
 			if err != nil {
 				return err
+			}
+			if listFlags.Emit == "request" {
+				body, err := service.EmitOperationRequests(cmd.Context(), selector, requestOptionsFromFlags(*flags), flags.Target)
+				if err != nil {
+					return err
+				}
+				return writeOutput(cmd.OutOrStdout(), body)
 			}
 
 			format, err := resolveListOutputMode(flags.Output, cmd.OutOrStdout())
@@ -154,7 +182,7 @@ func validateRefreshOfflineFlags(flags RootFlags) error {
 	return nil
 }
 
-func parseRepoSnapshotSelector(raw string, flags RootFlags, allowAPI bool) (request.Envelope, error) {
+func parseRepoSnapshotSelector(raw string, flags RootFlags, allowAPI bool, allowTarget bool) (request.Envelope, error) {
 	packed, err := ParsePackedSelector(raw)
 	if err != nil {
 		return request.Envelope{}, err
@@ -165,11 +193,14 @@ func parseRepoSnapshotSelector(raw string, flags RootFlags, allowAPI bool) (requ
 	if packed.HasOperation() {
 		return request.Envelope{}, &InvalidInputError{Message: "this command does not accept #<operation-id> selectors"}
 	}
-	if flags.Target != "" {
+	if flags.Target != "" && !allowTarget {
 		return request.Envelope{}, &InvalidInputError{Message: "this command does not accept --via"}
 	}
 	if flags.DryRun {
 		return request.Envelope{}, &InvalidInputError{Message: "this command does not accept --dry-run"}
+	}
+	if err := validateNoCallInputFlags(flags, "this command"); err != nil {
+		return request.Envelope{}, err
 	}
 	if !allowAPI && flags.API != "" {
 		return request.Envelope{}, &InvalidInputError{Message: "this command does not accept --api"}
@@ -215,7 +246,10 @@ func isTTYWriter(writer io.Writer) bool {
 	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
-func validateListReposFlags(flags RootFlags) error {
+func validateListReposFlags(flags RootFlags, emit string) error {
+	if err := validateListEmit(emit); err != nil {
+		return err
+	}
 	switch {
 	case flags.API != "":
 		return &InvalidInputError{Message: "ls repos does not accept --api"}
@@ -225,12 +259,17 @@ func validateListReposFlags(flags RootFlags) error {
 		return &InvalidInputError{Message: "ls repos does not accept --via"}
 	case flags.DryRun:
 		return &InvalidInputError{Message: "ls repos does not accept --dry-run"}
+	case emit == "request" && flags.Output != "":
+		return &InvalidInputError{Message: "ls repos --emit request does not accept --output"}
 	default:
-		return nil
+		return validateNoCallInputFlags(flags, "ls repos")
 	}
 }
 
-func validateListAPIsFlags(flags RootFlags) error {
+func validateListAPIsFlags(flags RootFlags, emit string) error {
+	if err := validateListEmit(emit); err != nil {
+		return err
+	}
 	switch {
 	case flags.API != "":
 		return &InvalidInputError{Message: "ls apis does not accept --api"}
@@ -238,19 +277,26 @@ func validateListAPIsFlags(flags RootFlags) error {
 		return &InvalidInputError{Message: "ls apis does not accept --via"}
 	case flags.DryRun:
 		return &InvalidInputError{Message: "ls apis does not accept --dry-run"}
+	case emit == "request" && flags.Output != "":
+		return &InvalidInputError{Message: "ls apis --emit request does not accept --output"}
 	default:
-		return nil
+		return validateNoCallInputFlags(flags, "ls apis")
 	}
 }
 
-func validateListOperationsFlags(flags RootFlags) error {
+func validateListOperationsFlags(flags RootFlags, emit string) error {
+	if err := validateListEmit(emit); err != nil {
+		return err
+	}
 	switch {
-	case flags.Target != "":
+	case flags.Target != "" && emit != "request":
 		return &InvalidInputError{Message: "ls ops does not accept --via"}
 	case flags.DryRun:
 		return &InvalidInputError{Message: "ls ops does not accept --dry-run"}
+	case emit == "request" && flags.Output != "":
+		return &InvalidInputError{Message: "ls ops --emit request does not accept --output"}
 	default:
-		return nil
+		return validateNoCallInputFlags(flags, "ls ops")
 	}
 }
 
@@ -272,8 +318,11 @@ func newSyncCommand(serviceFactory func() (Service, error), flags *RootFlags) *c
 			if err := validateRefreshOfflineFlags(*flags); err != nil {
 				return err
 			}
-			selector, err := parseRepoSnapshotSelector(args[0], *flags, false)
+			selector, err := parseRepoSnapshotSelector(args[0], *flags, false, false)
 			if err != nil {
+				return err
+			}
+			if err := validateNoCallInputFlags(*flags, "sync"); err != nil {
 				return err
 			}
 
@@ -288,5 +337,14 @@ func newSyncCommand(serviceFactory func() (Service, error), flags *RootFlags) *c
 			}
 			return writeOutput(cmd.OutOrStdout(), body)
 		},
+	}
+}
+
+func validateListEmit(value string) error {
+	switch strings.TrimSpace(value) {
+	case "", "request":
+		return nil
+	default:
+		return &InvalidInputError{Message: "ls emit mode must be: request"}
 	}
 }

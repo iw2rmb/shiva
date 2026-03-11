@@ -84,15 +84,6 @@ func (c *Client) GetOperation(ctx context.Context, selector request.Envelope) ([
 	return c.get(ctx, "/v1/operation?"+query.Encode())
 }
 
-func (c *Client) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
-	body, err := json.Marshal(selector)
-	if err != nil {
-		return nil, fmt.Errorf("encode call request: %w", err)
-	}
-
-	return c.postJSON(ctx, "/v1/call", body)
-}
-
 func (c *Client) ListRepos(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/v1/repos")
 }

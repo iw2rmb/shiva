@@ -17,7 +17,7 @@ import (
 	"github.com/iw2rmb/shiva/internal/cli/target"
 )
 
-func TestRuntimeServicePlanCallUsesTargetSourceProfile(t *testing.T) {
+func TestRuntimeServiceExecuteCallUsesTargetSourceProfile(t *testing.T) {
 	t.Parallel()
 
 	store, err := catalog.NewStore(t.TempDir())
@@ -30,7 +30,6 @@ func TestRuntimeServicePlanCallUsesTargetSourceProfile(t *testing.T) {
 		statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
-		callBody:       []byte(`{"kind":"call"}`),
 	}
 
 	var resolvedProfiles []string
@@ -54,27 +53,24 @@ func TestRuntimeServicePlanCallUsesTargetSourceProfile(t *testing.T) {
 		},
 	}
 
-	_, err = service.PlanCall(context.Background(), request.Envelope{
+	body, err := service.ExecuteCall(context.Background(), request.Envelope{
 		Repo:        "acme/platform",
 		Target:      "prod",
 		OperationID: "listPets",
-	}, RequestOptions{})
+		DryRun:      true,
+	}, RequestOptions{}, CallFormatJSON)
 	if err != nil {
-		t.Fatalf("plan call failed: %v", err)
+		t.Fatalf("execute call failed: %v", err)
 	}
 
 	if !reflect.DeepEqual(resolvedProfiles, []string{"prod"}) {
 		t.Fatalf("expected target source-profile override to select prod, got %+v", resolvedProfiles)
 	}
-	expected := request.Envelope{
-		Kind:        request.KindCall,
-		Repo:        "acme/platform",
-		RevisionID:  42,
-		Target:      "prod",
-		OperationID: "listPets",
+	if !strings.Contains(string(body), `"revision_id":42`) {
+		t.Fatalf("expected prepared snapshot revision in call plan, got %q", string(body))
 	}
-	if !reflect.DeepEqual(client.lastCallSelector, expected) {
-		t.Fatalf("expected normalized call selector %+v, got %+v", expected, client.lastCallSelector)
+	if !strings.Contains(string(body), `"url":"https://api.example/pets"`) {
+		t.Fatalf("expected direct target url in call plan, got %q", string(body))
 	}
 }
 
@@ -129,30 +125,7 @@ func TestRuntimeServicePinsFloatingRequestsToPreparedSnapshot(t *testing.T) {
 				}
 			},
 		},
-		{
-			name: "call",
-			client: &recordingTransportClient{
-				reposBody:      []byte(`[{"repo":"acme/platform"}]`),
-				statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
-				apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
-				operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
-				callBody:       []byte(`{"kind":"call"}`),
-			},
-			run: func(t *testing.T, service *RuntimeService) error {
-				_, err := service.PlanCall(context.Background(), request.Envelope{
-					Repo:        "acme/platform",
-					OperationID: "listPets",
-					Target:      "shiva",
-				}, RequestOptions{})
-				return err
-			},
-			assert: func(t *testing.T, client *recordingTransportClient) {
-				if client.lastCallSelector.RevisionID != 42 {
-					t.Fatalf("expected floating call request to pin revision 42, got %+v", client.lastCallSelector)
-				}
-			},
-		},
-	}
+		}
 
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -547,11 +520,9 @@ type recordingTransportClient struct {
 	operationsBody        []byte
 	specBody              []byte
 	operationBody         []byte
-	callBody              []byte
 	healthBody            []byte
 	specErr               error
 	operationErr          error
-	callErr               error
 	reposErr              error
 	statusErr             error
 	apisErr               error
@@ -562,10 +533,8 @@ type recordingTransportClient struct {
 	operationsCalls       int
 	specCalls             int
 	operationCalls        int
-	callCalls             int
 	lastSpecSelector      request.Envelope
 	lastOperationSelector request.Envelope
-	lastCallSelector      request.Envelope
 	lastCatalogRepo       string
 }
 
@@ -586,15 +555,6 @@ func (c *recordingTransportClient) GetOperation(ctx context.Context, selector re
 		return nil, c.operationErr
 	}
 	return c.operationBody, nil
-}
-
-func (c *recordingTransportClient) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
-	c.callCalls++
-	c.lastCallSelector = selector
-	if c.callErr != nil {
-		return nil, c.callErr
-	}
-	return c.callBody, nil
 }
 
 func (c *recordingTransportClient) ListRepos(ctx context.Context) ([]byte, error) {

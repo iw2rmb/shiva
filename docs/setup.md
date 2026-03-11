@@ -14,6 +14,8 @@ This document describes runtime setup, configuration, and startup behavior of th
 - Run the CLI against a running Shiva instance:
   - `go run ./cmd/shiva allure/allure-deployment`
   - `go run ./cmd/shiva allure/allure-deployment#findAll_42`
+  - `go run ./cmd/shiva allure/allure-deployment@prod#getUsers --path id=42`
+  - `go run ./cmd/shiva batch --from requests.ndjson`
 - Run tests:
   - `go test ./...`
 
@@ -105,6 +107,7 @@ Current CLI cache behavior:
 - pinned `--sha` and `--rev` selectors reuse immutable cache entries
 - `--refresh` forces network refresh
 - `--offline` serves only cached catalog and explicit response data
+- repeated `--refresh` work against the same repo/API/scope is coalesced within one CLI invocation
 
 ## Health and Metrics
 - `GET /healthz`

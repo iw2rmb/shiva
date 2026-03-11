@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/iw2rmb/shiva/internal/cli/catalog"
 	"github.com/iw2rmb/shiva/internal/cli/config"
@@ -26,10 +27,13 @@ type RequestOptions struct {
 type Service interface {
 	GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
-	PlanCall(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
+	ExecuteCall(ctx context.Context, selector request.Envelope, options RequestOptions, format CallFormat) ([]byte, error)
 	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListAPIs(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListOperations(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
+	EmitRepoRequests(ctx context.Context, options RequestOptions) ([]byte, error)
+	EmitAPIRequests(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
+	EmitOperationRequests(ctx context.Context, selector request.Envelope, options RequestOptions, targetName string) ([]byte, error)
 	Sync(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
 	Health(ctx context.Context, options RequestOptions) ([]byte, error)
 }
@@ -37,7 +41,6 @@ type Service interface {
 type transportClient interface {
 	GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error)
-	PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error)
 	ListRepos(ctx context.Context) ([]byte, error)
 	GetCatalogStatus(ctx context.Context, repo string) ([]byte, error)
 	ListAPIs(ctx context.Context, selector request.Envelope) ([]byte, error)
@@ -50,6 +53,8 @@ type RuntimeService struct {
 	catalogService *catalog.Service
 	catalogStore   *catalog.Store
 	newClient      func(source profile.Source) (transportClient, error)
+	refreshMu      sync.Mutex
+	refreshedKeys  map[string]struct{}
 }
 
 func NewService(document config.Document, catalogStore *catalog.Store) *RuntimeService {
@@ -57,6 +62,7 @@ func NewService(document config.Document, catalogStore *catalog.Store) *RuntimeS
 		document:       document,
 		catalogService: catalog.NewService(catalogStore),
 		catalogStore:   catalogStore,
+		refreshedKeys:  make(map[string]struct{}),
 		newClient: func(source profile.Source) (transportClient, error) {
 			client, err := httpclient.New(httpclient.Config{
 				BaseURL:        source.BaseURL,
@@ -109,10 +115,7 @@ func (s *RuntimeService) GetSpec(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareSpec(ctx, client, source.Name, normalized, catalog.RefreshOptions{
-		Refresh: options.Refresh,
-		Offline: options.Offline,
-	})
+	prepared, err := s.catalogService.PrepareSpec(ctx, client, source.Name, normalized, s.refreshOptions("apis", source.Name, normalized, options))
 	if err != nil {
 		if !options.Refresh {
 			if cached, found, cacheErr := s.loadCachedSpecRecord(source.Name, normalized, scope, format); cacheErr == nil && found {
@@ -189,10 +192,7 @@ func (s *RuntimeService) GetOperation(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareOperation(ctx, client, source.Name, normalized, catalog.RefreshOptions{
-		Refresh: options.Refresh,
-		Offline: options.Offline,
-	})
+	prepared, err := s.catalogService.PrepareOperation(ctx, client, source.Name, normalized, s.refreshOptions("ops", source.Name, normalized, options))
 	if err != nil {
 		if !options.Refresh {
 			if cached, found, cacheErr := s.loadCachedOperationRecord(source.Name, normalized, scope, selectorKey); cacheErr == nil && found {
@@ -214,86 +214,6 @@ func (s *RuntimeService) GetOperation(
 	}
 
 	if err := s.catalogStore.SaveOperationResponse(
-		source.Name,
-		normalized.Repo,
-		normalized.API,
-		prepared.Scope,
-		selectorKey,
-		body,
-		prepared.Fingerprint,
-	); err != nil {
-		return nil, normalizeServiceError(err)
-	}
-	return body, nil
-}
-
-func (s *RuntimeService) PlanCall(
-	ctx context.Context,
-	selector request.Envelope,
-	options RequestOptions,
-) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
-		return nil, fmt.Errorf("CLI service is not configured")
-	}
-
-	normalized, err := request.NormalizeCallEnvelope(selector, request.NormalizeCallOptions{
-		DefaultTarget:    strings.TrimSpace(selector.Target),
-		AllowMissingKind: true,
-	})
-	if err != nil {
-		return nil, normalizeCLIValidation(err)
-	}
-
-	scope := catalog.ScopeFromSelector(normalized.RevisionID, normalized.SHA)
-	source, err := s.resolveSource(options.Profile, normalized.Target)
-	if err != nil {
-		return nil, err
-	}
-
-	selectorKey, err := envelopeCacheKey(normalized)
-	if err != nil {
-		return nil, normalizeServiceError(err)
-	}
-
-	if cached, found, err := s.loadCachedCallPlanRecord(source.Name, normalized, scope, selectorKey); err != nil {
-		return nil, normalizeServiceError(err)
-	} else if found && options.Offline {
-		return cached.Payload, nil
-	}
-	if options.Offline {
-		return nil, &NotFoundError{Message: fmt.Sprintf("offline cache miss: call plan for repo %q", normalized.Repo)}
-	}
-
-	client, err := s.newTransportClient(source)
-	if err != nil {
-		return nil, err
-	}
-
-	prepared, err := s.catalogService.PrepareCall(ctx, client, source.Name, normalized, catalog.RefreshOptions{
-		Refresh: options.Refresh,
-		Offline: options.Offline,
-	})
-	if err != nil {
-		if !options.Refresh {
-			if cached, found, cacheErr := s.loadCachedCallPlanRecord(source.Name, normalized, scope, selectorKey); cacheErr == nil && found {
-				return cached.Payload, nil
-			}
-		}
-		return nil, normalizeServiceError(err)
-	}
-
-	pinnedSelector := pinSelectorToPreparedSnapshot(normalized, prepared)
-	body, err := client.PlanCall(ctx, pinnedSelector)
-	if err != nil {
-		if !options.Refresh {
-			if cached, found, cacheErr := s.loadCachedCallPlanRecord(source.Name, normalized, prepared.Scope, selectorKey); cacheErr == nil && found && cacheRecordMatches(cached, prepared.Fingerprint) {
-				return cached.Payload, nil
-			}
-		}
-		return nil, normalizeServiceError(err)
-	}
-
-	if err := s.catalogStore.SaveCallPlan(
 		source.Name,
 		normalized.Repo,
 		normalized.API,
@@ -343,9 +263,9 @@ func ConvertJSONToYAML(body []byte) ([]byte, error) {
 }
 
 func (s *RuntimeService) resolveSource(requestedProfile string, requestedTarget string) (profile.Source, error) {
-	resolvedProfile, _, err := s.document.ResolveSource(requestedProfile, requestedTarget)
+	resolvedProfile, _, err := s.resolveSourceAndTarget(requestedProfile, requestedTarget)
 	if err != nil {
-		return profile.Source{}, &InvalidInputError{Message: err.Error()}
+		return profile.Source{}, err
 	}
 	return resolvedProfile, nil
 }
@@ -378,19 +298,6 @@ func (s *RuntimeService) loadCachedOperationRecord(
 	selectorKey string,
 ) (catalog.Record, bool, error) {
 	record, found, err := s.catalogStore.LoadOperationResponse(profileName, selector.Repo, selector.API, scope, selectorKey)
-	if err != nil || !found {
-		return catalog.Record{}, found, err
-	}
-	return record, true, nil
-}
-
-func (s *RuntimeService) loadCachedCallPlanRecord(
-	profileName string,
-	selector request.Envelope,
-	scope catalog.Scope,
-	selectorKey string,
-) (catalog.Record, bool, error) {
-	record, found, err := s.catalogStore.LoadCallPlan(profileName, selector.Repo, selector.API, scope, selectorKey)
 	if err != nil || !found {
 		return catalog.Record{}, found, err
 	}

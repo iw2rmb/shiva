@@ -23,7 +23,6 @@ const (
 	kindSpecJSON   = "response_spec_json"
 	kindSpecYAML   = "response_spec_yaml"
 	kindOperation  = "response_operation"
-	kindCallPlan   = "response_call_plan"
 	globalKey      = "__all__"
 )
 
@@ -207,32 +206,6 @@ func (s *Store) SaveOperationResponse(
 ) error {
 	return s.save(s.recordPath(kindOperation, profile, repo, api, scope.Key, selectorKey), Record{
 		Kind:        kindOperation,
-		Profile:     profile,
-		Repo:        repo,
-		API:         api,
-		Scope:       scope.Key,
-		SelectorKey: selectorKey,
-		Fingerprint: fingerprint,
-		RefreshedAt: s.now().UTC(),
-		Payload:     cloneBytes(payload),
-	})
-}
-
-func (s *Store) LoadCallPlan(profile string, repo string, api string, scope Scope, selectorKey string) (Record, bool, error) {
-	return s.load(s.recordPath(kindCallPlan, profile, repo, api, scope.Key, selectorKey))
-}
-
-func (s *Store) SaveCallPlan(
-	profile string,
-	repo string,
-	api string,
-	scope Scope,
-	selectorKey string,
-	payload []byte,
-	fingerprint SnapshotFingerprint,
-) error {
-	return s.save(s.recordPath(kindCallPlan, profile, repo, api, scope.Key, selectorKey), Record{
-		Kind:        kindCallPlan,
 		Profile:     profile,
 		Repo:        repo,
 		API:         api,

@@ -21,6 +21,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 		expectedOp      int
 		expectedCall    int
 		expectedFormat  SpecFormat
+		expectedCallFmt CallFormat
 		expectedRequest request.Envelope
 	}{
 		{
@@ -58,11 +59,11 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			},
 		},
 		{
-			name:           "call selector by target",
-			args:           []string{"--dry-run", "allure/allure-deployment@shiva#getUsers"},
-			expectedStdout: "{\"kind\":\"call\"}\n",
-			expectedCall:   1,
-			expectedFormat: SpecFormatJSON,
+			name:            "call selector by target",
+			args:            []string{"--dry-run", "allure/allure-deployment@shiva#getUsers"},
+			expectedStdout:  "{\"kind\":\"call\"}\n",
+			expectedCall:    1,
+			expectedCallFmt: CallFormatJSON,
 			expectedRequest: request.Envelope{
 				Kind:        request.KindCall,
 				Repo:        "allure/allure-deployment",
@@ -108,11 +109,14 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			if service.operationCalls != testCase.expectedOp {
 				t.Fatalf("expected operation calls %d, got %d", testCase.expectedOp, service.operationCalls)
 			}
-			if service.callCalls != testCase.expectedCall {
-				t.Fatalf("expected call-plan calls %d, got %d", testCase.expectedCall, service.callCalls)
-			}
+				if service.callCalls != testCase.expectedCall {
+					t.Fatalf("expected call execution calls %d, got %d", testCase.expectedCall, service.callCalls)
+				}
 			if testCase.expectedFormat != "" && service.lastFormat != testCase.expectedFormat {
 				t.Fatalf("expected format %q, got %q", testCase.expectedFormat, service.lastFormat)
+			}
+			if testCase.expectedCallFmt != "" && service.lastCallFormat != testCase.expectedCallFmt {
+				t.Fatalf("expected call format %q, got %q", testCase.expectedCallFmt, service.lastCallFormat)
 			}
 			if !reflect.DeepEqual(service.lastRequest, testCase.expectedRequest) {
 				t.Fatalf("expected request %+v, got %+v", testCase.expectedRequest, service.lastRequest)
@@ -347,6 +351,9 @@ type fakeService struct {
 	listReposBody   []byte
 	listAPIsBody    []byte
 	listOpsBody     []byte
+	emitReposBody   []byte
+	emitAPIsBody    []byte
+	emitOpsBody     []byte
 	syncBody        []byte
 	healthBody      []byte
 	specCalls       int
@@ -355,11 +362,15 @@ type fakeService struct {
 	listReposCalls  int
 	listAPIsCalls   int
 	listOpsCalls    int
+	emitReposCalls  int
+	emitAPIsCalls   int
+	emitOpsCalls    int
 	syncCalls       int
 	healthCalls     int
 	lastRequest     request.Envelope
 	lastListRequest request.Envelope
 	lastFormat      SpecFormat
+	lastCallFormat  CallFormat
 	lastListFormat  string
 	lastOptions     RequestOptions
 }
@@ -379,10 +390,10 @@ func (s *fakeService) GetOperation(ctx context.Context, selector request.Envelop
 	return s.operationBody, nil
 }
 
-func (s *fakeService) PlanCall(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error) {
+func (s *fakeService) ExecuteCall(ctx context.Context, selector request.Envelope, options RequestOptions, format CallFormat) ([]byte, error) {
 	s.callCalls++
 	s.lastRequest = selector
-	s.lastFormat = SpecFormatJSON
+	s.lastCallFormat = format
 	s.lastOptions = options
 	return s.callBody, nil
 }
@@ -408,6 +419,27 @@ func (s *fakeService) ListOperations(ctx context.Context, selector request.Envel
 	s.lastListFormat = string(format)
 	s.lastOptions = options
 	return s.listOpsBody, nil
+}
+
+func (s *fakeService) EmitRepoRequests(ctx context.Context, options RequestOptions) ([]byte, error) {
+	s.emitReposCalls++
+	s.lastOptions = options
+	return s.emitReposBody, nil
+}
+
+func (s *fakeService) EmitAPIRequests(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error) {
+	s.emitAPIsCalls++
+	s.lastListRequest = selector
+	s.lastOptions = options
+	return s.emitAPIsBody, nil
+}
+
+func (s *fakeService) EmitOperationRequests(ctx context.Context, selector request.Envelope, options RequestOptions, targetName string) ([]byte, error) {
+	s.emitOpsCalls++
+	s.lastListRequest = selector
+	s.lastOptions = options
+	_ = targetName
+	return s.emitOpsBody, nil
 }
 
 func (s *fakeService) Sync(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error) {
