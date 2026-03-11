@@ -2,268 +2,142 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
+	"reflect"
 	"testing"
+
+	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
-func TestDraftServiceResolveSingleActiveAPI(t *testing.T) {
+func TestDraftServiceGetSpecNormalizesSelector(t *testing.T) {
 	t.Parallel()
 
-	testCases := []struct {
-		name        string
-		listings    []APISpecListing
-		expectedAPI string
-		expectedErr string
-	}{
-		{
-			name: "single active api",
-			listings: []APISpecListing{
-				{API: "service-catalog/allure-api.yaml", Status: "active"},
-				{API: "service-catalog/old-api.yaml", Status: "deleted"},
-			},
-			expectedAPI: "service-catalog/allure-api.yaml",
-		},
-		{
-			name: "no active apis",
-			listings: []APISpecListing{
-				{API: "service-catalog/old-api.yaml", Status: "deleted"},
-			},
-			expectedErr: `repo "allure/allure-deployment" has no active api specs`,
-		},
-		{
-			name: "multiple active apis",
-			listings: []APISpecListing{
-				{API: "service-catalog/allure-api.yaml", Status: "active"},
-				{API: "service-catalog/admin-api.yaml", Status: "active"},
-			},
-			expectedErr: `repo "allure/allure-deployment" has multiple active apis; draft CLI requires exactly one: service-catalog/allure-api.yaml, service-catalog/admin-api.yaml`,
-		},
-	}
-
-	for _, testCase := range testCases {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			service := &DraftService{
-				client: fakeSpecClient{
-					listings: testCase.listings,
-				},
-			}
-
-			actualAPI, err := service.resolveSingleActiveAPI(context.Background(), "allure/allure-deployment")
-			if testCase.expectedErr != "" {
-				if err == nil {
-					t.Fatalf("expected error %q, got nil", testCase.expectedErr)
-				}
-				if err.Error() != testCase.expectedErr {
-					t.Fatalf("expected error %q, got %q", testCase.expectedErr, err.Error())
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("resolve single active api failed: %v", err)
-			}
-			if actualAPI != testCase.expectedAPI {
-				t.Fatalf("expected api %q, got %q", testCase.expectedAPI, actualAPI)
-			}
-		})
-	}
-}
-
-func TestDraftServiceGetRepoSpecUsesResolvedAPI(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingSpecClient{
-		listings: []APISpecListing{
-			{API: "service-catalog/allure-api.yaml", Status: "active"},
-		},
+	client := &recordingQueryClient{
 		specBody: []byte("openapi: 3.1.0\npaths: {}\n"),
 	}
 
 	service := &DraftService{client: client}
-	body, err := service.GetRepoSpec(context.Background(), "allure/allure-deployment")
+	body, err := service.GetSpec(context.Background(), request.Envelope{
+		Repo:       " allure/allure-deployment ",
+		API:        "service-catalog/allure-api.yaml",
+		RevisionID: 146,
+	}, SpecFormatYAML)
 	if err != nil {
-		t.Fatalf("get repo spec failed: %v", err)
+		t.Fatalf("get spec failed: %v", err)
 	}
 	if string(body) != "openapi: 3.1.0\npaths: {}\n" {
-		t.Fatalf("unexpected repo spec body: %q", string(body))
+		t.Fatalf("unexpected spec body %q", string(body))
 	}
-	if client.lastRepoPath != "allure/allure-deployment" {
-		t.Fatalf("expected repo path to be recorded, got %q", client.lastRepoPath)
+	expected := request.Envelope{
+		Kind:       request.KindSpec,
+		Repo:       "allure/allure-deployment",
+		API:        "service-catalog/allure-api.yaml",
+		RevisionID: 146,
 	}
-	if client.lastAPIRoot != "service-catalog/allure-api.yaml" {
-		t.Fatalf("expected api root to be recorded, got %q", client.lastAPIRoot)
+	if !reflect.DeepEqual(client.lastSpecSelector, expected) {
+		t.Fatalf("expected spec selector %+v, got %+v", expected, client.lastSpecSelector)
 	}
-	if client.lastFormat != SpecFormatYAML {
-		t.Fatalf("expected yaml format, got %q", client.lastFormat)
+	if client.lastSpecFormat != SpecFormatYAML {
+		t.Fatalf("expected spec format %q, got %q", SpecFormatYAML, client.lastSpecFormat)
 	}
 }
 
-func TestDraftServiceGetOperationDownloadsFullSpecAndScansClientSide(t *testing.T) {
+func TestDraftServiceGetOperationNormalizesMethodPath(t *testing.T) {
 	t.Parallel()
 
-	client := &recordingSpecClient{
-		listings: []APISpecListing{
-			{API: "service-catalog/allure-api.yaml", Status: "active"},
-		},
-		specBody: []byte(`{
-			"openapi":"3.1.0",
-			"paths":{
-				"/pets":{"get":{"operationId":"listPets","summary":"List pets","responses":{"200":{"description":"ok"}}}}
-			}
-		}`),
+	client := &recordingQueryClient{
+		operationBody: []byte(`{"operationId":"patchPet"}`),
 	}
 
 	service := &DraftService{client: client}
-	body, err := service.GetOperation(context.Background(), "allure/allure-deployment", "listPets")
+	_, err := service.GetOperation(context.Background(), request.Envelope{
+		Repo:   "allure/allure-deployment",
+		Method: "PATCH",
+		Path:   "pets/:id",
+	})
 	if err != nil {
 		t.Fatalf("get operation failed: %v", err)
 	}
 
-	var payload map[string]map[string]map[string]map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatalf("unmarshal operation payload failed: %v", err)
+	expected := request.Envelope{
+		Kind:   request.KindOperation,
+		Repo:   "allure/allure-deployment",
+		Method: "patch",
+		Path:   "/pets/{id}",
 	}
-
-	methodMap, ok := payload["paths"]["/pets"]
-	if !ok {
-		t.Fatalf("expected /pets path in payload, got %#v", payload)
-	}
-	if _, ok := methodMap["get"]; !ok {
-		t.Fatalf("expected get method in payload, got %#v", methodMap)
-	}
-	if client.lastRepoPath != "allure/allure-deployment" {
-		t.Fatalf("expected repo path to be recorded, got %q", client.lastRepoPath)
-	}
-	if client.lastAPIRoot != "service-catalog/allure-api.yaml" {
-		t.Fatalf("expected api root to be recorded, got %q", client.lastAPIRoot)
-	}
-	if client.lastFormat != SpecFormatJSON {
-		t.Fatalf("expected json format, got %q", client.lastFormat)
+	if !reflect.DeepEqual(client.lastOperationSelector, expected) {
+		t.Fatalf("expected operation selector %+v, got %+v", expected, client.lastOperationSelector)
 	}
 }
 
-func TestOperationPayloadByID(t *testing.T) {
+func TestDraftServicePlanCallNormalizesTarget(t *testing.T) {
 	t.Parallel()
 
-	specJSONWithUniqueOperation := []byte(`{
-		"openapi":"3.1.0",
-		"paths":{
-			"/pets":{"get":{"operationId":"listPets","summary":"List pets","responses":{"200":{"description":"ok"}}}},
-			"/pets/{id}":{"get":{"operationId":"getPet","responses":{"200":{"description":"ok"}}}}
-		}
-	}`)
-	specJSONWithDuplicateOperation := []byte(`{
-		"openapi":"3.1.0",
-		"paths":{
-			"/pets":{"get":{"operationId":"listPets","responses":{"200":{"description":"ok"}}}},
-			"/pets/search":{"post":{"operationId":"listPets","responses":{"200":{"description":"ok"}}}}
-		}
-	}`)
-
-	testCases := []struct {
-		name            string
-		specJSON        []byte
-		operationID     string
-		expectedPath    string
-		expectedMethod  string
-		expectedErr     string
-		expectedSummary string
-	}{
-		{
-			name:            "unique operation id",
-			specJSON:        specJSONWithUniqueOperation,
-			operationID:     "listPets",
-			expectedPath:    "/pets",
-			expectedMethod:  "get",
-			expectedSummary: "List pets",
-		},
-		{
-			name:        "missing operation id",
-			specJSON:    specJSONWithUniqueOperation,
-			operationID: "createPet",
-			expectedErr: `operation "createPet" was not found in repo "allure/allure-deployment"`,
-		},
-		{
-			name:        "duplicate operation id",
-			specJSON:    specJSONWithDuplicateOperation,
-			operationID: "listPets",
-			expectedErr: `operation "listPets" in repo "allure/allure-deployment" matched multiple endpoints: get /pets, post /pets/search`,
-		},
+	client := &recordingQueryClient{
+		callBody: []byte(`{"kind":"call"}`),
 	}
 
-	for _, testCase := range testCases {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
+	service := &DraftService{client: client}
+	_, err := service.PlanCall(context.Background(), request.Envelope{
+		Repo:        "allure/allure-deployment",
+		OperationID: "getUsers",
+		Target:      "shiva",
+		DryRun:      true,
+	})
+	if err != nil {
+		t.Fatalf("plan call failed: %v", err)
+	}
 
-			body, err := operationPayloadByID("allure/allure-deployment", testCase.operationID, testCase.specJSON)
-			if testCase.expectedErr != "" {
-				if err == nil {
-					t.Fatalf("expected error %q, got nil", testCase.expectedErr)
-				}
-				if err.Error() != testCase.expectedErr {
-					t.Fatalf("expected error %q, got %q", testCase.expectedErr, err.Error())
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("operation payload lookup failed: %v", err)
-			}
-
-			var payload map[string]map[string]map[string]map[string]any
-			if err := json.Unmarshal(body, &payload); err != nil {
-				t.Fatalf("unmarshal operation payload failed: %v", err)
-			}
-
-			methodMap, ok := payload["paths"][testCase.expectedPath]
-			if !ok {
-				t.Fatalf("expected path %q in payload, got %#v", testCase.expectedPath, payload)
-			}
-
-			operation, ok := methodMap[testCase.expectedMethod]
-			if !ok {
-				t.Fatalf("expected method %q in payload, got %#v", testCase.expectedMethod, methodMap)
-			}
-
-			summary, _ := operation["summary"].(string)
-			if summary != testCase.expectedSummary {
-				t.Fatalf("expected summary %q, got %q", testCase.expectedSummary, summary)
-			}
-		})
+	expected := request.Envelope{
+		Kind:        request.KindCall,
+		Repo:        "allure/allure-deployment",
+		Target:      "shiva",
+		OperationID: "getUsers",
+		DryRun:      true,
+	}
+	if !reflect.DeepEqual(client.lastCallSelector, expected) {
+		t.Fatalf("expected call selector %+v, got %+v", expected, client.lastCallSelector)
 	}
 }
 
-type fakeSpecClient struct {
-	listings []APISpecListing
+func TestConvertJSONToYAML(t *testing.T) {
+	t.Parallel()
+
+	body, err := ConvertJSONToYAML([]byte(`{"operationId":"patchPet"}`))
+	if err != nil {
+		t.Fatalf("convert json to yaml failed: %v", err)
+	}
+	if string(body) != "operationId: patchPet\n" {
+		t.Fatalf("unexpected yaml body %q", string(body))
+	}
 }
 
-func (c fakeSpecClient) ListAPISpecs(ctx context.Context, repoPath string) ([]APISpecListing, error) {
-	return c.listings, nil
+type recordingQueryClient struct {
+	specBody              []byte
+	operationBody         []byte
+	callBody              []byte
+	healthBody            []byte
+	lastSpecSelector      request.Envelope
+	lastOperationSelector request.Envelope
+	lastCallSelector      request.Envelope
+	lastSpecFormat        SpecFormat
 }
 
-func (c fakeSpecClient) GetSpec(ctx context.Context, repoPath string, apiRoot string, format SpecFormat) ([]byte, error) {
-	return nil, nil
-}
-
-type recordingSpecClient struct {
-	listings     []APISpecListing
-	specBody     []byte
-	lastRepoPath string
-	lastAPIRoot  string
-	lastFormat   SpecFormat
-}
-
-func (c *recordingSpecClient) ListAPISpecs(ctx context.Context, repoPath string) ([]APISpecListing, error) {
-	return c.listings, nil
-}
-
-func (c *recordingSpecClient) GetSpec(ctx context.Context, repoPath string, apiRoot string, format SpecFormat) ([]byte, error) {
-	c.lastRepoPath = repoPath
-	c.lastAPIRoot = apiRoot
-	c.lastFormat = format
+func (c *recordingQueryClient) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {
+	c.lastSpecSelector = selector
+	c.lastSpecFormat = format
 	return c.specBody, nil
+}
+
+func (c *recordingQueryClient) GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	c.lastOperationSelector = selector
+	return c.operationBody, nil
+}
+
+func (c *recordingQueryClient) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	c.lastCallSelector = selector
+	return c.callBody, nil
+}
+
+func (c *recordingQueryClient) Health(ctx context.Context) ([]byte, error) {
+	return c.healthBody, nil
 }

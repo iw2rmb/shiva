@@ -62,6 +62,22 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 			},
 		},
 		{
+			name: "method path selector normalizes cli colon segments",
+			input: Envelope{
+				Kind:   KindCall,
+				Repo:   "acme/platform",
+				Method: "GET",
+				Path:   "/pets/:id/owners/:ownerId",
+			},
+			options: NormalizeCallOptions{},
+			expected: Envelope{
+				Kind:   KindCall,
+				Repo:   "acme/platform",
+				Method: "get",
+				Path:   "/pets/{id}/owners/{ownerId}",
+			},
+		},
+		{
 			name: "rejects invalid selector combination",
 			input: Envelope{
 				Kind:        KindCall,

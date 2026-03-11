@@ -46,7 +46,7 @@ Legend: [ ] todo, [x] done.
 3. Keep executor-specific transport details outside the envelope so direct calls and Shiva-mediated calls share one normalization model and diverge only at dispatch time.
 4. Add handler and service tests that cover envelope validation, ambiguous resolution, and no-network dry-run planning.
 
-- [ ] 1.5 Rebuild the CLI command grammar around the designed shorthand
+- [x] 1.5 Rebuild the CLI command grammar around the designed shorthand
   - Repository: `shiva`
   - Component: `cmd/shiva`, `internal/cli`
   - Reasoning: `high`

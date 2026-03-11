@@ -272,7 +272,16 @@ func NormalizeLookupPath(value string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return path
+
+	segments := strings.Split(path, "/")
+	for index := range segments {
+		segment := segments[index]
+		if len(segment) > 1 && strings.HasPrefix(segment, ":") {
+			segments[index] = "{" + segment[1:] + "}"
+		}
+	}
+
+	return strings.Join(segments, "/")
 }
 
 func IsShortSHA(value string) bool {

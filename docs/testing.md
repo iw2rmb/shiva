@@ -14,8 +14,8 @@ Current baseline should be validated by running `go test ./...`.
   - `go test ./internal/http`
 - Shared CLI request-envelope and call-planning packages:
   - `go test ./internal/cli/request ./internal/cli/executor`
-- Draft CLI parser, service logic, and completion generation:
-  - `go test ./internal/cli ./cmd/shiva`
+- CLI parser, request transport, and command entrypoint:
+  - `go test ./internal/cli/... ./cmd/shiva/...`
 - OpenAPI resolver/build/diff:
   - `go test ./internal/openapi`
 - Store + selector behavior:
@@ -27,7 +27,7 @@ Current baseline should be validated by running `go test ./...`.
 
 ## Coverage Areas
 - Config parsing and defaults.
-- Draft CLI selector parsing, single-active-API resolution, client-side `operationId` lookup, and static completion generation.
+- CLI shorthand parsing, request-envelope normalization, query-transport dispatch, health command wiring, and static completion generation.
 - GitLab API client behavior.
 - Startup schema migration bootstrap and checksum validation.
 - Startup indexing orchestration and checkpoint resume behavior.
@@ -79,7 +79,7 @@ When SQL schema/query files change:
 3. Run full suite (`go test ./...`).
 
 ## References
-- Draft CLI behavior: `docs/cli.md`
+- CLI behavior: `docs/cli.md`
 - Runtime/setup details: `docs/setup.md`
 - Ingest behavior under test: `docs/gitlab.md`
 - Endpoint route behavior under test: `docs/endpoints.md`

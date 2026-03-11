@@ -6,137 +6,96 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/iw2rmb/shiva/internal/openapi"
+	"github.com/iw2rmb/shiva/internal/cli/request"
+	"gopkg.in/yaml.v3"
 )
 
 type Service interface {
-	GetRepoSpec(ctx context.Context, repoPath string) ([]byte, error)
-	GetOperation(ctx context.Context, repoPath string, operationID string) ([]byte, error)
+	GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error)
+	GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error)
+	PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error)
+	Health(ctx context.Context) ([]byte, error)
 }
 
-type specClient interface {
-	ListAPISpecs(ctx context.Context, repoPath string) ([]APISpecListing, error)
-	GetSpec(ctx context.Context, repoPath string, apiRoot string, format SpecFormat) ([]byte, error)
+type queryClient interface {
+	GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error)
+	GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error)
+	PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error)
+	Health(ctx context.Context) ([]byte, error)
 }
 
 type DraftService struct {
-	client specClient
+	client queryClient
 }
 
 func NewService(client *HTTPClient) *DraftService {
 	return &DraftService{client: client}
 }
 
-func (s *DraftService) GetRepoSpec(ctx context.Context, repoPath string) ([]byte, error) {
-	apiRoot, err := s.resolveSingleActiveAPI(ctx, repoPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.client.GetSpec(ctx, repoPath, apiRoot, SpecFormatYAML)
-}
-
-func (s *DraftService) GetOperation(ctx context.Context, repoPath string, operationID string) ([]byte, error) {
-	apiRoot, err := s.resolveSingleActiveAPI(ctx, repoPath)
-	if err != nil {
-		return nil, err
-	}
-
-	specJSON, err := s.client.GetSpec(ctx, repoPath, apiRoot, SpecFormatJSON)
-	if err != nil {
-		return nil, err
-	}
-
-	return operationPayloadByID(repoPath, operationID, specJSON)
-}
-
-func (s *DraftService) resolveSingleActiveAPI(ctx context.Context, repoPath string) (string, error) {
+func (s *DraftService) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {
 	if s == nil || s.client == nil {
-		return "", fmt.Errorf("draft cli service is not configured")
+		return nil, fmt.Errorf("draft cli service is not configured")
 	}
 
-	listings, err := s.client.ListAPISpecs(ctx, repoPath)
+	normalized, err := request.NormalizeEnvelope(selector, request.NormalizeOptions{
+		DefaultKind:      request.KindSpec,
+		AllowMissingKind: true,
+	})
 	if err != nil {
-		return "", err
+		return nil, normalizeCLIValidation(err)
 	}
 
-	activeAPIs := make([]string, 0, len(listings))
-	for _, listing := range listings {
-		if strings.EqualFold(strings.TrimSpace(listing.Status), "active") {
-			activeAPIs = append(activeAPIs, listing.API)
-		}
-	}
-
-	switch len(activeAPIs) {
-	case 0:
-		return "", &NotFoundError{
-			Message: fmt.Sprintf("repo %q has no active api specs", repoPath),
-		}
-	case 1:
-		return activeAPIs[0], nil
-	default:
-		return "", &AmbiguousAPIError{
-			Repo: repoPath,
-			APIs: activeAPIs,
-		}
-	}
+	return s.client.GetSpec(ctx, normalized, format)
 }
 
-func operationPayloadByID(repoPath string, operationID string, specJSON []byte) ([]byte, error) {
-	endpoints, err := openapi.ExtractEndpointsFromSpecJSON(specJSON)
+func (s *DraftService) GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("draft cli service is not configured")
+	}
+
+	normalized, err := request.NormalizeEnvelope(selector, request.NormalizeOptions{
+		DefaultKind:      request.KindOperation,
+		AllowMissingKind: true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("extract endpoints from canonical spec: %w", err)
+		return nil, normalizeCLIValidation(err)
 	}
 
-	matches := make([]openapi.Endpoint, 0, 1)
-	for _, endpoint := range endpoints {
-		if endpoint.OperationID == operationID {
-			matches = append(matches, endpoint)
-		}
-	}
-
-	switch len(matches) {
-	case 0:
-		return nil, &NotFoundError{
-			Message: fmt.Sprintf("operation %q was not found in repo %q", operationID, repoPath),
-		}
-	case 1:
-		payload, err := buildOperationSlicePayload(matches[0])
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(payload)
-	default:
-		candidates := make([]OperationCandidate, 0, len(matches))
-		for _, match := range matches {
-			candidates = append(candidates, OperationCandidate{
-				Method: match.Method,
-				Path:   match.Path,
-			})
-		}
-		return nil, &AmbiguousOperationError{
-			Repo:        repoPath,
-			OperationID: operationID,
-			Candidates:  candidates,
-		}
-	}
+	return s.client.GetOperation(ctx, normalized)
 }
 
-func buildOperationSlicePayload(endpoint openapi.Endpoint) (map[string]any, error) {
-	if len(endpoint.RawJSON) == 0 {
-		return nil, fmt.Errorf("operation payload is empty for %s %s", endpoint.Method, endpoint.Path)
+func (s *DraftService) PlanCall(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("draft cli service is not configured")
 	}
 
-	var operation any
-	if err := json.Unmarshal(endpoint.RawJSON, &operation); err != nil {
-		return nil, fmt.Errorf("decode operation payload: %w", err)
+	normalized, err := request.NormalizeCallEnvelope(selector, request.NormalizeCallOptions{
+		DefaultTarget:    strings.TrimSpace(selector.Target),
+		AllowMissingKind: true,
+	})
+	if err != nil {
+		return nil, normalizeCLIValidation(err)
 	}
 
-	return map[string]any{
-		"paths": map[string]any{
-			endpoint.Path: map[string]any{
-				endpoint.Method: operation,
-			},
-		},
-	}, nil
+	return s.client.PlanCall(ctx, normalized)
+}
+
+func (s *DraftService) Health(ctx context.Context) ([]byte, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("draft cli service is not configured")
+	}
+	return s.client.Health(ctx)
+}
+
+func ConvertJSONToYAML(body []byte) ([]byte, error) {
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, fmt.Errorf("decode json output: %w", err)
+	}
+
+	yamlBody, err := yaml.Marshal(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("encode yaml output: %w", err)
+	}
+	return yamlBody, nil
 }

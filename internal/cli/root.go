@@ -4,55 +4,194 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
+	flags := &RootFlags{}
+
 	rootCmd := &cobra.Command{
-		Use:           "shiva <repo-path>|<repo-path>#<operationId>",
-		Short:         "Fetch Shiva specs and operations",
+		Use:           "shiva <repo-ref> [<method> <path>]",
+		Short:         "Inspect Shiva specs and plan Shiva calls",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return &InvalidInputError{
-					Message: "expected exactly one selector argument",
-				}
-			}
-			return nil
-		},
+		Args:          cobra.ArbitraryArgs,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
-		Example: "  shiva allure/allure-deployment\n  shiva allure/allure-deployment#findAll_42",
+		Example: strings.Join([]string{
+			"  shiva allure/allure-deployment",
+			"  shiva allure/allure-deployment#findAll_42",
+			"  shiva allure/allure-deployment get /accessgroup/:id",
+			"  shiva allure/allure-deployment@shiva#getUsers --dry-run",
+		}, "\n"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			invocation, err := ParseShorthandInvocation(args, *flags)
+			if err != nil {
+				return err
+			}
+
+			service, err := loadService(serviceFactory)
+			if err != nil {
+				return err
+			}
+
+			body, err := executeInvocation(cmd.Context(), service, invocation, *flags)
+			if err != nil {
+				return err
+			}
+			return writeOutput(cmd.OutOrStdout(), body)
+		},
+	}
+
+	addSharedFlags(rootCmd, flags)
+	rootCmd.AddCommand(
+		newListCommand(),
+		newSyncCommand(),
+		newBatchCommand(),
+		newCompletionCommand(rootCmd),
+		newHealthCommand(serviceFactory),
+	)
+	return rootCmd
+}
+
+func addSharedFlags(command *cobra.Command, flags *RootFlags) {
+	command.PersistentFlags().StringVarP(&flags.API, "api", "a", "", "API root path")
+	command.PersistentFlags().StringVar(&flags.SHA, "sha", "", "8-character lowercase revision SHA")
+	command.PersistentFlags().Int64Var(&flags.RevisionID, "rev", 0, "revision id")
+	command.PersistentFlags().StringVar(&flags.Profile, "profile", "", "source profile name")
+	command.PersistentFlags().StringVar(&flags.Target, "via", "", "execution target")
+	command.PersistentFlags().BoolVar(&flags.Refresh, "refresh", false, "force refresh before execution")
+	command.PersistentFlags().BoolVar(&flags.Offline, "offline", false, "forbid network refreshes")
+	command.PersistentFlags().BoolVar(&flags.DryRun, "dry-run", false, "print the normalized plan without dispatch")
+	command.PersistentFlags().StringVarP(&flags.Output, "output", "o", "", "output mode")
+}
+
+func executeInvocation(ctx context.Context, service Service, invocation ShorthandInvocation, flags RootFlags) ([]byte, error) {
+	switch invocation.Envelope.Kind {
+	case request.KindSpec:
+		format, err := resolveOutputMode(invocation.Envelope.Kind, flags.Output)
+		if err != nil {
+			return nil, err
+		}
+		return service.GetSpec(ctx, invocation.Envelope, format)
+	case request.KindOperation:
+		format, err := resolveOutputMode(invocation.Envelope.Kind, flags.Output)
+		if err != nil {
+			return nil, err
+		}
+		body, err := service.GetOperation(ctx, invocation.Envelope)
+		if err != nil {
+			return nil, err
+		}
+		if format == SpecFormatYAML {
+			return ConvertJSONToYAML(body)
+		}
+		return body, nil
+	case request.KindCall:
+		if _, err := resolveOutputMode(invocation.Envelope.Kind, flags.Output); err != nil {
+			return nil, err
+		}
+		return service.PlanCall(ctx, invocation.Envelope)
+	default:
+		return nil, fmt.Errorf("unsupported command kind %q", invocation.Envelope.Kind)
+	}
+}
+
+func resolveOutputMode(kind request.Kind, output string) (SpecFormat, error) {
+	mode := strings.TrimSpace(output)
+
+	switch kind {
+	case request.KindSpec:
+		switch mode {
+		case "", string(SpecFormatYAML):
+			return SpecFormatYAML, nil
+		case string(SpecFormatJSON):
+			return SpecFormatJSON, nil
+		default:
+			return "", &InvalidInputError{Message: fmt.Sprintf("spec output must be one of: %s, %s", SpecFormatYAML, SpecFormatJSON)}
+		}
+	case request.KindOperation:
+		switch mode {
+		case "", string(SpecFormatJSON):
+			return SpecFormatJSON, nil
+		case string(SpecFormatYAML):
+			return SpecFormatYAML, nil
+		default:
+			return "", &InvalidInputError{Message: fmt.Sprintf("operation output must be one of: %s, %s", SpecFormatJSON, SpecFormatYAML)}
+		}
+	case request.KindCall:
+		switch mode {
+		case "", string(SpecFormatJSON):
+			return SpecFormatJSON, nil
+		default:
+			return "", &InvalidInputError{Message: "call planning output must be json"}
+		}
+	default:
+		return "", &InvalidInputError{Message: fmt.Sprintf("unsupported command kind %q", kind)}
+	}
+}
+
+func newListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:           "ls",
+		Short:         "List Shiva inventory",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf("ls is not implemented yet")
+		},
+	}
+}
+
+func newSyncCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:           "sync <repo-ref>",
+		Short:         "Refresh Shiva catalog data",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args:          cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf("sync is not implemented yet")
+		},
+	}
+}
+
+func newBatchCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:           "batch",
+		Short:         "Execute Shiva request envelopes in batch",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf("batch is not implemented yet")
+		},
+	}
+}
+
+func newHealthCommand(serviceFactory func() (Service, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:           "health",
+		Short:         "Check Shiva CLI source health",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			service, err := loadService(serviceFactory)
 			if err != nil {
 				return err
 			}
 
-			selector, err := ParseSelector(args[0])
+			body, err := service.Health(cmd.Context())
 			if err != nil {
 				return err
 			}
-
-			var body []byte
-			if selector.HasOperation() {
-				body, err = service.GetOperation(cmd.Context(), selector.RepoPath, selector.OperationID)
-			} else {
-				body, err = service.GetRepoSpec(cmd.Context(), selector.RepoPath)
-			}
-			if err != nil {
-				return err
-			}
-
 			return writeOutput(cmd.OutOrStdout(), body)
 		},
 	}
-
-	rootCmd.AddCommand(newCompletionCommand(rootCmd))
-	return rootCmd
 }
 
 func loadService(factory func() (Service, error)) (Service, error) {
