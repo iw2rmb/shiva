@@ -145,7 +145,8 @@ Success writes to stdout. Errors write to stderr.
 - `11`: internal client or server error
 
 ## Current Limits
-- Dynamic repo/API/operation/profile/target completions are not shipped yet.
+- Dynamic repo/API/operation/profile/target and HTTP-method completions are shipped through the generated Cobra completion script.
+- Completion reads from the local catalog cache first and may do a short best-effort refresh for stale slices before falling back to cached values.
 - `ls repos --emit request` emits only repos with exactly one active API snapshot, because repo-only spec fetch remains ambiguous for multi-API repos.
 
 ## Ambiguity Reporting

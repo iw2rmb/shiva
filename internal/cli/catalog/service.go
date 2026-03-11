@@ -384,3 +384,11 @@ func parseStatusFingerprint(payload []byte) (SnapshotFingerprint, error) {
 func timePtr(value time.Time) *time.Time {
 	return &value
 }
+
+func ReposRecordStale(record Record, now time.Time) bool {
+	return now.UTC().Sub(record.RefreshedAt) >= defaultReposTTL
+}
+
+func StatusRecordStale(record Record, now time.Time) bool {
+	return record.CheckedAt == nil || now.UTC().Sub(*record.CheckedAt) >= defaultFloatingTTL
+}

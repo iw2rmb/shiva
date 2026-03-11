@@ -6,22 +6,22 @@ import (
 	"io"
 	"strings"
 
+	"github.com/iw2rmb/shiva/internal/cli/completion"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
 	flags := &RootFlags{}
+	completionProvider := completion.NewProvider()
 
 	rootCmd := &cobra.Command{
-		Use:           "shiva <repo-ref> [<method> <path>]",
-		Short:         "Inspect Shiva specs and plan Shiva calls",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		Args:          cobra.ArbitraryArgs,
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
+		Use:               "shiva <repo-ref> [<method> <path>]",
+		Short:             "Inspect Shiva specs and plan Shiva calls",
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: completionProvider.CompleteRootArg,
 		Example: strings.Join([]string{
 			"  shiva allure/allure-deployment",
 			"  shiva allure/allure-deployment#findAll_42",
@@ -53,13 +53,19 @@ func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
 	}
 
 	addSharedFlags(rootCmd, flags)
+	listCmd := newListCommand(serviceFactory, flags, completionProvider)
+	syncCmd := newSyncCommand(serviceFactory, flags)
+	syncCmd.ValidArgsFunction = completionProvider.CompleteRepoArg
 	rootCmd.AddCommand(
-		newListCommand(serviceFactory, flags),
-		newSyncCommand(serviceFactory, flags),
+		listCmd,
+		syncCmd,
 		newBatchCommand(serviceFactory, flags),
 		newCompletionCommand(rootCmd),
 		newHealthCommand(serviceFactory, flags),
 	)
+	mustRegisterCompletionFunc(rootCmd, "api", completionProvider.CompleteAPIFlag)
+	mustRegisterCompletionFunc(rootCmd, "profile", completionProvider.CompleteProfileFlag)
+	mustRegisterCompletionFunc(rootCmd, "via", completionProvider.CompleteTargetFlag)
 	return rootCmd
 }
 
@@ -78,6 +84,16 @@ func addSharedFlags(command *cobra.Command, flags *RootFlags) {
 	command.PersistentFlags().StringArrayVar(&flags.Header, "header", nil, "request header Name=value")
 	command.PersistentFlags().StringVar(&flags.JSON, "json", "", "inline json or @file request body")
 	command.PersistentFlags().StringVar(&flags.Body, "body", "", "@file request body")
+}
+
+func mustRegisterCompletionFunc(
+	command *cobra.Command,
+	flagName string,
+	fn func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective),
+) {
+	if err := command.RegisterFlagCompletionFunc(flagName, fn); err != nil {
+		panic(err)
+	}
 }
 
 func executeInvocation(ctx context.Context, service Service, invocation ShorthandInvocation, flags RootFlags) ([]byte, error) {

@@ -86,7 +86,7 @@ Legend: [ ] todo, [x] done.
 3. Implement dry-run JSON and curl outputs without sending the final request while still running normal selector resolution and catalog policy.
 4. Implement `batch` stdin and file NDJSON ingestion, grouped refresh reuse, and request-envelope compatibility with `ls --emit request`.
 
-- [ ] 1.9 Add dynamic completion on top of static Cobra scripts
+- [x] 1.9 Add dynamic completion on top of static Cobra scripts
   - Repository: `shiva`
   - Component: `internal/cli/completion`, `internal/cli/catalog`, `cmd/shiva`
   - Reasoning: `medium`

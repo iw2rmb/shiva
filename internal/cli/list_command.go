@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/iw2rmb/shiva/internal/cli/completion"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/spf13/cobra"
@@ -15,7 +16,7 @@ type ListFlags struct {
 	Emit string
 }
 
-func newListCommand(serviceFactory func() (Service, error), flags *RootFlags) *cobra.Command {
+func newListCommand(serviceFactory func() (Service, error), flags *RootFlags, completionProvider *completion.Provider) *cobra.Command {
 	listFlags := &ListFlags{}
 	command := &cobra.Command{
 		Use:           "ls",
@@ -28,10 +29,16 @@ func newListCommand(serviceFactory func() (Service, error), flags *RootFlags) *c
 	}
 	command.PersistentFlags().StringVar(&listFlags.Emit, "emit", "", "emit request envelopes")
 
+	reposCmd := newListReposCommand(serviceFactory, flags, listFlags)
+	apisCmd := newListAPIsCommand(serviceFactory, flags, listFlags)
+	opsCmd := newListOperationsCommand(serviceFactory, flags, listFlags)
+	apisCmd.ValidArgsFunction = completionProvider.CompleteRepoArg
+	opsCmd.ValidArgsFunction = completionProvider.CompleteRepoArg
+
 	command.AddCommand(
-		newListReposCommand(serviceFactory, flags, listFlags),
-		newListAPIsCommand(serviceFactory, flags, listFlags),
-		newListOperationsCommand(serviceFactory, flags, listFlags),
+		reposCmd,
+		apisCmd,
+		opsCmd,
 	)
 	return command
 }
