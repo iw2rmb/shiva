@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/iw2rmb/shiva/internal/store"
+	"github.com/iw2rmb/shiva/internal/textutil"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -179,7 +180,7 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) (handlerErr error) {
 				logger.Error(
 					"failed to persist GitLab ingest event",
 					"delivery_id", deliveryID,
-					"sha", sha,
+					"sha", textutil.ShortSHA(sha),
 					"error", err,
 				)
 			}
@@ -200,11 +201,11 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) (handlerErr error) {
 	if logger != nil {
 		logger.Info(
 			"gitlab webhook accepted",
-			"event_id", result.EventID,
+			"ingest_event_id", result.EventID,
 			"duplicate", result.Duplicate,
 			"delivery_id", deliveryID,
 			"repo_id", result.RepoID,
-			"sha", sha,
+			"sha", textutil.ShortSHA(sha),
 		)
 	}
 

@@ -21,6 +21,7 @@ import (
 	"github.com/iw2rmb/shiva/internal/observability"
 	"github.com/iw2rmb/shiva/internal/openapi"
 	"github.com/iw2rmb/shiva/internal/store"
+	"github.com/iw2rmb/shiva/internal/textutil"
 	"github.com/iw2rmb/shiva/internal/worker"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -364,10 +365,10 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) (wo
 	logger := p.logger
 	if logger != nil {
 		logger = logger.With(
-			"event_id", job.EventID,
+			"ingest_event_id", job.EventID,
 			"delivery_id", job.DeliveryID,
 			"repo_id", job.RepoID,
-			"sha", job.Sha,
+			"sha", textutil.ShortSHA(job.Sha),
 		)
 		logger.Debug("revision processing started")
 	}
@@ -379,7 +380,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) (wo
 	}
 
 	if logger != nil {
-		logger = logger.With("revision_id", revisionID)
+		logger = logger.With("ingest_event_id", revisionID)
 	}
 	processSpan.SetAttributes(attribute.Int64("revision.id", revisionID))
 
@@ -668,9 +669,9 @@ func (p revisionProcessor) processDeletedImpactedAPI(
 	}
 
 	apiSpecRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
-		APISpecID:   item.spec.ID,
-		RevisionID:  revisionID,
-		BuildStatus: apiSpecRevisionBuildStatusProcessed,
+		APISpecID:     item.spec.ID,
+		IngestEventID: revisionID,
+		BuildStatus:   apiSpecRevisionBuildStatusProcessed,
 	})
 	if err != nil {
 		return changedAPISpecRevision{}, fmt.Errorf(
@@ -862,9 +863,9 @@ func (p revisionProcessor) processIncrementalAPI(
 	resolveRoot func(context.Context) (openapi.RootResolution, error),
 ) (store.APISpecRevision, bool, error) {
 	apiSpecRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
-		APISpecID:   apiSpec.ID,
-		RevisionID:  revisionID,
-		BuildStatus: apiSpecRevisionBuildStatusProcessing,
+		APISpecID:     apiSpec.ID,
+		IngestEventID: revisionID,
+		BuildStatus:   apiSpecRevisionBuildStatusProcessing,
 	})
 	if err != nil {
 		return store.APISpecRevision{}, false, fmt.Errorf("create api spec revision for root %q: %w", apiSpec.RootPath, err)
@@ -893,9 +894,9 @@ func (p revisionProcessor) processIncrementalAPI(
 	}
 
 	processedRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
-		APISpecID:   apiSpec.ID,
-		RevisionID:  revisionID,
-		BuildStatus: apiSpecRevisionBuildStatusProcessed,
+		APISpecID:     apiSpec.ID,
+		IngestEventID: revisionID,
+		BuildStatus:   apiSpecRevisionBuildStatusProcessed,
 	})
 	if err != nil {
 		return store.APISpecRevision{}, false, fmt.Errorf("mark api spec revision processed for root %q: %w", apiSpec.RootPath, err)
@@ -916,10 +917,10 @@ func (p revisionProcessor) handleIncrementalAPIFailure(
 	}
 
 	failedRevision, markErr := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
-		APISpecID:   apiSpec.ID,
-		RevisionID:  revisionID,
-		BuildStatus: apiSpecRevisionBuildStatusFailed,
-		Error:       err.Error(),
+		APISpecID:     apiSpec.ID,
+		IngestEventID: revisionID,
+		BuildStatus:   apiSpecRevisionBuildStatusFailed,
+		Error:         err.Error(),
 	})
 	if markErr != nil {
 		return store.APISpecRevision{}, false, fmt.Errorf("mark api spec revision failed for root %q: %w", apiSpec.RootPath, markErr)
@@ -1225,7 +1226,7 @@ func (p revisionProcessor) emitOutboundNotifications(
 			APISpecID:         item.apiSpec.ID,
 			API:               item.apiSpec.RootPath,
 			APISpecRevisionID: item.toAPISpecRevisionID,
-			RevisionID:        revisionID,
+			IngestEventID:     revisionID,
 			DeliveryID:        job.DeliveryID,
 			Sha:               revision.Sha,
 			Branch:            revision.Branch,

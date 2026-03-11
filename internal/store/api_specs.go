@@ -27,7 +27,7 @@ type APISpec struct {
 type APISpecRevision struct {
 	ID                 int64
 	APISpecID          int64
-	RevisionID         int64
+	IngestEventID      int64
 	RootPathAtRevision string
 	BuildStatus        string
 	Error              string
@@ -35,9 +35,9 @@ type APISpecRevision struct {
 
 type APISpecRevisionMetadata struct {
 	APISpecRevisionID int64
-	RevisionID        int64
-	RevisionSHA       string
-	RevisionBranch    string
+	IngestEventID     int64
+	IngestEventSHA    string
+	IngestEventBranch string
 }
 
 type APISpecListing struct {
@@ -57,10 +57,10 @@ type UpsertAPISpecInput struct {
 }
 
 type CreateAPISpecRevisionInput struct {
-	APISpecID   int64
-	RevisionID  int64
-	BuildStatus string
-	Error       string
+	APISpecID     int64
+	IngestEventID int64
+	BuildStatus   string
+	Error         string
 }
 
 type ReplaceAPISpecDependenciesInput struct {
@@ -74,10 +74,10 @@ type normalizedUpsertAPISpecInput struct {
 }
 
 type normalizedCreateAPISpecRevisionInput struct {
-	APISpecID   int64
-	RevisionID  int64
-	BuildStatus string
-	Error       string
+	APISpecID     int64
+	IngestEventID int64
+	BuildStatus   string
+	Error         string
 }
 
 type normalizedReplaceAPISpecDependenciesInput struct {
@@ -216,9 +216,9 @@ type apiSpecListingAtRevisionRow struct {
 	API               string
 	Status            string
 	APISpecRevisionID sql.NullInt64
-	RevisionID        sql.NullInt64
-	RevisionSHA       sql.NullString
-	RevisionBranch    sql.NullString
+	IngestEventID     sql.NullInt64
+	IngestEventSHA    sql.NullString
+	IngestEventBranch sql.NullString
 }
 
 type listAPISpecListingByRepoAtRevision interface {
@@ -246,23 +246,23 @@ latest_processed AS (
 	    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
 	        api_spec_revisions.api_spec_id,
 	        api_spec_revisions.id AS api_spec_revision_id,
-	        api_spec_revisions.revision_id
+	        api_spec_revisions.ingest_event_id
 	    FROM api_spec_revisions
 	    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
 	    WHERE api_spec_revisions.build_status = 'processed'
-	      AND api_spec_revisions.revision_id <= $2
-    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.revision_id DESC, api_spec_revisions.id DESC
+	      AND api_spec_revisions.ingest_event_id <= $2
+    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.ingest_event_id DESC, api_spec_revisions.id DESC
 )
 SELECT
 	repo_specs.root_path AS api,
 	repo_specs.status,
 	latest_processed.api_spec_revision_id,
-	ingest_events.id AS revision_id,
-	ingest_events.sha AS revision_sha,
-	ingest_events.branch AS revision_branch
+	ingest_events.id AS ingest_event_id,
+	ingest_events.sha AS ingest_event_sha,
+	ingest_events.branch AS ingest_event_branch
 FROM repo_specs
 LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
-LEFT JOIN ingest_events ON ingest_events.id = latest_processed.revision_id
+LEFT JOIN ingest_events ON ingest_events.id = latest_processed.ingest_event_id
 ORDER BY repo_specs.root_path ASC;
 		`,
 		repoID,
@@ -280,9 +280,9 @@ ORDER BY repo_specs.root_path ASC;
 			&row.API,
 			&row.Status,
 			&row.APISpecRevisionID,
-			&row.RevisionID,
-			&row.RevisionSHA,
-			&row.RevisionBranch,
+			&row.IngestEventID,
+			&row.IngestEventSHA,
+			&row.IngestEventBranch,
 		); err != nil {
 			return nil, err
 		}
@@ -344,12 +344,12 @@ func listAPISpecListingByRepo(
 			Status: row.Status,
 		}
 
-		if row.ApiSpecRevisionID.Valid && row.RevisionID.Valid && row.RevisionSha.Valid && row.RevisionBranch.Valid {
+		if row.ApiSpecRevisionID.Valid && row.IngestEventID.Valid && row.IngestEventSha.Valid && row.IngestEventBranch.Valid {
 			item.LastProcessedRevision = &APISpecRevisionMetadata{
 				APISpecRevisionID: row.ApiSpecRevisionID.Int64,
-				RevisionID:        row.RevisionID.Int64,
-				RevisionSHA:       row.RevisionSha.String,
-				RevisionBranch:    row.RevisionBranch.String,
+				IngestEventID:     row.IngestEventID.Int64,
+				IngestEventSHA:    row.IngestEventSha.String,
+				IngestEventBranch: row.IngestEventBranch.String,
 			}
 		}
 
@@ -379,12 +379,12 @@ func listAPISpecListingsByRepoAtRevision(
 			Status: row.Status,
 		}
 
-		if row.APISpecRevisionID.Valid && row.RevisionID.Valid && row.RevisionSHA.Valid && row.RevisionBranch.Valid {
+		if row.APISpecRevisionID.Valid && row.IngestEventID.Valid && row.IngestEventSHA.Valid && row.IngestEventBranch.Valid {
 			item.LastProcessedRevision = &APISpecRevisionMetadata{
 				APISpecRevisionID: row.APISpecRevisionID.Int64,
-				RevisionID:        row.RevisionID.Int64,
-				RevisionSHA:       row.RevisionSHA.String,
-				RevisionBranch:    row.RevisionBranch.String,
+				IngestEventID:     row.IngestEventID.Int64,
+				IngestEventSHA:    row.IngestEventSHA.String,
+				IngestEventBranch: row.IngestEventBranch.String,
 			}
 		}
 
@@ -443,19 +443,19 @@ func createAPISpecRevision(
 	input normalizedCreateAPISpecRevisionInput,
 ) (APISpecRevision, error) {
 	row, err := queries.CreateAPISpecRevision(ctx, sqlc.CreateAPISpecRevisionParams{
-		ApiSpecID:   input.APISpecID,
-		RevisionID:  input.RevisionID,
-		BuildStatus: input.BuildStatus,
-		Error:       input.Error,
+		ApiSpecID:     input.APISpecID,
+		IngestEventID: input.IngestEventID,
+		BuildStatus:   input.BuildStatus,
+		Error:         input.Error,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return APISpecRevision{}, fmt.Errorf("%w: id=%d", ErrAPISpecNotFound, input.APISpecID)
 		}
 		return APISpecRevision{}, fmt.Errorf(
-			"create api spec revision api_spec_id=%d revision_id=%d: %w",
+			"create api spec revision api_spec_id=%d ingest_event_id=%d: %w",
 			input.APISpecID,
-			input.RevisionID,
+			input.IngestEventID,
 			err,
 		)
 	}
@@ -518,8 +518,8 @@ func normalizeCreateAPISpecRevisionInput(
 	if input.APISpecID < 1 {
 		return normalizedCreateAPISpecRevisionInput{}, errors.New("api spec id must be positive")
 	}
-	if input.RevisionID < 1 {
-		return normalizedCreateAPISpecRevisionInput{}, errors.New("revision id must be positive")
+	if input.IngestEventID < 1 {
+		return normalizedCreateAPISpecRevisionInput{}, errors.New("ingest event id must be positive")
 	}
 
 	buildStatus := strings.TrimSpace(input.BuildStatus)
@@ -528,10 +528,10 @@ func normalizeCreateAPISpecRevisionInput(
 	}
 
 	return normalizedCreateAPISpecRevisionInput{
-		APISpecID:   input.APISpecID,
-		RevisionID:  input.RevisionID,
-		BuildStatus: buildStatus,
-		Error:       strings.TrimSpace(input.Error),
+		APISpecID:     input.APISpecID,
+		IngestEventID: input.IngestEventID,
+		BuildStatus:   buildStatus,
+		Error:         strings.TrimSpace(input.Error),
 	}, nil
 }
 
@@ -596,7 +596,7 @@ func mapAPISpecRevision(row sqlc.ApiSpecRevision) APISpecRevision {
 	return APISpecRevision{
 		ID:                 row.ID,
 		APISpecID:          row.ApiSpecID,
-		RevisionID:         row.RevisionID,
+		IngestEventID:      row.IngestEventID,
 		RootPathAtRevision: row.RootPathAtRevision,
 		BuildStatus:        row.BuildStatus,
 		Error:              row.Error,

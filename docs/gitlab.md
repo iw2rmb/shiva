@@ -12,7 +12,7 @@ Startup initialization:
 Webhook / worker pipeline:
 1. `POST /internal/webhooks/gitlab` persists ingest event and repo metadata.
 2. Worker claims pending ingest events from DB queue.
-3. The existing `ingest_events.id` becomes the canonical repository `revision_id`; worker processing does not create a second revision row.
+3. The existing `ingest_events.id` remains the canonical ingest-event primary key for processing; worker processing does not create a second repository-state row. Public revision identity is the commit SHA.
 4. Worker loads bootstrap state (`active_api_count`, `openapi_force_rescan`) and decides ingestion mode:
    - bootstrap when `active_api_count == 0` or `openapi_force_rescan == true`,
    - incremental otherwise.

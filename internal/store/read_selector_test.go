@@ -58,7 +58,7 @@ func TestResolveReadSelector_NoSelectorHeadUnprocessedReturnsConflict(t *testing
 	if !errors.As(err, &selectorErr) {
 		t.Fatalf("expected SelectorResolutionError, got %T", err)
 	}
-	if selectorErr.RevisionID != 501 || selectorErr.RevisionStatus != "pending" {
+	if selectorErr.IngestEventID != 501 || selectorErr.IngestEventStatus != "pending" {
 		t.Fatalf("unexpected selector error metadata: %+v", selectorErr)
 	}
 }

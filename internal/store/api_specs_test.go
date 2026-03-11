@@ -185,11 +185,11 @@ func TestListActiveAPISpecsWithLatestDependencies(t *testing.T) {
 					{ID: 4, RepoID: 88, RootPath: "apis/other/openapi.yaml", Status: "active"},
 				},
 				revisions: []sqlc.ApiSpecRevision{
-					{ID: 11, ApiSpecID: 1, RevisionID: 100, BuildStatus: "processed"},
-					{ID: 12, ApiSpecID: 1, RevisionID: 101, BuildStatus: "failed"},
-					{ID: 21, ApiSpecID: 2, RevisionID: 200, BuildStatus: "processed"},
-					{ID: 22, ApiSpecID: 2, RevisionID: 201, BuildStatus: "processed"},
-					{ID: 31, ApiSpecID: 3, RevisionID: 300, BuildStatus: "processed"},
+					{ID: 11, ApiSpecID: 1, IngestEventID: 100, BuildStatus: "processed"},
+					{ID: 12, ApiSpecID: 1, IngestEventID: 101, BuildStatus: "failed"},
+					{ID: 21, ApiSpecID: 2, IngestEventID: 200, BuildStatus: "processed"},
+					{ID: 22, ApiSpecID: 2, IngestEventID: 201, BuildStatus: "processed"},
+					{ID: 31, ApiSpecID: 3, IngestEventID: 300, BuildStatus: "processed"},
 				},
 				dependencies: []sqlc.ApiSpecDependency{
 					{ApiSpecRevisionID: 11, FilePath: "apis/common/pets.yaml"},
@@ -236,8 +236,8 @@ func TestListActiveAPISpecsWithLatestDependencies(t *testing.T) {
 					{ID: 7, RepoID: 99, RootPath: "apis/new/openapi.yaml", Status: "active"},
 				},
 				revisions: []sqlc.ApiSpecRevision{
-					{ID: 71, ApiSpecID: 7, RevisionID: 700, BuildStatus: "failed"},
-					{ID: 72, ApiSpecID: 7, RevisionID: 701, BuildStatus: "processing"},
+					{ID: 71, ApiSpecID: 7, IngestEventID: 700, BuildStatus: "failed"},
+					{ID: 72, ApiSpecID: 7, IngestEventID: 701, BuildStatus: "processing"},
 				},
 				dependencies: []sqlc.ApiSpecDependency{
 					{ApiSpecRevisionID: 71, FilePath: "apis/new/failed.yaml"},
@@ -293,27 +293,27 @@ func TestListAPISpecListingByRepo(t *testing.T) {
 						Api:               "apis/orders/openapi.yaml",
 						Status:            "active",
 						ApiSpecRevisionID: pgtype.Int8{Int64: 301, Valid: true},
-						RevisionID:        pgtype.Int8{Int64: 91, Valid: true},
-						RevisionSha:       pgtype.Text{String: "0123456789abcdef0123456789abcdef01234567", Valid: true},
-						RevisionBranch:    pgtype.Text{String: "main", Valid: true},
+						IngestEventID:     pgtype.Int8{Int64: 91, Valid: true},
+						IngestEventSha:    pgtype.Text{String: "0123456789abcdef0123456789abcdef01234567", Valid: true},
+						IngestEventBranch: pgtype.Text{String: "main", Valid: true},
 					},
 					{
 						ApiSpecID:         2,
 						Api:               "apis/legacy/openapi.yaml",
 						Status:            "deleted",
 						ApiSpecRevisionID: pgtype.Int8{Int64: 155, Valid: true},
-						RevisionID:        pgtype.Int8{Int64: 77, Valid: true},
-						RevisionSha:       pgtype.Text{String: "89abcdef0123456789abcdef0123456789abcdef", Valid: true},
-						RevisionBranch:    pgtype.Text{String: "release", Valid: true},
+						IngestEventID:     pgtype.Int8{Int64: 77, Valid: true},
+						IngestEventSha:    pgtype.Text{String: "89abcdef0123456789abcdef0123456789abcdef", Valid: true},
+						IngestEventBranch: pgtype.Text{String: "release", Valid: true},
 					},
 					{
 						ApiSpecID:         3,
 						Api:               "apis/new/openapi.yaml",
 						Status:            "active",
 						ApiSpecRevisionID: pgtype.Int8{},
-						RevisionID:        pgtype.Int8{},
-						RevisionSha:       pgtype.Text{},
-						RevisionBranch:    pgtype.Text{},
+						IngestEventID:     pgtype.Int8{},
+						IngestEventSha:    pgtype.Text{},
+						IngestEventBranch: pgtype.Text{},
 					},
 				},
 			},
@@ -323,9 +323,9 @@ func TestListAPISpecListingByRepo(t *testing.T) {
 					Status: "deleted",
 					LastProcessedRevision: &APISpecRevisionMetadata{
 						APISpecRevisionID: 155,
-						RevisionID:        77,
-						RevisionSHA:       "89abcdef0123456789abcdef0123456789abcdef",
-						RevisionBranch:    "release",
+						IngestEventID:     77,
+						IngestEventSHA:    "89abcdef0123456789abcdef0123456789abcdef",
+						IngestEventBranch: "release",
 					},
 				},
 				{
@@ -337,9 +337,9 @@ func TestListAPISpecListingByRepo(t *testing.T) {
 					Status: "active",
 					LastProcessedRevision: &APISpecRevisionMetadata{
 						APISpecRevisionID: 301,
-						RevisionID:        91,
-						RevisionSHA:       "0123456789abcdef0123456789abcdef01234567",
-						RevisionBranch:    "main",
+						IngestEventID:     91,
+						IngestEventSHA:    "0123456789abcdef0123456789abcdef01234567",
+						IngestEventBranch: "main",
 					},
 				},
 			},
@@ -395,25 +395,25 @@ func TestListAPISpecListingByRepoAtRevision_DeterministicOrderAndDeletedVisibili
 						API:               "zeta/openapi.yaml",
 						Status:            "active",
 						APISpecRevisionID: sql.NullInt64{Int64: 22, Valid: true},
-						RevisionID:        sql.NullInt64{Int64: 120, Valid: true},
-						RevisionSHA:       sql.NullString{String: "dddddddddddddddddddddddddddddddddddddddd", Valid: true},
-						RevisionBranch:    sql.NullString{String: "main", Valid: true},
+						IngestEventID:     sql.NullInt64{Int64: 120, Valid: true},
+						IngestEventSHA:    sql.NullString{String: "dddddddddddddddddddddddddddddddddddddddd", Valid: true},
+						IngestEventBranch: sql.NullString{String: "main", Valid: true},
 					},
 					{
 						API:               "alpha/openapi.yaml",
 						Status:            "deleted",
 						APISpecRevisionID: sql.NullInt64{Int64: 11, Valid: true},
-						RevisionID:        sql.NullInt64{Int64: 80, Valid: true},
-						RevisionSHA:       sql.NullString{String: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Valid: true},
-						RevisionBranch:    sql.NullString{String: "main", Valid: true},
+						IngestEventID:     sql.NullInt64{Int64: 80, Valid: true},
+						IngestEventSHA:    sql.NullString{String: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Valid: true},
+						IngestEventBranch: sql.NullString{String: "main", Valid: true},
 					},
 					{
 						API:               "beta/openapi.yaml",
 						Status:            "active",
 						APISpecRevisionID: sql.NullInt64{},
-						RevisionID:        sql.NullInt64{},
-						RevisionSHA:       sql.NullString{},
-						RevisionBranch:    sql.NullString{},
+						IngestEventID:     sql.NullInt64{},
+						IngestEventSHA:    sql.NullString{},
+						IngestEventBranch: sql.NullString{},
 					},
 				},
 			},
@@ -423,9 +423,9 @@ func TestListAPISpecListingByRepoAtRevision_DeterministicOrderAndDeletedVisibili
 					Status: "deleted",
 					LastProcessedRevision: &APISpecRevisionMetadata{
 						APISpecRevisionID: 11,
-						RevisionID:        80,
-						RevisionSHA:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-						RevisionBranch:    "main",
+						IngestEventID:     80,
+						IngestEventSHA:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						IngestEventBranch: "main",
 					},
 				},
 				{
@@ -437,9 +437,9 @@ func TestListAPISpecListingByRepoAtRevision_DeterministicOrderAndDeletedVisibili
 					Status: "active",
 					LastProcessedRevision: &APISpecRevisionMetadata{
 						APISpecRevisionID: 22,
-						RevisionID:        120,
-						RevisionSHA:       "dddddddddddddddddddddddddddddddddddddddd",
-						RevisionBranch:    "main",
+						IngestEventID:     120,
+						IngestEventSHA:    "dddddddddddddddddddddddddddddddddddddddd",
+						IngestEventBranch: "main",
 					},
 				},
 			},
@@ -466,7 +466,7 @@ func TestListAPISpecListingByRepoAtRevision_DeterministicOrderAndDeletedVisibili
 				t.Fatalf("expected repo_id=%d, got %d", testCase.expectedRepo, testCase.queries.lastRepoID)
 			}
 			if testCase.queries.lastRevisionID != testCase.expectedRev {
-				t.Fatalf("expected revision_id=%d, got %d", testCase.expectedRev, testCase.queries.lastRevisionID)
+				t.Fatalf("expected ingest_event_id=%d, got %d", testCase.expectedRev, testCase.queries.lastRevisionID)
 			}
 			if !reflect.DeepEqual(actual, testCase.expected) {
 				t.Fatalf("unexpected api listing at revision: expected %+v, got %+v", testCase.expected, actual)
@@ -622,8 +622,8 @@ func (f *fakeAPISpecLatestDependencyQueries) ListActiveAPISpecsWithLatestDepende
 		}
 
 		current, exists := latestProcessedRevisionBySpecID[revision.ApiSpecID]
-		if !exists || revision.RevisionID > current.RevisionID ||
-			(revision.RevisionID == current.RevisionID && revision.ID > current.ID) {
+		if !exists || revision.IngestEventID > current.IngestEventID ||
+			(revision.IngestEventID == current.IngestEventID && revision.ID > current.ID) {
 			latestProcessedRevisionBySpecID[revision.ApiSpecID] = revision
 		}
 	}

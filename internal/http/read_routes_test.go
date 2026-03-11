@@ -216,16 +216,16 @@ func TestReadRoutes_DelimitedMonorepoPathParsing(t *testing.T) {
 				if readStore.apiSpecLookupInputs[0].APIRoot != testCase.expectedAPIRoot {
 					t.Fatalf("expected api root %q, got %q", testCase.expectedAPIRoot, readStore.apiSpecLookupInputs[0].APIRoot)
 				}
-				if testCase.expectEndpointLookup && readStore.lastEndpointLookupAPISpec.RevisionID != 401 {
-					t.Fatalf("expected api-spec endpoint revision id 401, got %d", readStore.lastEndpointLookupAPISpec.RevisionID)
+				if testCase.expectEndpointLookup && readStore.lastEndpointLookupAPISpec.IngestEventID != 401 {
+					t.Fatalf("expected api-spec endpoint revision id 401, got %d", readStore.lastEndpointLookupAPISpec.IngestEventID)
 				}
-				if readStore.lastEndpointLookup.RevisionID != 0 {
+				if readStore.lastEndpointLookup.IngestEventID != 0 {
 					t.Fatalf("expected no single-spec endpoint lookup, got %+v", readStore.lastEndpointLookup)
 				}
 				if !testCase.expectEndpointLookup && readStore.lastEndpointLookupAPISpec != (struct {
-					RevisionID int64
-					Method     string
-					Path       string
+					IngestEventID int64
+					Method        string
+					Path          string
 				}{}) {
 					t.Fatalf("expected no api-spec endpoint lookup, got %+v", readStore.lastEndpointLookupAPISpec)
 				}
@@ -235,8 +235,8 @@ func TestReadRoutes_DelimitedMonorepoPathParsing(t *testing.T) {
 				if len(readStore.apiSpecLookupInputs) != 0 {
 					t.Fatalf("expected no API lookup, got %d", len(readStore.apiSpecLookupInputs))
 				}
-				if readStore.lastEndpointLookup.RevisionID != 44 {
-					t.Fatalf("expected single-spec endpoint lookup by repo revision, got %d", readStore.lastEndpointLookup.RevisionID)
+				if readStore.lastEndpointLookup.IngestEventID != 44 {
+					t.Fatalf("expected single-spec endpoint lookup by repo revision, got %d", readStore.lastEndpointLookup.IngestEventID)
 				}
 			}
 		})
@@ -254,9 +254,9 @@ func TestReadRoutes_APISpecListing_RouteModesAndDeletedVisibility(t *testing.T) 
 			Status: "active",
 			LastProcessedRevision: &store.APISpecRevisionMetadata{
 				APISpecRevisionID: 1001,
-				RevisionID:        501,
-				RevisionSHA:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				RevisionBranch:    "main",
+				IngestEventID:     501,
+				IngestEventSHA:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				IngestEventBranch: "main",
 			},
 		},
 		{
@@ -329,9 +329,9 @@ func TestReadRoutes_APISpecListing_RouteModesAndDeletedVisibility(t *testing.T) 
 					Status: "active",
 					LastProcessedRevision: &apiSpecRevisionMetadataResponse{
 						APISpecRevisionID: 1001,
-						RevisionID:        501,
-						RevisionSHA:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-						RevisionBranch:    "main",
+						IngestEventID:     501,
+						IngestEventSHA:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						IngestEventBranch: "main",
 					},
 				},
 				{
@@ -364,7 +364,7 @@ func TestReadRoutes_APISpecListing_RouteModesAndDeletedVisibility(t *testing.T) 
 					t.Fatalf("expected one revision listing call, got %d", len(readStore.listingByRevisionInputs))
 				}
 				if readStore.listingByRevisionInputs[0].repoID != 88 || readStore.listingByRevisionInputs[0].revisionID != 77 {
-					t.Fatalf("expected revision listing call for repo_id=88 revision_id=77, got %+v", readStore.listingByRevisionInputs[0])
+					t.Fatalf("expected revision listing call for repo_id=88 ingest_event_id=77, got %+v", readStore.listingByRevisionInputs[0])
 				}
 				if len(readStore.listingInputs) != 0 {
 					t.Fatalf("did not expect no-selector listing call, got %d", len(readStore.listingInputs))
@@ -452,7 +452,7 @@ func TestReadRoutes_StatusMappingForSelectorAndArtifactErrors(t *testing.T) {
 		},
 		{
 			name:         "artifact missing returns 404",
-			artifactErr:  fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, 21),
+			artifactErr:  fmt.Errorf("%w: ingest_event_id=%d", store.ErrSpecArtifactNotFound, 21),
 			expectedCode: http.StatusNotFound,
 		},
 	}
@@ -749,14 +749,14 @@ type fakeReadRouteStore struct {
 	endpoint           store.EndpointIndexRecord
 	endpointFound      bool
 	lastEndpointLookup struct {
-		RevisionID int64
-		Method     string
-		Path       string
+		IngestEventID int64
+		Method        string
+		Path          string
 	}
 	lastEndpointLookupAPISpec struct {
-		RevisionID int64
-		Method     string
-		Path       string
+		IngestEventID int64
+		Method        string
+		Path          string
 	}
 
 	listingInputs           []int64
@@ -791,7 +791,7 @@ func (f *fakeReadRouteStore) GetSpecArtifactByRevisionID(_ context.Context, revi
 		return store.SpecArtifact{}, f.artifactErr
 	}
 	if f.artifact.APISpecRevisionID == 0 {
-		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
+		return store.SpecArtifact{}, fmt.Errorf("%w: ingest_event_id=%d", store.ErrSpecArtifactNotFound, revisionID)
 	}
 	return f.artifact, nil
 }
@@ -823,7 +823,7 @@ func (f *fakeReadRouteStore) GetAPISpecRevisionIDByRepoAndRootPath(
 	if f.apiSpecRevisionIDByRepoAndRootPathResult != 0 {
 		return f.apiSpecRevisionIDByRepoAndRootPathResult, nil
 	}
-	return 0, fmt.Errorf("%w: repo_id=%d api=%q revision_id=%d", store.ErrAPISpecNotFound, repoID, apiRootPath, revisionID)
+	return 0, fmt.Errorf("%w: repo_id=%d api=%q ingest_event_id=%d", store.ErrAPISpecNotFound, repoID, apiRootPath, revisionID)
 }
 
 func (f *fakeReadRouteStore) GetEndpointIndexByMethodPath(
@@ -832,7 +832,7 @@ func (f *fakeReadRouteStore) GetEndpointIndexByMethodPath(
 	method string,
 	path string,
 ) (store.EndpointIndexRecord, bool, error) {
-	f.lastEndpointLookup.RevisionID = revisionID
+	f.lastEndpointLookup.IngestEventID = revisionID
 	f.lastEndpointLookup.Method = method
 	f.lastEndpointLookup.Path = path
 
@@ -851,7 +851,7 @@ func (f *fakeReadRouteStore) GetEndpointIndexByMethodPathForAPISpecRevision(
 	method string,
 	path string,
 ) (store.EndpointIndexRecord, bool, error) {
-	f.lastEndpointLookupAPISpec.RevisionID = apiSpecRevisionID
+	f.lastEndpointLookupAPISpec.IngestEventID = apiSpecRevisionID
 	f.lastEndpointLookupAPISpec.Method = method
 	f.lastEndpointLookupAPISpec.Path = path
 

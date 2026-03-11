@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/iw2rmb/shiva/internal/textutil"
 )
 
 var ErrQueueNotConfigured = errors.New("worker queue is not configured")
@@ -202,10 +204,10 @@ func (m *Manager) loop(ctx context.Context, id int) {
 			m.logger.Error(
 				"mark ingest job processed failed",
 				"worker_id", id,
-				"event_id", job.EventID,
+				"ingest_event_id", job.EventID,
 				"repo_id", job.RepoID,
 				"delivery_id", job.DeliveryID,
-				"sha", job.Sha,
+				"sha", textutil.ShortSHA(job.Sha),
 				"openapi_changed", result.OpenAPIChanged,
 				"error", err,
 			)
@@ -225,10 +227,10 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 			m.logger.Error(
 				"mark ingest job failed failed",
 				"worker_id", workerID,
-				"event_id", job.EventID,
+				"ingest_event_id", job.EventID,
 				"repo_id", job.RepoID,
 				"delivery_id", job.DeliveryID,
-				"sha", job.Sha,
+				"sha", textutil.ShortSHA(job.Sha),
 				"error", err,
 			)
 			return
@@ -236,10 +238,10 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 		m.logger.Warn(
 			"ingest job marked failed",
 			"worker_id", workerID,
-			"event_id", job.EventID,
+			"ingest_event_id", job.EventID,
 			"repo_id", job.RepoID,
 			"delivery_id", job.DeliveryID,
-			"sha", job.Sha,
+			"sha", textutil.ShortSHA(job.Sha),
 			"attempt_count", job.AttemptCount,
 			"error", errorMessage,
 		)
@@ -252,10 +254,10 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 		m.logger.Error(
 			"schedule ingest job retry failed",
 			"worker_id", workerID,
-			"event_id", job.EventID,
+			"ingest_event_id", job.EventID,
 			"repo_id", job.RepoID,
 			"delivery_id", job.DeliveryID,
-			"sha", job.Sha,
+			"sha", textutil.ShortSHA(job.Sha),
 			"error", err,
 		)
 		return
@@ -264,10 +266,10 @@ func (m *Manager) handleProcessError(ctx context.Context, workerID int, job Queu
 	m.logger.Warn(
 		"ingest job scheduled for retry",
 		"worker_id", workerID,
-		"event_id", job.EventID,
+		"ingest_event_id", job.EventID,
 		"repo_id", job.RepoID,
 		"delivery_id", job.DeliveryID,
-		"sha", job.Sha,
+		"sha", textutil.ShortSHA(job.Sha),
 		"attempt_count", job.AttemptCount,
 		"retry_after", retryAfter.String(),
 		"error", errorMessage,

@@ -88,16 +88,16 @@ CREATE INDEX IF NOT EXISTS api_specs_repo_status_idx ON api_specs(repo_id, statu
 CREATE TABLE IF NOT EXISTS api_spec_revisions (
     id BIGSERIAL PRIMARY KEY,
     api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
-    revision_id BIGINT NOT NULL REFERENCES ingest_events(id) ON DELETE CASCADE,
+    ingest_event_id BIGINT NOT NULL REFERENCES ingest_events(id) ON DELETE CASCADE,
     root_path_at_revision TEXT NOT NULL,
     build_status TEXT NOT NULL,
     error TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (api_spec_id, revision_id)
+    UNIQUE (api_spec_id, ingest_event_id)
 );
 
-CREATE INDEX IF NOT EXISTS api_spec_revisions_revision_id_idx ON api_spec_revisions(revision_id);
+CREATE INDEX IF NOT EXISTS api_spec_revisions_ingest_event_id_idx ON api_spec_revisions(ingest_event_id);
 
 CREATE TABLE IF NOT EXISTS api_spec_dependencies (
     api_spec_revision_id BIGINT NOT NULL REFERENCES api_spec_revisions(id) ON DELETE CASCADE,
@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
     id BIGSERIAL PRIMARY KEY,
     subscription_id BIGINT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
     api_spec_id BIGINT NOT NULL REFERENCES api_specs(id) ON DELETE CASCADE,
-    revision_id BIGINT NOT NULL REFERENCES ingest_events(id) ON DELETE CASCADE,
+    ingest_event_id BIGINT NOT NULL REFERENCES ingest_events(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL CHECK (event_type IN ('spec.updated.full', 'spec.updated.diff')),
     attempt_no INTEGER NOT NULL CHECK (attempt_no > 0),
     status TEXT NOT NULL CHECK (status IN ('pending', 'retry_scheduled', 'succeeded', 'failed')),
@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
     next_retry_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (subscription_id, api_spec_id, revision_id, event_type, attempt_no)
+    UNIQUE (subscription_id, api_spec_id, ingest_event_id, event_type, attempt_no)
 );
 
 CREATE INDEX IF NOT EXISTS delivery_attempts_retry_idx ON delivery_attempts(status, next_retry_at);

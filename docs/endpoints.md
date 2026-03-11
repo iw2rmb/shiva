@@ -79,11 +79,11 @@ Default operation-slice format is JSON.
   - `status`: `active` or `deleted`
   - `last_processed_revision`:
     - `api_spec_revision_id`
-    - `revision_id` (canonical repo revision id, backed by `ingest_events.id`)
-    - `revision_sha`
-    - `revision_branch`
+    - `ingest_event_id` (canonical ingest-event id, backed by `ingest_events.id`)
+    - `ingest_event_sha`
+    - `ingest_event_branch`
 - selector form uses selector-resolved snapshot:
-  - revision id is derived from `/{selector}/` and list entries include last processed revision state as of that revision
+  - the snapshot is derived from `/{selector}/` and list entries include last processed state as of that ingest event
 - selector form requires an 8-character lowercase hex selector. Other selector values return `400`.
 
 ## Operation Slice Response Shape

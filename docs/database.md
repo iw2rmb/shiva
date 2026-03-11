@@ -20,7 +20,7 @@ This document describes current schema layout and SQL code generation workflow.
 - `spec_artifacts`: canonical JSON/YAML artifact per `api_spec_revision_id`.
 - `endpoint_index`: `(api_spec_revision_id, method, path)` operation index.
 - `spec_changes`: semantic diff payload per API (`api_spec_id`) keyed by `to_api_spec_revision_id`, with optional `from_api_spec_revision_id`.
-- `delivery_attempts`: outbound event attempt lifecycle keyed by subscription + API + revision + event + attempt (`subscription_id`, `api_spec_id`, `revision_id`, `event_type`, `attempt_no`).
+- `delivery_attempts`: outbound event attempt lifecycle keyed by subscription + API + ingest event + event + attempt (`subscription_id`, `api_spec_id`, `ingest_event_id`, `event_type`, `attempt_no`).
 
 ## Processing State Fields
 - `ingest_events.status`: `pending | processing | processed | failed`
@@ -32,19 +32,19 @@ This document describes current schema layout and SQL code generation workflow.
 - `repos.openapi_force_rescan`: `true` when next bootstrap decision should force full repository scan.
 
 ## API Spec Store Primitives
-- `ListActiveAPISpecsWithLatestDependencies(repo_id)`: returns active `api_specs` in `root_path` order with dependency file paths from each spec's latest `api_spec_revisions` row where `build_status='processed'` (ties resolved by `revision_id DESC, id DESC`); specs without processed revisions return an empty dependency list.
-- `ListAPISpecListingByRepo(repo_id)`: returns all `api_specs` (active + deleted) in `root_path` order with listing fields `api` (`root_path`), `status`, and optional `last_processed_revision` metadata (`api_spec_revision_id`, `revision_id`, `revision_sha`, `revision_branch`).
-- `ListAPISpecListingByRepoAtRevision(repo_id, revision_id)`: returns deterministic inventory as of the given revision id, using the latest processed API revision with `revision_id <= revision_id`.
+- `ListActiveAPISpecsWithLatestDependencies(repo_id)`: returns active `api_specs` in `root_path` order with dependency file paths from each spec's latest `api_spec_revisions` row where `build_status='processed'` (ties resolved by `ingest_event_id DESC, id DESC`); specs without processed revisions return an empty dependency list.
+- `ListAPISpecListingByRepo(repo_id)`: returns all `api_specs` (active + deleted) in `root_path` order with listing fields `api` (`root_path`), `status`, and optional `last_processed_revision` metadata (`api_spec_revision_id`, `ingest_event_id`, `ingest_event_sha`, `ingest_event_branch`).
+- `ListAPISpecListingByRepoAtRevision(repo_id, ingest_event_id)`: returns deterministic inventory as of the given canonical ingest event row, using the latest processed API revision with `ingest_event_id <= ingest_event_id`.
 - `MarkAPISpecDeleted(api_spec_id)`: sets `api_specs.status='deleted'` for root deactivation flows.
 - `api_spec_dependencies` are revision-scoped and only latest-processed rows feed incremental impact intersection.
-- `api_spec_revisions.revision_id` and `delivery_attempts.revision_id` both reference the canonical `ingest_events.id`.
+- `api_spec_revisions.ingest_event_id` and `delivery_attempts.ingest_event_id` both reference the canonical `ingest_events.id`.
 - `spec_artifacts` and `endpoint_index` write contracts are strictly `api_spec_revision_id`-scoped.
 - `spec_changes` write contracts are `api_spec_id`-scoped and read with `(api_spec_id, to_api_spec_revision_id)`.
 - `delivery_attempts` read/write contracts include `api_spec_id` in the dedupe/lookup identity.
 
 ### Read Compatibility Behavior
 - `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained for legacy read routes.
-- They resolve the latest processed API-scoped row for the requested canonical `ingest_events.id` across all APIs in that revision, then return that row only when a matching method/path exists.
+- They resolve the latest processed API-scoped row for the requested canonical `ingest_events.id` across all APIs in that ingest event, then return that row only when a matching method/path exists.
 - Monorepo read routes (`/-/{api}/-/`) still resolve explicitly via API root and revision ID, so same revision + different API returns different results.
 
 ## Generation

@@ -627,7 +627,7 @@ func (s *incrementalImpactRevisionStore) CreateAPISpecRevision(
 	s.finalStatusByRoot[rootPath] = input.BuildStatus
 	s.finalErrorByRoot[rootPath] = input.Error
 
-	key := fmt.Sprintf("%d:%d", input.APISpecID, input.RevisionID)
+	key := fmt.Sprintf("%d:%d", input.APISpecID, input.IngestEventID)
 	apiSpecRevisionID, exists := s.apiSpecRevisionIDByKey[key]
 	if !exists {
 		s.nextAPISpecRevisionID++
@@ -637,7 +637,7 @@ func (s *incrementalImpactRevisionStore) CreateAPISpecRevision(
 	return store.APISpecRevision{
 		ID:                 apiSpecRevisionID,
 		APISpecID:          input.APISpecID,
-		RevisionID:         input.RevisionID,
+		IngestEventID:      input.IngestEventID,
 		RootPathAtRevision: rootPath,
 		BuildStatus:        input.BuildStatus,
 		Error:              input.Error,

@@ -72,17 +72,17 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 	)
 
 	err := notifier.NotifyRevision(context.Background(), RevisionNotification{
-		TenantID:    7,
-		TenantKey:   "tenant-alpha",
-		RepoID:      9,
-		RepoPath:    "group/repo",
-		APISpecID:   101,
-		API:         "api/openapi.yaml",
+		TenantID:          7,
+		TenantKey:         "tenant-alpha",
+		RepoID:            9,
+		RepoPath:          "group/repo",
+		APISpecID:         101,
+		API:               "api/openapi.yaml",
 		APISpecRevisionID: 1001,
-		RevisionID:  333,
-		Sha:         "sha-333",
-		Branch:      "main",
-		ProcessedAt: now,
+		IngestEventID:     333,
+		Sha:               "sha-333",
+		Branch:            "main",
+		ProcessedAt:       now,
 		Artifact: store.SpecArtifact{
 			APISpecRevisionID: 1001,
 			SpecJSON:          []byte(`{"openapi":"3.1.0","paths":{}}`),
@@ -188,18 +188,18 @@ func TestNotifierNotifyRevision_EmitsDiffOnlyWhenFullArtifactMissing(t *testing.
 	)
 
 	err := notifier.NotifyRevision(context.Background(), RevisionNotification{
-		TenantID:    7,
-		TenantKey:   "tenant-alpha",
-		RepoID:      9,
-		RepoPath:    "group/repo",
-		APISpecID:   102,
-		API:         "api/openapi.yaml",
+		TenantID:          7,
+		TenantKey:         "tenant-alpha",
+		RepoID:            9,
+		RepoPath:          "group/repo",
+		APISpecID:         102,
+		API:               "api/openapi.yaml",
 		APISpecRevisionID: 1002,
-		RevisionID:  333,
-		Sha:         "sha-333",
-		Branch:      "main",
-		ProcessedAt: time.Now().UTC(),
-		IncludeFull: false,
+		IngestEventID:     333,
+		Sha:               "sha-333",
+		Branch:            "main",
+		ProcessedAt:       time.Now().UTC(),
+		IncludeFull:       false,
 		SpecChange: store.SpecChange{
 			APISpecID:           102,
 			ToAPISpecRevisionID: 1002,
@@ -303,7 +303,7 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 			APISpecID:         101,
 			API:               "api/customers",
 			APISpecRevisionID: 5001,
-			RevisionID:        444,
+			IngestEventID:     444,
 			Sha:               "sha-444",
 			Branch:            "main",
 			ProcessedAt:       now,
@@ -318,7 +318,7 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 			APISpecID:         102,
 			API:               "api/orders",
 			APISpecRevisionID: 5002,
-			RevisionID:        444,
+			IngestEventID:     444,
 			Sha:               "sha-444",
 			Branch:            "main",
 			ProcessedAt:       now,
@@ -342,7 +342,7 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 
 	counts := map[string]map[string]struct{}{
 		"api/customers": {store.DeliveryEventTypeSpecUpdatedFull: {}, store.DeliveryEventTypeSpecUpdatedDiff: {}},
-		"api/orders":   {store.DeliveryEventTypeSpecUpdatedFull: {}, store.DeliveryEventTypeSpecUpdatedDiff: {}},
+		"api/orders":    {store.DeliveryEventTypeSpecUpdatedFull: {}, store.DeliveryEventTypeSpecUpdatedDiff: {}},
 	}
 
 	for _, req := range received {
@@ -383,7 +383,7 @@ func TestDispatchEvent_DedupeKeyedByAPISpecID(t *testing.T) {
 		ID:             1,
 		SubscriptionID: 99,
 		APISpecID:      777,
-		RevisionID:     555,
+		IngestEventID:  555,
 		EventType:      store.DeliveryEventTypeSpecUpdatedDiff,
 		AttemptNo:      1,
 		Status:         store.DeliveryAttemptStatusSucceeded,
@@ -400,11 +400,11 @@ func TestDispatchEvent_DedupeKeyedByAPISpecID(t *testing.T) {
 		context.Background(),
 		storeMock.subscriptions[0],
 		RevisionNotification{
-			APISpecID: 888,
-			RepoID:     2,
-			RevisionID: 555,
-			DeliveryID: "delivery-555",
-			Sha:        "sha-555",
+			APISpecID:     888,
+			RepoID:        2,
+			IngestEventID: 555,
+			DeliveryID:    "delivery-555",
+			Sha:           "sha-555",
 		},
 		builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedDiff, body: []byte(`{"type":"spec.updated.diff"}`)},
 	)
@@ -422,7 +422,6 @@ func TestDispatchEvent_DedupeKeyedByAPISpecID(t *testing.T) {
 		t.Fatalf("expected created attempt for api_spec_id=888, got %d", storeMock.createCalls[0].APISpecID)
 	}
 }
-
 
 func TestDispatchEvent_RetryAndTerminalStates(t *testing.T) {
 	t.Parallel()
@@ -487,11 +486,11 @@ func TestDispatchEvent_RetryAndTerminalStates(t *testing.T) {
 				context.Background(),
 				storeMock.subscriptions[0],
 				RevisionNotification{
-					APISpecID:  111,
-					RepoID:     2,
-					RevisionID: 555,
-					DeliveryID: "delivery-555",
-					Sha:        "sha-555",
+					APISpecID:     111,
+					RepoID:        2,
+					IngestEventID: 555,
+					DeliveryID:    "delivery-555",
+					Sha:           "sha-555",
 				},
 				builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedFull, body: []byte(`{"type":"spec.updated.full"}`)},
 			)
@@ -536,7 +535,7 @@ func TestDispatchEvent_SkipsTerminalAttempt(t *testing.T) {
 		ID:             1,
 		SubscriptionID: 99,
 		APISpecID:      777,
-		RevisionID:     777,
+		IngestEventID:  777,
 		EventType:      store.DeliveryEventTypeSpecUpdatedDiff,
 		AttemptNo:      1,
 		Status:         store.DeliveryAttemptStatusSucceeded,
@@ -553,11 +552,11 @@ func TestDispatchEvent_SkipsTerminalAttempt(t *testing.T) {
 		context.Background(),
 		storeMock.subscriptions[0],
 		RevisionNotification{
-			APISpecID: 777,
-			RepoID:     2,
-			RevisionID: 777,
-			DeliveryID: "delivery-777",
-			Sha:        "sha-777",
+			APISpecID:     777,
+			RepoID:        2,
+			IngestEventID: 777,
+			DeliveryID:    "delivery-777",
+			Sha:           "sha-777",
 		},
 		builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedDiff, body: []byte(`{"type":"spec.updated.diff"}`)},
 	)
@@ -632,11 +631,11 @@ func TestDispatchEvent_EmitsNotifyDispatchSpan(t *testing.T) {
 		context.Background(),
 		storeMock.subscriptions[0],
 		RevisionNotification{
-			APISpecID:  901,
-			RepoID:     2,
-			RevisionID: 901,
-			DeliveryID: "delivery-901",
-			Sha:        "sha-901",
+			APISpecID:     901,
+			RepoID:        2,
+			IngestEventID: 901,
+			DeliveryID:    "delivery-901",
+			Sha:           "sha-901",
 		},
 		builtEvent{eventType: store.DeliveryEventTypeSpecUpdatedFull, body: []byte(`{"type":"spec.updated.full"}`)},
 	)
@@ -723,13 +722,13 @@ func (f *fakeNotifierStore) GetLatestDeliveryAttemptByKey(
 	_ context.Context,
 	subscriptionID int64,
 	apiSpecID int64,
-	revisionID int64,
+	ingestEventID int64,
 	eventType string,
 ) (store.DeliveryAttempt, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	attempt, ok := f.latest[deliveryAttemptKey(subscriptionID, apiSpecID, revisionID, eventType)]
+	attempt, ok := f.latest[deliveryAttemptKey(subscriptionID, apiSpecID, ingestEventID, eventType)]
 	return attempt, ok, nil
 }
 
@@ -747,14 +746,14 @@ func (f *fakeNotifierStore) CreateDeliveryAttempt(
 		ID:             id,
 		SubscriptionID: input.SubscriptionID,
 		APISpecID:      input.APISpecID,
-		RevisionID:     input.RevisionID,
+		IngestEventID:  input.IngestEventID,
 		EventType:      input.EventType,
 		AttemptNo:      input.AttemptNo,
 		Status:         input.Status,
 		NextRetryAt:    cloneTime(input.NextRetryAt),
 	}
 	f.attempts[id] = attempt
-	f.latest[deliveryAttemptKey(input.SubscriptionID, input.APISpecID, input.RevisionID, input.EventType)] = attempt
+	f.latest[deliveryAttemptKey(input.SubscriptionID, input.APISpecID, input.IngestEventID, input.EventType)] = attempt
 	f.createCalls = append(f.createCalls, input)
 
 	return attempt, nil
@@ -774,17 +773,17 @@ func (f *fakeNotifierStore) UpdateDeliveryAttemptResult(
 	attempt.NextRetryAt = cloneTime(input.NextRetryAt)
 
 	f.attempts[input.ID] = attempt
-	f.latest[deliveryAttemptKey(attempt.SubscriptionID, attempt.APISpecID, attempt.RevisionID, attempt.EventType)] = attempt
+	f.latest[deliveryAttemptKey(attempt.SubscriptionID, attempt.APISpecID, attempt.IngestEventID, attempt.EventType)] = attempt
 	f.updateCalls = append(f.updateCalls, input)
 
 	return attempt, nil
 }
 
-func deliveryAttemptKey(subscriptionID int64, apiSpecID int64, revisionID int64, eventType string) string {
+func deliveryAttemptKey(subscriptionID int64, apiSpecID int64, ingestEventID int64, eventType string) string {
 	return strings.Join([]string{
 		"sub", strconv.FormatInt(subscriptionID, 10),
 		"api", strconv.FormatInt(apiSpecID, 10),
-		"rev", strconv.FormatInt(revisionID, 10),
+		"rev", strconv.FormatInt(ingestEventID, 10),
 		"event", eventType,
 	}, ":")
 }

@@ -28,7 +28,7 @@ func (q *Queries) CountActiveAPISpecsByRepo(ctx context.Context, repoID int64) (
 const createAPISpecRevision = `-- name: CreateAPISpecRevision :one
 INSERT INTO api_spec_revisions (
     api_spec_id,
-    revision_id,
+    ingest_event_id,
     root_path_at_revision,
     build_status,
     error
@@ -41,25 +41,25 @@ SELECT
     $4
 FROM api_specs
 WHERE api_specs.id = $1
-ON CONFLICT (api_spec_id, revision_id) DO UPDATE
+ON CONFLICT (api_spec_id, ingest_event_id) DO UPDATE
 SET root_path_at_revision = EXCLUDED.root_path_at_revision,
     build_status = EXCLUDED.build_status,
     error = EXCLUDED.error,
     updated_at = NOW()
-RETURNING id, api_spec_id, revision_id, root_path_at_revision, build_status, error, created_at, updated_at
+RETURNING id, api_spec_id, ingest_event_id, root_path_at_revision, build_status, error, created_at, updated_at
 `
 
 type CreateAPISpecRevisionParams struct {
-	ApiSpecID   int64  `json:"api_spec_id"`
-	RevisionID  int64  `json:"revision_id"`
-	BuildStatus string `json:"build_status"`
-	Error       string `json:"error"`
+	ApiSpecID     int64  `json:"api_spec_id"`
+	IngestEventID int64  `json:"ingest_event_id"`
+	BuildStatus   string `json:"build_status"`
+	Error         string `json:"error"`
 }
 
 func (q *Queries) CreateAPISpecRevision(ctx context.Context, arg CreateAPISpecRevisionParams) (ApiSpecRevision, error) {
 	row := q.db.QueryRow(ctx, createAPISpecRevision,
 		arg.ApiSpecID,
-		arg.RevisionID,
+		arg.IngestEventID,
 		arg.BuildStatus,
 		arg.Error,
 	)
@@ -67,7 +67,7 @@ func (q *Queries) CreateAPISpecRevision(ctx context.Context, arg CreateAPISpecRe
 	err := row.Scan(
 		&i.ID,
 		&i.ApiSpecID,
-		&i.RevisionID,
+		&i.IngestEventID,
 		&i.RootPathAtRevision,
 		&i.BuildStatus,
 		&i.Error,
@@ -87,23 +87,23 @@ latest_processed AS (
     SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
         api_spec_revisions.api_spec_id,
         api_spec_revisions.id AS api_spec_revision_id,
-        api_spec_revisions.revision_id
+        api_spec_revisions.ingest_event_id
     FROM api_spec_revisions
     JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
     WHERE api_spec_revisions.build_status = 'processed'
-    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.revision_id DESC, api_spec_revisions.id DESC
+    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.ingest_event_id DESC, api_spec_revisions.id DESC
 )
 SELECT
     repo_specs.id AS api_spec_id,
     repo_specs.root_path AS api,
     repo_specs.status,
     latest_processed.api_spec_revision_id,
-    ingest_events.id AS revision_id,
-    ingest_events.sha AS revision_sha,
-    ingest_events.branch AS revision_branch
+    ingest_events.id AS ingest_event_id,
+    ingest_events.sha AS ingest_event_sha,
+    ingest_events.branch AS ingest_event_branch
 FROM repo_specs
 LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
-LEFT JOIN ingest_events ON ingest_events.id = latest_processed.revision_id
+LEFT JOIN ingest_events ON ingest_events.id = latest_processed.ingest_event_id
 ORDER BY repo_specs.root_path ASC
 `
 
@@ -112,9 +112,9 @@ type ListAPISpecListingByRepoRow struct {
 	Api               string      `json:"api"`
 	Status            string      `json:"status"`
 	ApiSpecRevisionID pgtype.Int8 `json:"api_spec_revision_id"`
-	RevisionID        pgtype.Int8 `json:"revision_id"`
-	RevisionSha       pgtype.Text `json:"revision_sha"`
-	RevisionBranch    pgtype.Text `json:"revision_branch"`
+	IngestEventID     pgtype.Int8 `json:"ingest_event_id"`
+	IngestEventSha    pgtype.Text `json:"ingest_event_sha"`
+	IngestEventBranch pgtype.Text `json:"ingest_event_branch"`
 }
 
 func (q *Queries) ListAPISpecListingByRepo(ctx context.Context, targetRepoID int64) ([]ListAPISpecListingByRepoRow, error) {
@@ -131,9 +131,9 @@ func (q *Queries) ListAPISpecListingByRepo(ctx context.Context, targetRepoID int
 			&i.Api,
 			&i.Status,
 			&i.ApiSpecRevisionID,
-			&i.RevisionID,
-			&i.RevisionSha,
-			&i.RevisionBranch,
+			&i.IngestEventID,
+			&i.IngestEventSha,
+			&i.IngestEventBranch,
 		); err != nil {
 			return nil, err
 		}
@@ -159,7 +159,7 @@ latest_processed AS (
     FROM api_spec_revisions
     JOIN active_specs ON active_specs.id = api_spec_revisions.api_spec_id
     WHERE api_spec_revisions.build_status = 'processed'
-    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.revision_id DESC, api_spec_revisions.id DESC
+    ORDER BY api_spec_revisions.api_spec_id, api_spec_revisions.ingest_event_id DESC, api_spec_revisions.id DESC
 )
 SELECT
     active_specs.id,

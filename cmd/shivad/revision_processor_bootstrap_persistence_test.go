@@ -386,7 +386,7 @@ func (s *bootstrapPersistenceRevisionStore) CreateAPISpecRevision(
 	s.finalStatusByRoot[rootPath] = input.BuildStatus
 	s.finalErrorByRoot[rootPath] = input.Error
 
-	key := fmt.Sprintf("%d:%d", input.APISpecID, input.RevisionID)
+	key := fmt.Sprintf("%d:%d", input.APISpecID, input.IngestEventID)
 	apiSpecRevisionID, exists := s.apiSpecRevisionIDBySpecRevision[key]
 	if !exists {
 		s.nextAPISpecRevisionID++
@@ -397,7 +397,7 @@ func (s *bootstrapPersistenceRevisionStore) CreateAPISpecRevision(
 	return store.APISpecRevision{
 		ID:                 apiSpecRevisionID,
 		APISpecID:          input.APISpecID,
-		RevisionID:         input.RevisionID,
+		IngestEventID:      input.IngestEventID,
 		RootPathAtRevision: rootPath,
 		BuildStatus:        input.BuildStatus,
 		Error:              input.Error,

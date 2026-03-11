@@ -846,7 +846,7 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 	s.apiSpecRevs[700] = store.APISpecRevision{
 		ID:                 700,
 		APISpecID:          400,
-		RevisionID:         999,
+		IngestEventID:      999,
 		RootPathAtRevision: "api/openapi.yaml",
 		BuildStatus:        apiSpecRevisionBuildStatusProcessed,
 	}
@@ -872,58 +872,58 @@ func (s *integrationRevisionStore) recordIngestEvent(event worker.QueueJob) {
 	s.revisionBySHA[event.Sha] = event.EventID
 }
 
-func (s *integrationRevisionStore) markPending(revisionID int64) error {
+func (s *integrationRevisionStore) markPending(ingestEventID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	revision, exists := s.revisions[revisionID]
+	revision, exists := s.revisions[ingestEventID]
 	if !exists {
-		return fmt.Errorf("revision %d not found", revisionID)
+		return fmt.Errorf("revision %d not found", ingestEventID)
 	}
 	revision.Status = "pending"
-	s.revisions[revisionID] = revision
+	s.revisions[ingestEventID] = revision
 	return nil
 }
 
-func (s *integrationRevisionStore) markProcessing(revisionID int64) error {
+func (s *integrationRevisionStore) markProcessing(ingestEventID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	revision, exists := s.revisions[revisionID]
+	revision, exists := s.revisions[ingestEventID]
 	if !exists {
-		return fmt.Errorf("revision %d not found", revisionID)
+		return fmt.Errorf("revision %d not found", ingestEventID)
 	}
 	revision.Status = "processing"
-	s.revisions[revisionID] = revision
+	s.revisions[ingestEventID] = revision
 	return nil
 }
 
-func (s *integrationRevisionStore) markProcessed(revisionID int64, openapiChanged bool) error {
+func (s *integrationRevisionStore) markProcessed(ingestEventID int64, openapiChanged bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	revision, exists := s.revisions[revisionID]
+	revision, exists := s.revisions[ingestEventID]
 	if !exists {
-		return fmt.Errorf("revision %d not found", revisionID)
+		return fmt.Errorf("revision %d not found", ingestEventID)
 	}
 	processedAt := time.Now().UTC()
 	revision.ProcessedAt = &processedAt
 	revision.Status = "processed"
 	revision.OpenAPIChanged = boolPtr(openapiChanged)
-	s.revisions[revisionID] = revision
+	s.revisions[ingestEventID] = revision
 	return nil
 }
 
-func (s *integrationRevisionStore) markFailed(revisionID int64) error {
+func (s *integrationRevisionStore) markFailed(ingestEventID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	revision, exists := s.revisions[revisionID]
+	revision, exists := s.revisions[ingestEventID]
 	if !exists {
-		return fmt.Errorf("revision %d not found", revisionID)
+		return fmt.Errorf("revision %d not found", ingestEventID)
 	}
 	revision.Status = "failed"
-	s.revisions[revisionID] = revision
+	s.revisions[ingestEventID] = revision
 	return nil
 }
 
@@ -995,8 +995,8 @@ func (s *integrationRevisionStore) ListActiveAPISpecsWithLatestDependencies(
 			if specRevision.APISpecID != spec.ID || specRevision.BuildStatus != apiSpecRevisionBuildStatusProcessed {
 				continue
 			}
-			if specRevision.RevisionID > latestProcessedRevisionID {
-				latestProcessedRevisionID = specRevision.RevisionID
+			if specRevision.IngestEventID > latestProcessedRevisionID {
+				latestProcessedRevisionID = specRevision.IngestEventID
 				latestSpecRevisionID = specRevision.ID
 			}
 		}
@@ -1043,14 +1043,14 @@ func (s *integrationRevisionStore) ListAPISpecListingByRepo(
 			if specRevision.APISpecID != spec.ID || specRevision.BuildStatus != apiSpecRevisionBuildStatusProcessed {
 				continue
 			}
-			if specRevision.RevisionID < latestRevisionID {
+			if specRevision.IngestEventID < latestRevisionID {
 				continue
 			}
-			revision, exists := s.revisions[specRevision.RevisionID]
+			revision, exists := s.revisions[specRevision.IngestEventID]
 			if !exists {
 				continue
 			}
-			latestRevisionID = specRevision.RevisionID
+			latestRevisionID = specRevision.IngestEventID
 			latestSpecRevID = specRevision.ID
 			latestRevisionSHA = revision.Sha
 			latestBranch = revision.Branch
@@ -1059,9 +1059,9 @@ func (s *integrationRevisionStore) ListAPISpecListingByRepo(
 		if latestSpecRevID > 0 {
 			item.LastProcessedRevision = &store.APISpecRevisionMetadata{
 				APISpecRevisionID: latestSpecRevID,
-				RevisionID:        latestRevisionID,
-				RevisionSHA:       latestRevisionSHA,
-				RevisionBranch:    latestBranch,
+				IngestEventID:     latestRevisionID,
+				IngestEventSHA:    latestRevisionSHA,
+				IngestEventBranch: latestBranch,
 			}
 		}
 		rows = append(rows, item)
@@ -1095,7 +1095,7 @@ func (s *integrationRevisionStore) CreateAPISpecRevision(
 		return store.APISpecRevision{}, fmt.Errorf("api spec %d not found", input.APISpecID)
 	}
 
-	key := fmt.Sprintf("%d:%d", input.APISpecID, input.RevisionID)
+	key := fmt.Sprintf("%d:%d", input.APISpecID, input.IngestEventID)
 	specRevisionID, exists := s.apiSpecRevByKey[key]
 	if !exists {
 		s.nextSpecRevID++
@@ -1105,7 +1105,7 @@ func (s *integrationRevisionStore) CreateAPISpecRevision(
 	revision := store.APISpecRevision{
 		ID:                 specRevisionID,
 		APISpecID:          input.APISpecID,
-		RevisionID:         input.RevisionID,
+		IngestEventID:      input.IngestEventID,
 		RootPathAtRevision: spec.RootPath,
 		BuildStatus:        input.BuildStatus,
 		Error:              input.Error,
@@ -1214,13 +1214,13 @@ func (s *integrationRevisionStore) GetTenantByID(_ context.Context, tenantID int
 	return s.tenant, nil
 }
 
-func (s *integrationRevisionStore) GetRevisionByID(_ context.Context, revisionID int64) (store.Revision, error) {
+func (s *integrationRevisionStore) GetRevisionByID(_ context.Context, ingestEventID int64) (store.Revision, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	revision, exists := s.revisions[revisionID]
+	revision, exists := s.revisions[ingestEventID]
 	if !exists {
-		return store.Revision{}, fmt.Errorf("revision %d not found", revisionID)
+		return store.Revision{}, fmt.Errorf("revision %d not found", ingestEventID)
 	}
 	return revision, nil
 }
@@ -1260,14 +1260,14 @@ func (s *integrationRevisionStore) GetSpecChangeByAPISpecIDAndToAPISpecRevisionI
 
 func (s *integrationRevisionStore) ListEndpointIndexByRevision(
 	_ context.Context,
-	revisionID int64,
+	ingestEventID int64,
 ) ([]store.EndpointIndexRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	rows := make([]store.EndpointIndexRecord, 0)
 	for apiSpecRevisionID, apiSpecRevision := range s.apiSpecRevs {
-		if apiSpecRevision.RevisionID != revisionID {
+		if apiSpecRevision.IngestEventID != ingestEventID {
 			continue
 		}
 		endpoints := s.endpoints[apiSpecRevisionID]
@@ -1283,14 +1283,14 @@ func (s *integrationRevisionStore) ListEndpointIndexByRevision(
 
 func (s *integrationRevisionStore) GetSpecArtifactByRevisionID(
 	_ context.Context,
-	revisionID int64,
+	ingestEventID int64,
 ) (store.SpecArtifact, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var latestAPISpecRevisionID int64
 	for apiSpecRevisionID, apiSpecRevision := range s.apiSpecRevs {
-		if apiSpecRevision.RevisionID != revisionID {
+		if apiSpecRevision.IngestEventID != ingestEventID {
 			continue
 		}
 		if apiSpecRevisionID > latestAPISpecRevisionID {
@@ -1298,12 +1298,12 @@ func (s *integrationRevisionStore) GetSpecArtifactByRevisionID(
 		}
 	}
 	if latestAPISpecRevisionID == 0 {
-		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
+		return store.SpecArtifact{}, fmt.Errorf("%w: ingest_event_id=%d", store.ErrSpecArtifactNotFound, ingestEventID)
 	}
 
 	artifact, exists := s.artifacts[latestAPISpecRevisionID]
 	if !exists {
-		return store.SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", store.ErrSpecArtifactNotFound, revisionID)
+		return store.SpecArtifact{}, fmt.Errorf("%w: ingest_event_id=%d", store.ErrSpecArtifactNotFound, ingestEventID)
 	}
 	return artifact, nil
 }
@@ -1318,7 +1318,7 @@ func (s *integrationRevisionStore) GetSpecChangeByToRevision(
 	var latestAPISpecRevisionID int64
 	var latestAPISpecID int64
 	for _, apiSpecRevision := range s.apiSpecRevs {
-		if apiSpecRevision.RevisionID != toRevisionID {
+		if apiSpecRevision.IngestEventID != toRevisionID {
 			continue
 		}
 		if apiSpecRevision.ID > latestAPISpecRevisionID {
@@ -1341,13 +1341,13 @@ func (s *integrationRevisionStore) latestRevisionBySHA(sha string) (store.Revisi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	revisionID, exists := s.revisionBySHA[sha]
+	ingestEventID, exists := s.revisionBySHA[sha]
 	if !exists {
 		return store.Revision{}, fmt.Errorf("revision for sha %q not found", sha)
 	}
-	revision, exists := s.revisions[revisionID]
+	revision, exists := s.revisions[ingestEventID]
 	if !exists {
-		return store.Revision{}, fmt.Errorf("revision id %d not found", revisionID)
+		return store.Revision{}, fmt.Errorf("revision id %d not found", ingestEventID)
 	}
 	return revision, nil
 }
@@ -1390,13 +1390,13 @@ func (s *integrationNotifierStore) GetLatestDeliveryAttemptByKey(
 	_ context.Context,
 	subscriptionID int64,
 	apiSpecID int64,
-	revisionID int64,
+	ingestEventID int64,
 	eventType string,
 ) (store.DeliveryAttempt, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := fmt.Sprintf("%d:%d:%d:%s", subscriptionID, apiSpecID, revisionID, eventType)
+	key := fmt.Sprintf("%d:%d:%d:%s", subscriptionID, apiSpecID, ingestEventID, eventType)
 	attemptID, exists := s.latest[key]
 	if !exists {
 		return store.DeliveryAttempt{}, false, nil
@@ -1420,14 +1420,14 @@ func (s *integrationNotifierStore) CreateDeliveryAttempt(
 		ID:             s.nextAttemptID,
 		SubscriptionID: input.SubscriptionID,
 		APISpecID:      input.APISpecID,
-		RevisionID:     input.RevisionID,
+		IngestEventID:  input.IngestEventID,
 		EventType:      input.EventType,
 		AttemptNo:      input.AttemptNo,
 		Status:         input.Status,
 		NextRetryAt:    input.NextRetryAt,
 	}
 	s.attempts[attempt.ID] = attempt
-	key := fmt.Sprintf("%d:%d:%d:%s", input.SubscriptionID, input.APISpecID, input.RevisionID, input.EventType)
+	key := fmt.Sprintf("%d:%d:%d:%s", input.SubscriptionID, input.APISpecID, input.IngestEventID, input.EventType)
 	s.latest[key] = attempt.ID
 	return attempt, nil
 }

@@ -56,8 +56,8 @@ type SelectorResolutionError struct {
 	RepoPath  string
 	Selector  string
 
-	RevisionID     int64
-	RevisionStatus string
+	IngestEventID     int64
+	IngestEventStatus string
 
 	Err error
 }
@@ -77,11 +77,11 @@ func (e *SelectorResolutionError) Error() string {
 	if e.Selector != "" {
 		message += fmt.Sprintf(" selector=%q", e.Selector)
 	}
-	if e.RevisionID > 0 {
-		message += fmt.Sprintf(" revision_id=%d", e.RevisionID)
+	if e.IngestEventID > 0 {
+		message += fmt.Sprintf(" ingest_event_id=%d", e.IngestEventID)
 	}
-	if e.RevisionStatus != "" {
-		message += fmt.Sprintf(" status=%q", e.RevisionStatus)
+	if e.IngestEventStatus != "" {
+		message += fmt.Sprintf(" status=%q", e.IngestEventStatus)
 	}
 	if e.Err != nil {
 		message += fmt.Sprintf(": %v", e.Err)
@@ -229,12 +229,12 @@ func resolveReadSelectorBySHA(
 
 	if revision.Status != revisionProcessed {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
-			Code:           SelectorResolutionUnprocessed,
-			TenantKey:      input.tenantKey,
-			RepoPath:       input.repoPath,
-			Selector:       input.selector,
-			RevisionID:     revision.ID,
-			RevisionStatus: revision.Status,
+			Code:              SelectorResolutionUnprocessed,
+			TenantKey:         input.tenantKey,
+			RepoPath:          input.repoPath,
+			Selector:          input.selector,
+			IngestEventID:     revision.ID,
+			IngestEventStatus: revision.Status,
 		}
 	}
 
@@ -289,12 +289,12 @@ func resolveReadSelectorByBranch(
 
 	if headRevision.Status != revisionProcessed {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
-			Code:           SelectorResolutionUnprocessed,
-			TenantKey:      input.tenantKey,
-			RepoPath:       input.repoPath,
-			Selector:       input.selector,
-			RevisionID:     headRevision.ID,
-			RevisionStatus: headRevision.Status,
+			Code:              SelectorResolutionUnprocessed,
+			TenantKey:         input.tenantKey,
+			RepoPath:          input.repoPath,
+			Selector:          input.selector,
+			IngestEventID:     headRevision.ID,
+			IngestEventStatus: headRevision.Status,
 		}
 	}
 

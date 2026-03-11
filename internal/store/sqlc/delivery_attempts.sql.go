@@ -15,7 +15,7 @@ const createDeliveryAttempt = `-- name: CreateDeliveryAttempt :one
 INSERT INTO delivery_attempts (
     subscription_id,
     api_spec_id,
-    revision_id,
+    ingest_event_id,
     event_type,
     attempt_no,
     status,
@@ -30,13 +30,13 @@ VALUES (
     $6,
     $7
 )
-RETURNING id, subscription_id, api_spec_id, revision_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
+RETURNING id, subscription_id, api_spec_id, ingest_event_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
 `
 
 type CreateDeliveryAttemptParams struct {
 	SubscriptionID int64              `json:"subscription_id"`
 	ApiSpecID      int64              `json:"api_spec_id"`
-	RevisionID     int64              `json:"revision_id"`
+	IngestEventID  int64              `json:"ingest_event_id"`
 	EventType      string             `json:"event_type"`
 	AttemptNo      int32              `json:"attempt_no"`
 	Status         string             `json:"status"`
@@ -47,7 +47,7 @@ func (q *Queries) CreateDeliveryAttempt(ctx context.Context, arg CreateDeliveryA
 	row := q.db.QueryRow(ctx, createDeliveryAttempt,
 		arg.SubscriptionID,
 		arg.ApiSpecID,
-		arg.RevisionID,
+		arg.IngestEventID,
 		arg.EventType,
 		arg.AttemptNo,
 		arg.Status,
@@ -58,7 +58,7 @@ func (q *Queries) CreateDeliveryAttempt(ctx context.Context, arg CreateDeliveryA
 		&i.ID,
 		&i.SubscriptionID,
 		&i.ApiSpecID,
-		&i.RevisionID,
+		&i.IngestEventID,
 		&i.EventType,
 		&i.AttemptNo,
 		&i.Status,
@@ -72,11 +72,11 @@ func (q *Queries) CreateDeliveryAttempt(ctx context.Context, arg CreateDeliveryA
 }
 
 const getLatestDeliveryAttemptByKey = `-- name: GetLatestDeliveryAttemptByKey :one
-SELECT id, subscription_id, api_spec_id, revision_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
+SELECT id, subscription_id, api_spec_id, ingest_event_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
 FROM delivery_attempts
 WHERE subscription_id = $1
   AND api_spec_id = $2
-  AND revision_id = $3
+  AND ingest_event_id = $3
   AND event_type = $4
 ORDER BY attempt_no DESC
 LIMIT 1
@@ -85,7 +85,7 @@ LIMIT 1
 type GetLatestDeliveryAttemptByKeyParams struct {
 	SubscriptionID int64  `json:"subscription_id"`
 	ApiSpecID      int64  `json:"api_spec_id"`
-	RevisionID     int64  `json:"revision_id"`
+	IngestEventID  int64  `json:"ingest_event_id"`
 	EventType      string `json:"event_type"`
 }
 
@@ -93,7 +93,7 @@ func (q *Queries) GetLatestDeliveryAttemptByKey(ctx context.Context, arg GetLate
 	row := q.db.QueryRow(ctx, getLatestDeliveryAttemptByKey,
 		arg.SubscriptionID,
 		arg.ApiSpecID,
-		arg.RevisionID,
+		arg.IngestEventID,
 		arg.EventType,
 	)
 	var i DeliveryAttempt
@@ -101,7 +101,7 @@ func (q *Queries) GetLatestDeliveryAttemptByKey(ctx context.Context, arg GetLate
 		&i.ID,
 		&i.SubscriptionID,
 		&i.ApiSpecID,
-		&i.RevisionID,
+		&i.IngestEventID,
 		&i.EventType,
 		&i.AttemptNo,
 		&i.Status,
@@ -115,7 +115,7 @@ func (q *Queries) GetLatestDeliveryAttemptByKey(ctx context.Context, arg GetLate
 }
 
 const listDueDeliveryAttempts = `-- name: ListDueDeliveryAttempts :many
-SELECT id, subscription_id, api_spec_id, revision_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
+SELECT id, subscription_id, api_spec_id, ingest_event_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
 FROM delivery_attempts
 WHERE status IN ('pending', 'retry_scheduled')
   AND (next_retry_at IS NULL OR next_retry_at <= NOW())
@@ -136,7 +136,7 @@ func (q *Queries) ListDueDeliveryAttempts(ctx context.Context, limitCount int32)
 			&i.ID,
 			&i.SubscriptionID,
 			&i.ApiSpecID,
-			&i.RevisionID,
+			&i.IngestEventID,
 			&i.EventType,
 			&i.AttemptNo,
 			&i.Status,
@@ -164,7 +164,7 @@ SET status = $1,
     next_retry_at = $4,
     updated_at = NOW()
 WHERE id = $5
-RETURNING id, subscription_id, api_spec_id, revision_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
+RETURNING id, subscription_id, api_spec_id, ingest_event_id, event_type, attempt_no, status, response_code, error, next_retry_at, created_at, updated_at
 `
 
 type UpdateDeliveryAttemptResultParams struct {
@@ -188,7 +188,7 @@ func (q *Queries) UpdateDeliveryAttemptResult(ctx context.Context, arg UpdateDel
 		&i.ID,
 		&i.SubscriptionID,
 		&i.ApiSpecID,
-		&i.RevisionID,
+		&i.IngestEventID,
 		&i.EventType,
 		&i.AttemptNo,
 		&i.Status,

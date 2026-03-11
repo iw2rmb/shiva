@@ -38,7 +38,7 @@ func (s *Store) GetAPISpecRevisionIDByRepoAndRootPath(
 		JOIN api_specs ON api_specs.id = api_spec_revisions.api_spec_id
 		WHERE api_specs.repo_id = $1
 		  AND api_specs.root_path = $2
-		  AND api_spec_revisions.revision_id = $3
+		  AND api_spec_revisions.ingest_event_id = $3
 		  AND api_specs.status = 'active'
 		  AND api_spec_revisions.build_status = 'processed'
 		ORDER BY api_spec_revisions.id DESC
@@ -51,7 +51,7 @@ func (s *Store) GetAPISpecRevisionIDByRepoAndRootPath(
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, fmt.Errorf(
-				"%w: repo_id=%d api=%q revision_id=%d",
+				"%w: repo_id=%d api=%q ingest_event_id=%d",
 				ErrAPISpecNotFound,
 				repoID,
 				apiRootPath,
@@ -59,7 +59,7 @@ func (s *Store) GetAPISpecRevisionIDByRepoAndRootPath(
 			)
 		}
 		return 0, fmt.Errorf(
-			"resolve api spec revision for repo_id=%d api=%q revision_id=%d: %w",
+			"resolve api spec revision for repo_id=%d api=%q ingest_event_id=%d: %w",
 			repoID,
 			apiRootPath,
 			revisionID,

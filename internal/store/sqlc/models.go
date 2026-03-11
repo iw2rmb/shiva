@@ -26,7 +26,7 @@ type ApiSpecDependency struct {
 type ApiSpecRevision struct {
 	ID                 int64              `json:"id"`
 	ApiSpecID          int64              `json:"api_spec_id"`
-	RevisionID         int64              `json:"revision_id"`
+	IngestEventID      int64              `json:"ingest_event_id"`
 	RootPathAtRevision string             `json:"root_path_at_revision"`
 	BuildStatus        string             `json:"build_status"`
 	Error              string             `json:"error"`
@@ -38,7 +38,7 @@ type DeliveryAttempt struct {
 	ID             int64              `json:"id"`
 	SubscriptionID int64              `json:"subscription_id"`
 	ApiSpecID      int64              `json:"api_spec_id"`
-	RevisionID     int64              `json:"revision_id"`
+	IngestEventID  int64              `json:"ingest_event_id"`
 	EventType      string             `json:"event_type"`
 	AttemptNo      int32              `json:"attempt_no"`
 	Status         string             `json:"status"`

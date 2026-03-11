@@ -513,9 +513,9 @@ func mapAPISpecListing(listings []store.APISpecListing) []apiSpecListingResponse
 		if listing.LastProcessedRevision != nil {
 			item.LastProcessedRevision = &apiSpecRevisionMetadataResponse{
 				APISpecRevisionID: listing.LastProcessedRevision.APISpecRevisionID,
-				RevisionID:        listing.LastProcessedRevision.RevisionID,
-				RevisionSHA:       listing.LastProcessedRevision.RevisionSHA,
-				RevisionBranch:    listing.LastProcessedRevision.RevisionBranch,
+				IngestEventID:     listing.LastProcessedRevision.IngestEventID,
+				IngestEventSHA:    listing.LastProcessedRevision.IngestEventSHA,
+				IngestEventBranch: listing.LastProcessedRevision.IngestEventBranch,
 			}
 		}
 		response = append(response, item)
@@ -532,9 +532,9 @@ type apiSpecListingResponse struct {
 
 type apiSpecRevisionMetadataResponse struct {
 	APISpecRevisionID int64  `json:"api_spec_revision_id"`
-	RevisionID        int64  `json:"revision_id"`
-	RevisionSHA       string `json:"revision_sha"`
-	RevisionBranch    string `json:"revision_branch"`
+	IngestEventID     int64  `json:"ingest_event_id"`
+	IngestEventSHA    string `json:"ingest_event_sha"`
+	IngestEventBranch string `json:"ingest_event_branch"`
 }
 
 func (s *Server) writeReadRouteError(c *fiber.Ctx, err error) error {

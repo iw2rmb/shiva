@@ -12,11 +12,13 @@ import (
 // GetSpecArtifactByRevisionID is a compatibility bridge for legacy read routes.
 // It resolves the most recent API-scoped artifact row persisted for the revision.
 func (s *Store) GetSpecArtifactByRevisionID(ctx context.Context, revisionID int64) (SpecArtifact, error) {
+	ingestEventID := revisionID
+
 	if s == nil || !s.configured || s.pool == nil {
 		return SpecArtifact{}, ErrStoreNotConfigured
 	}
-	if revisionID < 1 {
-		return SpecArtifact{}, errors.New("revision id must be positive")
+	if ingestEventID < 1 {
+		return SpecArtifact{}, errors.New("ingest event id must be positive")
 	}
 
 	var artifact SpecArtifact
@@ -31,11 +33,11 @@ func (s *Store) GetSpecArtifactByRevisionID(ctx context.Context, revisionID int6
 			spec_artifacts.size_bytes
 		FROM spec_artifacts
 		JOIN api_spec_revisions ON api_spec_revisions.id = spec_artifacts.api_spec_revision_id
-		WHERE api_spec_revisions.revision_id = $1
+		WHERE api_spec_revisions.ingest_event_id = $1
 		ORDER BY api_spec_revisions.id DESC
 		LIMIT 1
 		`,
-		revisionID,
+		ingestEventID,
 	).Scan(
 		&artifact.APISpecRevisionID,
 		&artifact.SpecJSON,
@@ -45,9 +47,9 @@ func (s *Store) GetSpecArtifactByRevisionID(ctx context.Context, revisionID int6
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return SpecArtifact{}, fmt.Errorf("%w: revision_id=%d", ErrSpecArtifactNotFound, revisionID)
+			return SpecArtifact{}, fmt.Errorf("%w: ingest_event_id=%d", ErrSpecArtifactNotFound, ingestEventID)
 		}
-		return SpecArtifact{}, fmt.Errorf("get spec artifact by revision_id=%d: %w", revisionID, err)
+		return SpecArtifact{}, fmt.Errorf("get spec artifact by ingest_event_id=%d: %w", ingestEventID, err)
 	}
 
 	artifact.SpecJSON = bytesCopy(artifact.SpecJSON)
@@ -62,11 +64,13 @@ func (s *Store) GetEndpointIndexByMethodPath(
 	method string,
 	path string,
 ) (EndpointIndexRecord, bool, error) {
+	ingestEventID := revisionID
+
 	if s == nil || !s.configured || s.pool == nil {
 		return EndpointIndexRecord{}, false, ErrStoreNotConfigured
 	}
-	if revisionID < 1 {
-		return EndpointIndexRecord{}, false, errors.New("revision id must be positive")
+	if ingestEventID < 1 {
+		return EndpointIndexRecord{}, false, errors.New("ingest event id must be positive")
 	}
 
 	method = strings.ToLower(strings.TrimSpace(method))
@@ -96,13 +100,13 @@ func (s *Store) GetEndpointIndexByMethodPath(
 			endpoint_index.raw_json
 		FROM endpoint_index
 		JOIN api_spec_revisions ON api_spec_revisions.id = endpoint_index.api_spec_revision_id
-		WHERE api_spec_revisions.revision_id = $1
+		WHERE api_spec_revisions.ingest_event_id = $1
 		  AND endpoint_index.method = $2
 		  AND endpoint_index.path = $3
 		ORDER BY api_spec_revisions.id DESC, endpoint_index.id DESC
 		LIMIT 1
 		`,
-		revisionID,
+		ingestEventID,
 		method,
 		path,
 	).Scan(
@@ -118,8 +122,8 @@ func (s *Store) GetEndpointIndexByMethodPath(
 			return EndpointIndexRecord{}, false, nil
 		}
 		return EndpointIndexRecord{}, false, fmt.Errorf(
-			"get endpoint index by revision_id=%d method=%s path=%s: %w",
-			revisionID,
+			"get endpoint index by ingest_event_id=%d method=%s path=%s: %w",
+			ingestEventID,
 			method,
 			path,
 			err,
