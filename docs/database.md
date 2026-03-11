@@ -10,8 +10,7 @@ This document describes current schema layout and SQL code generation workflow.
 
 ## Core Tables
 - `schema_migrations`: startup schema bootstrap record (`version`, `checksum`, `applied_at`).
-- `tenants`: tenant identity.
-- `repos`: repo identity per tenant (`gitlab_project_id`, `path_with_namespace`, `default_branch`, `openapi_force_rescan`).
+- `repos`: repo identity (`gitlab_project_id`, `path_with_namespace`, `default_branch`, `openapi_force_rescan`).
 - `subscriptions`: outbound webhook subscribers and retry policy.
 - `ingest_events`: inbound queue records and canonical repo revision rows (`sha`, `branch`, retry state, terminal processing result).
 - `api_specs`: durable API root identity per repo (`root_path`, `status`, optional `display_name`).
@@ -46,6 +45,8 @@ This document describes current schema layout and SQL code generation workflow.
 - `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained for legacy read routes.
 - They resolve the latest processed API-scoped row for the requested canonical `ingest_events.id` across all APIs in that ingest event, then return that row only when a matching method/path exists.
 - Monorepo read routes (`/-/{api}/-/`) still resolve explicitly via API root and revision ID, so same revision + different API returns different results.
+- Read resolution identifies repos directly by `repos.path_with_namespace`.
+- No-selector reads resolve against the repo's persisted `default_branch`, not a global branch constant.
 
 ## Generation
 sqlc config:

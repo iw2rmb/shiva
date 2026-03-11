@@ -15,7 +15,6 @@ var ErrRepoNotFound = errors.New("repo not found")
 
 type Repo struct {
 	ID                int64
-	TenantID          int64
 	GitLabProjectID   int64
 	PathWithNamespace string
 	DefaultBranch     string
@@ -71,7 +70,6 @@ func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
 
 	return Repo{
 		ID:                repo.ID,
-		TenantID:          repo.TenantID,
 		GitLabProjectID:   repo.GitlabProjectID,
 		PathWithNamespace: repo.PathWithNamespace,
 		DefaultBranch:     repo.DefaultBranch,

@@ -140,7 +140,6 @@ func newWebhookTestServer(ingestor gitlabWebhookIngestor) *Server {
 	cfg := config.Config{
 		HTTPAddr:            ":8080",
 		GitLabWebhookSecret: "secret-token",
-		TenantKey:           "tenant-a",
 	}
 	return newWebhookTestServerWithConfig(ingestor, cfg)
 }
@@ -184,7 +183,6 @@ func TestGitLabWebhookIngressBodyLimit(t *testing.T) {
 	server := newWebhookTestServerWithConfig(ingestor, config.Config{
 		HTTPAddr:            ":8080",
 		GitLabWebhookSecret: "secret-token",
-		TenantKey:           "tenant-a",
 		IngressBodyLimit:    32,
 	})
 
@@ -214,7 +212,6 @@ func TestGitLabWebhookIngressRateLimit(t *testing.T) {
 	server := newWebhookTestServerWithConfig(ingestor, config.Config{
 		HTTPAddr:            ":8080",
 		GitLabWebhookSecret: "secret-token",
-		TenantKey:           "tenant-a",
 		IngressRateLimitMax: 1,
 		IngressRateLimit:    time.Minute,
 		IngressBodyLimit:    1024 * 1024,

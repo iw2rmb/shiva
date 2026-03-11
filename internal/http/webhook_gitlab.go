@@ -151,7 +151,6 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) (handlerErr error) {
 	}
 
 	result, err := s.gitlabIngestor.PersistGitLabWebhook(ctx, store.GitLabIngestInput{
-		TenantKey:         s.cfg.TenantKey,
 		GitLabProjectID:   payload.Project.ID,
 		PathWithNamespace: payload.Project.PathWithNamespace,
 		DefaultBranch:     payload.Project.DefaultBranch,

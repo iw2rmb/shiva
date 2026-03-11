@@ -30,7 +30,6 @@ type Config struct {
 	GitLabBaseURL                    string
 	GitLabToken                      string
 	GitLabWebhookSecret              string
-	TenantKey                        string
 	WorkerConcurrency                int
 	ShutdownTimeout                  time.Duration
 	OutboundTimeout                  time.Duration
@@ -54,7 +53,6 @@ func Load() (Config, error) {
 		GitLabBaseURL:                    strings.TrimSpace(os.Getenv("SHIVA_GITLAB_BASE_URL")),
 		GitLabToken:                      strings.TrimSpace(os.Getenv("SHIVA_GITLAB_TOKEN")),
 		GitLabWebhookSecret:              strings.TrimSpace(os.Getenv("SHIVA_GITLAB_WEBHOOK_SECRET")),
-		TenantKey:                        envValue("SHIVA_TENANT_KEY", "default"),
 		WorkerConcurrency:                defaultWorkerConcurrency,
 		ShutdownTimeout:                  time.Duration(defaultShutdownTimeoutSecond) * time.Second,
 		OutboundTimeout:                  time.Duration(defaultOutboundTimeoutSecond) * time.Second,
@@ -215,9 +213,6 @@ func Load() (Config, error) {
 
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = defaultHTTPAddr
-	}
-	if cfg.TenantKey == "" {
-		return Config{}, errors.New("SHIVA_TENANT_KEY must not be empty")
 	}
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return Config{}, errors.New("SHIVA_DATABASE_URL must not be empty")

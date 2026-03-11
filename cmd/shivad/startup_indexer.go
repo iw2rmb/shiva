@@ -157,7 +157,6 @@ func enqueueStartupIndexingIfEmpty(
 		}
 
 		result, err := storeInstance.PersistGitLabWebhook(ctx, store.GitLabIngestInput{
-			TenantKey:         cfg.TenantKey,
 			GitLabProjectID:   projectID,
 			PathWithNamespace: pathWithNamespace,
 			DefaultBranch:     defaultBranch,

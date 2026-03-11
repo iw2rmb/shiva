@@ -113,12 +113,12 @@ func (s *Server) registerRoutes() {
 	webhookGroup.Post("/gitlab", s.handleGitLabWebhook)
 
 	v1 := s.app.Group("/v1")
-	specGroup := v1.Group("/specs/:tenant/:repo")
+	specGroup := v1.Group("/specs/:repo")
 	specGroup.Get("/apis", s.handleListAPISpecsByRepo)
 	specGroup.Get("/:selector/apis", s.handleListAPISpecsByRepoAtRevision)
 	specGroup.Get("/*", s.handleGetSpec)
 
-	routeGroup := v1.Group("/routes/:tenant/:repo")
+	routeGroup := v1.Group("/routes/:repo")
 	for _, method := range readOperationHTTPMethods {
 		routeGroup.Add(method, "/*", s.handleOperationRoute)
 	}

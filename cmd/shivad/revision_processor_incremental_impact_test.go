@@ -682,10 +682,6 @@ func (s *incrementalImpactRevisionStore) PersistSpecChange(_ context.Context, in
 	return nil
 }
 
-func (*incrementalImpactRevisionStore) GetTenantByID(_ context.Context, _ int64) (store.Tenant, error) {
-	return store.Tenant{}, errors.New("unexpected GetTenantByID call")
-}
-
 func (*incrementalImpactRevisionStore) GetRevisionByID(_ context.Context, _ int64) (store.Revision, error) {
 	return store.Revision{}, errors.New("unexpected GetRevisionByID call")
 }

@@ -53,7 +53,6 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 	storeMock := newFakeNotifierStore(
 		store.Subscription{
 			ID:                    44,
-			TenantID:              7,
 			RepoID:                9,
 			TargetURL:             server.URL,
 			Secret:                "top-secret",
@@ -72,8 +71,6 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 	)
 
 	err := notifier.NotifyRevision(context.Background(), RevisionNotification{
-		TenantID:          7,
-		TenantKey:         "tenant-alpha",
 		RepoID:            9,
 		RepoPath:          "group/repo",
 		APISpecID:         101,
@@ -171,7 +168,6 @@ func TestNotifierNotifyRevision_EmitsDiffOnlyWhenFullArtifactMissing(t *testing.
 	storeMock := newFakeNotifierStore(
 		store.Subscription{
 			ID:                    44,
-			TenantID:              7,
 			RepoID:                9,
 			TargetURL:             server.URL,
 			Secret:                "top-secret",
@@ -188,8 +184,6 @@ func TestNotifierNotifyRevision_EmitsDiffOnlyWhenFullArtifactMissing(t *testing.
 	)
 
 	err := notifier.NotifyRevision(context.Background(), RevisionNotification{
-		TenantID:          7,
-		TenantKey:         "tenant-alpha",
 		RepoID:            9,
 		RepoPath:          "group/repo",
 		APISpecID:         102,
@@ -278,7 +272,6 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 
 	storeMock := newFakeNotifierStore(store.Subscription{
 		ID:                    44,
-		TenantID:              7,
 		RepoID:                9,
 		TargetURL:             server.URL,
 		Secret:                "top-secret",
@@ -296,8 +289,6 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 
 	inputs := []RevisionNotification{
 		{
-			TenantID:          7,
-			TenantKey:         "tenant-alpha",
 			RepoID:            9,
 			RepoPath:          "group/repo",
 			APISpecID:         101,
@@ -311,8 +302,6 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 			SpecChange:        store.SpecChange{APISpecID: 101, ToAPISpecRevisionID: 5001, ChangeJSON: []byte(`{"version":1}`)},
 		},
 		{
-			TenantID:          7,
-			TenantKey:         "tenant-alpha",
 			RepoID:            9,
 			RepoPath:          "group/repo",
 			APISpecID:         102,
@@ -369,7 +358,6 @@ func TestDispatchEvent_DedupeKeyedByAPISpecID(t *testing.T) {
 
 	storeMock := newFakeNotifierStore(store.Subscription{
 		ID:                    99,
-		TenantID:              1,
 		RepoID:                2,
 		TargetURL:             "https://example.com/hook",
 		Secret:                "secret",
@@ -459,7 +447,6 @@ func TestDispatchEvent_RetryAndTerminalStates(t *testing.T) {
 
 			storeMock := newFakeNotifierStore(store.Subscription{
 				ID:                    10,
-				TenantID:              1,
 				RepoID:                2,
 				TargetURL:             "https://example.com/hook",
 				Secret:                "s3cr3t",
@@ -522,7 +509,6 @@ func TestDispatchEvent_SkipsTerminalAttempt(t *testing.T) {
 
 	storeMock := newFakeNotifierStore(store.Subscription{
 		ID:                    99,
-		TenantID:              1,
 		RepoID:                2,
 		TargetURL:             "https://example.com/hook",
 		Secret:                "secret",
@@ -603,7 +589,6 @@ func TestDispatchEvent_EmitsNotifyDispatchSpan(t *testing.T) {
 
 	storeMock := newFakeNotifierStore(store.Subscription{
 		ID:                    50,
-		TenantID:              1,
 		RepoID:                2,
 		TargetURL:             "https://example.com/hook",
 		Secret:                "secret",
@@ -706,12 +691,11 @@ func newFakeNotifierStore(subscriptions ...store.Subscription) *fakeNotifierStor
 
 func (f *fakeNotifierStore) ListEnabledSubscriptionsByRepo(
 	_ context.Context,
-	tenantID int64,
 	repoID int64,
 ) ([]store.Subscription, error) {
 	result := make([]store.Subscription, 0, len(f.subscriptions))
 	for _, subscription := range f.subscriptions {
-		if subscription.TenantID == tenantID && subscription.RepoID == repoID {
+		if subscription.RepoID == repoID {
 			result = append(result, subscription)
 		}
 	}

@@ -13,7 +13,6 @@ import (
 
 const (
 	shortSHASelectorLength = 8
-	mainBranchName         = "main"
 	revisionProcessed      = "processed"
 )
 
@@ -25,14 +24,12 @@ const (
 )
 
 type ResolveReadSelectorInput struct {
-	TenantKey  string
 	RepoPath   string
 	Selector   string
 	NoSelector bool
 }
 
 type ResolvedReadSelector struct {
-	TenantID int64
 	RepoID   int64
 	RepoPath string
 
@@ -52,9 +49,8 @@ const (
 type SelectorResolutionError struct {
 	Code SelectorResolutionErrorCode
 
-	TenantKey string
-	RepoPath  string
-	Selector  string
+	RepoPath string
+	Selector string
 
 	IngestEventID     int64
 	IngestEventStatus string
@@ -68,9 +64,6 @@ func (e *SelectorResolutionError) Error() string {
 	}
 
 	message := fmt.Sprintf("selector resolution failed: code=%s", e.Code)
-	if e.TenantKey != "" {
-		message += fmt.Sprintf(" tenant=%q", e.TenantKey)
-	}
 	if e.RepoPath != "" {
 		message += fmt.Sprintf(" repo=%q", e.RepoPath)
 	}
@@ -111,15 +104,13 @@ var (
 )
 
 type normalizedResolveReadSelectorInput struct {
-	tenantKey string
-	repoPath  string
-	selector  string
-	kind      SelectorKind
+	repoPath string
+	selector string
+	kind     SelectorKind
 }
 
 type selectorResolutionQueries interface {
-	GetTenantByKey(ctx context.Context, key string) (sqlc.Tenant, error)
-	GetRepoByTenantAndPath(ctx context.Context, arg sqlc.GetRepoByTenantAndPathParams) (sqlc.Repo, error)
+	GetRepoByPath(ctx context.Context, pathWithNamespace string) (sqlc.Repo, error)
 	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.IngestEvent, error)
 	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.IngestEvent, error)
 	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
@@ -150,47 +141,29 @@ func resolveReadSelector(
 	queries selectorResolutionQueries,
 	input normalizedResolveReadSelectorInput,
 ) (ResolvedReadSelector, error) {
-	tenant, err := queries.GetTenantByKey(ctx, input.tenantKey)
+	repo, err := queries.GetRepoByPath(ctx, input.repoPath)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedReadSelector{}, &SelectorResolutionError{
-				Code:      SelectorResolutionNotFound,
-				TenantKey: input.tenantKey,
-				RepoPath:  input.repoPath,
-				Selector:  input.selector,
+				Code:     SelectorResolutionNotFound,
+				RepoPath: input.repoPath,
+				Selector: input.selector,
 			}
 		}
-		return ResolvedReadSelector{}, fmt.Errorf("load tenant %q: %w", input.tenantKey, err)
-	}
-
-	repo, err := queries.GetRepoByTenantAndPath(ctx, sqlc.GetRepoByTenantAndPathParams{
-		TenantID:          tenant.ID,
-		PathWithNamespace: input.repoPath,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ResolvedReadSelector{}, &SelectorResolutionError{
-				Code:      SelectorResolutionNotFound,
-				TenantKey: input.tenantKey,
-				RepoPath:  input.repoPath,
-				Selector:  input.selector,
-			}
-		}
-		return ResolvedReadSelector{}, fmt.Errorf("load repo %q for tenant %q: %w", input.repoPath, input.tenantKey, err)
+		return ResolvedReadSelector{}, fmt.Errorf("load repo %q: %w", input.repoPath, err)
 	}
 
 	switch input.kind {
 	case SelectorKindSHA:
-		return resolveReadSelectorBySHA(ctx, queries, tenant.ID, repo, input)
+		return resolveReadSelectorBySHA(ctx, queries, repo, input)
 	case SelectorKindNoSelector:
-		return resolveReadSelectorByBranch(ctx, queries, tenant.ID, repo, input, mainBranchName)
+		return resolveReadSelectorByBranch(ctx, queries, repo, input, repo.DefaultBranch)
 	default:
 		return ResolvedReadSelector{}, &SelectorResolutionError{
-			Code:      SelectorResolutionInvalidInput,
-			TenantKey: input.tenantKey,
-			RepoPath:  input.repoPath,
-			Selector:  input.selector,
-			Err:       fmt.Errorf("unsupported selector kind %q", input.kind),
+			Code:     SelectorResolutionInvalidInput,
+			RepoPath: input.repoPath,
+			Selector: input.selector,
+			Err:      fmt.Errorf("unsupported selector kind %q", input.kind),
 		}
 	}
 }
@@ -198,7 +171,6 @@ func resolveReadSelector(
 func resolveReadSelectorBySHA(
 	ctx context.Context,
 	queries selectorResolutionQueries,
-	tenantID int64,
 	repo sqlc.Repo,
 	input normalizedResolveReadSelectorInput,
 ) (ResolvedReadSelector, error) {
@@ -212,17 +184,15 @@ func resolveReadSelectorBySHA(
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedReadSelector{}, &SelectorResolutionError{
-				Code:      SelectorResolutionNotFound,
-				TenantKey: input.tenantKey,
-				RepoPath:  input.repoPath,
-				Selector:  input.selector,
+				Code:     SelectorResolutionNotFound,
+				RepoPath: input.repoPath,
+				Selector: input.selector,
 			}
 		}
 		return ResolvedReadSelector{}, fmt.Errorf(
-			"load revision by sha %q for repo %q tenant %q: %w",
+			"load revision by sha %q for repo %q: %w",
 			input.selector,
 			input.repoPath,
-			input.tenantKey,
 			err,
 		)
 	}
@@ -230,7 +200,6 @@ func resolveReadSelectorBySHA(
 	if revision.Status != revisionProcessed {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
 			Code:              SelectorResolutionUnprocessed,
-			TenantKey:         input.tenantKey,
 			RepoPath:          input.repoPath,
 			Selector:          input.selector,
 			IngestEventID:     revision.ID,
@@ -240,15 +209,13 @@ func resolveReadSelectorBySHA(
 
 	if !revision.OpenapiChanged.Valid || !revision.OpenapiChanged.Bool {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
-			Code:      SelectorResolutionNotFound,
-			TenantKey: input.tenantKey,
-			RepoPath:  input.repoPath,
-			Selector:  input.selector,
+			Code:     SelectorResolutionNotFound,
+			RepoPath: input.repoPath,
+			Selector: input.selector,
 		}
 	}
 
 	return ResolvedReadSelector{
-		TenantID:     tenantID,
 		RepoID:       repo.ID,
 		RepoPath:     repo.PathWithNamespace,
 		SelectorKind: input.kind,
@@ -260,7 +227,6 @@ func resolveReadSelectorBySHA(
 func resolveReadSelectorByBranch(
 	ctx context.Context,
 	queries selectorResolutionQueries,
-	tenantID int64,
 	repo sqlc.Repo,
 	input normalizedResolveReadSelectorInput,
 	branch string,
@@ -272,16 +238,14 @@ func resolveReadSelectorByBranch(
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedReadSelector{}, &SelectorResolutionError{
-				Code:      SelectorResolutionNotFound,
-				TenantKey: input.tenantKey,
-				RepoPath:  input.repoPath,
-				Selector:  input.selector,
+				Code:     SelectorResolutionNotFound,
+				RepoPath: input.repoPath,
+				Selector: input.selector,
 			}
 		}
 		return ResolvedReadSelector{}, fmt.Errorf(
-			"load latest revision for repo %q tenant %q branch %q: %w",
+			"load latest revision for repo %q branch %q: %w",
 			input.repoPath,
-			input.tenantKey,
 			branch,
 			err,
 		)
@@ -290,7 +254,6 @@ func resolveReadSelectorByBranch(
 	if headRevision.Status != revisionProcessed {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
 			Code:              SelectorResolutionUnprocessed,
-			TenantKey:         input.tenantKey,
 			RepoPath:          input.repoPath,
 			Selector:          input.selector,
 			IngestEventID:     headRevision.ID,
@@ -309,23 +272,20 @@ func resolveReadSelectorByBranch(
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedReadSelector{}, &SelectorResolutionError{
-				Code:      SelectorResolutionNotFound,
-				TenantKey: input.tenantKey,
-				RepoPath:  input.repoPath,
-				Selector:  input.selector,
+				Code:     SelectorResolutionNotFound,
+				RepoPath: input.repoPath,
+				Selector: input.selector,
 			}
 		}
 		return ResolvedReadSelector{}, fmt.Errorf(
-			"load latest processed openapi revision for repo %q tenant %q branch %q: %w",
+			"load latest processed openapi revision for repo %q branch %q: %w",
 			input.repoPath,
-			input.tenantKey,
 			branch,
 			err,
 		)
 	}
 
 	return ResolvedReadSelector{
-		TenantID:     tenantID,
 		RepoID:       repo.ID,
 		RepoPath:     repo.PathWithNamespace,
 		SelectorKind: input.kind,
@@ -336,33 +296,24 @@ func resolveReadSelectorByBranch(
 
 func normalizeResolveReadSelectorInput(input ResolveReadSelectorInput) (normalizedResolveReadSelectorInput, error) {
 	normalized := normalizedResolveReadSelectorInput{
-		tenantKey: strings.TrimSpace(input.TenantKey),
-		repoPath:  strings.TrimSpace(input.RepoPath),
-		selector:  strings.TrimSpace(input.Selector),
+		repoPath: strings.TrimSpace(input.RepoPath),
+		selector: strings.TrimSpace(input.Selector),
 	}
 
-	if normalized.tenantKey == "" {
-		return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
-			Code: SelectorResolutionInvalidInput,
-			Err:  errors.New("tenant key must not be empty"),
-		}
-	}
 	if normalized.repoPath == "" {
 		return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
-			Code:      SelectorResolutionInvalidInput,
-			TenantKey: normalized.tenantKey,
-			Err:       errors.New("repo path must not be empty"),
+			Code: SelectorResolutionInvalidInput,
+			Err:  errors.New("repo path must not be empty"),
 		}
 	}
 
 	if input.NoSelector {
 		if normalized.selector != "" {
 			return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
-				Code:      SelectorResolutionInvalidInput,
-				TenantKey: normalized.tenantKey,
-				RepoPath:  normalized.repoPath,
-				Selector:  normalized.selector,
-				Err:       errors.New("selector must be empty when no selector route is used"),
+				Code:     SelectorResolutionInvalidInput,
+				RepoPath: normalized.repoPath,
+				Selector: normalized.selector,
+				Err:      errors.New("selector must be empty when no selector route is used"),
 			}
 		}
 		normalized.kind = SelectorKindNoSelector
@@ -371,20 +322,18 @@ func normalizeResolveReadSelectorInput(input ResolveReadSelectorInput) (normaliz
 
 	if normalized.selector == "" {
 		return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
-			Code:      SelectorResolutionInvalidInput,
-			TenantKey: normalized.tenantKey,
-			RepoPath:  normalized.repoPath,
-			Err:       errors.New("selector must not be empty"),
+			Code:     SelectorResolutionInvalidInput,
+			RepoPath: normalized.repoPath,
+			Err:      errors.New("selector must not be empty"),
 		}
 	}
 
 	if !isShortSHA(normalized.selector) {
 		return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
-			Code:      SelectorResolutionInvalidInput,
-			TenantKey: normalized.tenantKey,
-			RepoPath:  normalized.repoPath,
-			Selector:  normalized.selector,
-			Err:       errors.New("selector must be exactly 8 lowercase hex characters"),
+			Code:     SelectorResolutionInvalidInput,
+			RepoPath: normalized.repoPath,
+			Selector: normalized.selector,
+			Err:      errors.New("selector must be exactly 8 lowercase hex characters"),
 		}
 	}
 

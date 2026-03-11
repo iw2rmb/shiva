@@ -11,7 +11,6 @@ import (
 
 const createSubscription = `-- name: CreateSubscription :one
 INSERT INTO subscriptions (
-    tenant_id,
     repo_id,
     target_url,
     secret,
@@ -27,14 +26,12 @@ VALUES (
     $4,
     $5,
     $6,
-    $7,
-    $8
+    $7
 )
-RETURNING id, tenant_id, repo_id, target_url, secret, enabled, max_attempts, backoff_initial_seconds, backoff_max_seconds, created_at, updated_at
+RETURNING id, repo_id, target_url, secret, enabled, max_attempts, backoff_initial_seconds, backoff_max_seconds, created_at, updated_at
 `
 
 type CreateSubscriptionParams struct {
-	TenantID              int64  `json:"tenant_id"`
 	RepoID                int64  `json:"repo_id"`
 	TargetUrl             string `json:"target_url"`
 	Secret                string `json:"secret"`
@@ -46,7 +43,6 @@ type CreateSubscriptionParams struct {
 
 func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (Subscription, error) {
 	row := q.db.QueryRow(ctx, createSubscription,
-		arg.TenantID,
 		arg.RepoID,
 		arg.TargetUrl,
 		arg.Secret,
@@ -58,7 +54,6 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.TargetUrl,
 		&i.Secret,
@@ -73,21 +68,15 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 }
 
 const listEnabledSubscriptionsByRepo = `-- name: ListEnabledSubscriptionsByRepo :many
-SELECT id, tenant_id, repo_id, target_url, secret, enabled, max_attempts, backoff_initial_seconds, backoff_max_seconds, created_at, updated_at
+SELECT id, repo_id, target_url, secret, enabled, max_attempts, backoff_initial_seconds, backoff_max_seconds, created_at, updated_at
 FROM subscriptions
-WHERE tenant_id = $1
-  AND repo_id = $2
+WHERE repo_id = $1
   AND enabled = TRUE
 ORDER BY id
 `
 
-type ListEnabledSubscriptionsByRepoParams struct {
-	TenantID int64 `json:"tenant_id"`
-	RepoID   int64 `json:"repo_id"`
-}
-
-func (q *Queries) ListEnabledSubscriptionsByRepo(ctx context.Context, arg ListEnabledSubscriptionsByRepoParams) ([]Subscription, error) {
-	rows, err := q.db.Query(ctx, listEnabledSubscriptionsByRepo, arg.TenantID, arg.RepoID)
+func (q *Queries) ListEnabledSubscriptionsByRepo(ctx context.Context, repoID int64) ([]Subscription, error) {
+	rows, err := q.db.Query(ctx, listEnabledSubscriptionsByRepo, repoID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +86,6 @@ func (q *Queries) ListEnabledSubscriptionsByRepo(ctx context.Context, arg ListEn
 		var i Subscription
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.RepoID,
 			&i.TargetUrl,
 			&i.Secret,
@@ -123,7 +111,7 @@ UPDATE subscriptions
 SET enabled = $1,
     updated_at = NOW()
 WHERE id = $2
-RETURNING id, tenant_id, repo_id, target_url, secret, enabled, max_attempts, backoff_initial_seconds, backoff_max_seconds, created_at, updated_at
+RETURNING id, repo_id, target_url, secret, enabled, max_attempts, backoff_initial_seconds, backoff_max_seconds, created_at, updated_at
 `
 
 type SetSubscriptionEnabledParams struct {
@@ -136,7 +124,6 @@ func (q *Queries) SetSubscriptionEnabled(ctx context.Context, arg SetSubscriptio
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.TargetUrl,
 		&i.Secret,

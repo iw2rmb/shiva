@@ -12,19 +12,21 @@ Shiva is a Go service that ingests GitLab push events, detects OpenAPI changes, 
 - `POST /internal/webhooks/gitlab`
 - `GET /healthz`
 - `GET /internal/metrics` (or configured `SHIVA_METRICS_PATH`)
-- `GET /{tenant}/{repo}.{json|yaml}`
-- `GET /{tenant}/{repo}/{selector}.{json|yaml}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /{tenant}/{repo}/{selector}/{path}`
+- `GET /v1/specs/{repo}/{openapi|index}.{json|yaml}`
+- `GET /v1/specs/{repo}/{selector}/{openapi|index}.{json|yaml}`
+- `GET /v1/specs/{repo}/apis`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{selector}/{path}`
 
 Selector semantics:
-- `selector` is commit SHA, branch, or `latest`.
-- no-selector routes resolve to latest processed revision on `main`.
+- `selector` is an 8-character lowercase commit SHA prefix.
+- no-selector routes resolve to the latest processed revision on the repo's stored default branch.
 
 Operation-slice semantics:
 - request HTTP verb is the endpoint method selector,
 - response is JSON by default,
 - `{path}.json` and `{path}.yaml` are supported format addons.
+- `repo` uses GitLab `path_with_namespace` and must be URL-escaped when it contains `/`.
 
 ## Quick Start
 1. Set required envs for full mode:

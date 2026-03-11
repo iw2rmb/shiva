@@ -49,7 +49,6 @@ func TestIntegrationWebhookToNotifyFlow(t *testing.T) {
 	revisionStore := newIntegrationRevisionStore()
 	notifierStore := newIntegrationNotifierStore(store.Subscription{
 		ID:                    71,
-		TenantID:              revisionStore.tenant.ID,
 		RepoID:                revisionStore.repo.ID,
 		TargetURL:             outboundReceiver.URL,
 		Secret:                "notify-secret",
@@ -118,7 +117,6 @@ func TestIntegrationWebhookToNotifyFlow(t *testing.T) {
 		config.Config{
 			HTTPAddr:            ":8080",
 			GitLabWebhookSecret: "secret-token",
-			TenantKey:           revisionStore.tenant.Key,
 		},
 		logger,
 		&store.Store{},
@@ -447,7 +445,6 @@ func runWebhookToNotifyIntegrationCase(
 
 	notifierStore := newIntegrationNotifierStore(store.Subscription{
 		ID:                    71,
-		TenantID:              revisionStore.tenant.ID,
 		RepoID:                revisionStore.repo.ID,
 		TargetURL:             outboundReceiver.URL,
 		Secret:                "notify-secret",
@@ -514,7 +511,6 @@ func runWebhookToNotifyIntegrationCase(
 		config.Config{
 			HTTPAddr:            ":8080",
 			GitLabWebhookSecret: "secret-token",
-			TenantKey:           revisionStore.tenant.Key,
 		},
 		logger,
 		&store.Store{},
@@ -779,7 +775,6 @@ func (c *integrationGitLabClient) treeCallCount() int {
 
 type integrationRevisionStore struct {
 	mu              sync.Mutex
-	tenant          store.Tenant
 	repo            store.Repo
 	bootstrapState  store.RepoBootstrapState
 	nextAPISpecID   int64
@@ -798,10 +793,8 @@ type integrationRevisionStore struct {
 
 func newIntegrationRevisionStore() *integrationRevisionStore {
 	s := &integrationRevisionStore{
-		tenant: store.Tenant{ID: 5, Key: "tenant-a"},
 		repo: store.Repo{
 			ID:                44,
-			TenantID:          5,
 			GitLabProjectID:   42,
 			PathWithNamespace: "acme/platform-api",
 			DefaultBranch:     "main",
@@ -1207,13 +1200,6 @@ func (s *integrationRevisionStore) PersistSpecChange(_ context.Context, input st
 	return nil
 }
 
-func (s *integrationRevisionStore) GetTenantByID(_ context.Context, tenantID int64) (store.Tenant, error) {
-	if s.tenant.ID != tenantID {
-		return store.Tenant{}, fmt.Errorf("tenant %d not found", tenantID)
-	}
-	return s.tenant, nil
-}
-
 func (s *integrationRevisionStore) GetRevisionByID(_ context.Context, ingestEventID int64) (store.Revision, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1371,7 +1357,6 @@ func newIntegrationNotifierStore(subscription store.Subscription) *integrationNo
 
 func (s *integrationNotifierStore) ListEnabledSubscriptionsByRepo(
 	_ context.Context,
-	tenantID,
 	repoID int64,
 ) ([]store.Subscription, error) {
 	s.mu.Lock()
@@ -1379,7 +1364,7 @@ func (s *integrationNotifierStore) ListEnabledSubscriptionsByRepo(
 
 	result := make([]store.Subscription, 0, len(s.subscriptions))
 	for _, subscription := range s.subscriptions {
-		if subscription.Enabled && subscription.TenantID == tenantID && subscription.RepoID == repoID {
+		if subscription.Enabled && subscription.RepoID == repoID {
 			result = append(result, subscription)
 		}
 	}

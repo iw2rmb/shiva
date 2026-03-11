@@ -148,7 +148,7 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 
 			err := enqueueStartupIndexingIfEmpty(
 				context.Background(),
-				config.Config{TenantKey: "tenant-a"},
+				config.Config{},
 				slog.Default(),
 				storeFake,
 				clientFake,
@@ -179,9 +179,6 @@ func TestEnqueueStartupIndexingIfEmpty(t *testing.T) {
 			gotProjectIDs := make([]int64, 0, len(storeFake.persistInputs))
 			for _, input := range storeFake.persistInputs {
 				gotProjectIDs = append(gotProjectIDs, input.GitLabProjectID)
-				if input.TenantKey != "tenant-a" {
-					t.Fatalf("expected tenant key tenant-a, got %q", input.TenantKey)
-				}
 				if input.EventType != startupIndexingEventType {
 					t.Fatalf("expected event type %q, got %q", startupIndexingEventType, input.EventType)
 				}

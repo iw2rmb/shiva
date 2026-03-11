@@ -22,7 +22,6 @@ func TestLoad_DefaultValues(t *testing.T) {
 			"SHIVA_GITLAB_BASE_URL",
 			"SHIVA_GITLAB_TOKEN",
 			"SHIVA_GITLAB_WEBHOOK_SECRET",
-			"SHIVA_TENANT_KEY",
 			"SHIVA_OPENAPI_PATH_GLOBS",
 			"SHIVA_OPENAPI_REF_MAX_FETCHES",
 			"SHIVA_OPENAPI_BOOTSTRAP_FETCH_CONCURRENCY",
@@ -54,9 +53,6 @@ func TestLoad_DefaultValues(t *testing.T) {
 	}
 	if cfg.OutboundTimeout != 10*time.Second {
 		t.Fatalf("expected default outbound timeout 10s, got %s", cfg.OutboundTimeout)
-	}
-	if cfg.TenantKey != "default" {
-		t.Fatalf("expected default tenant key \"default\", got %q", cfg.TenantKey)
 	}
 	if len(cfg.OpenAPIPathGlobs) == 0 {
 		t.Fatalf("expected default openapi path globs to be configured")
@@ -117,16 +113,6 @@ func TestLoad_RejectsEmptyDatabaseURL(t *testing.T) {
 	}
 	if err.Error() != "SHIVA_DATABASE_URL must not be empty" {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestLoad_RejectsEmptyTenantKey(t *testing.T) {
-	setRequiredConfigEnv(t)
-
-	t.Setenv("SHIVA_TENANT_KEY", "  ")
-	_, err := Load()
-	if err == nil {
-		t.Fatalf("expected error for empty tenant key")
 	}
 }
 

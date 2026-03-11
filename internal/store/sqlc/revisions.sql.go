@@ -24,7 +24,7 @@ func (q *Queries) CountRevisions(ctx context.Context) (int64, error) {
 }
 
 const getLatestProcessedOpenAPIRevisionByBranchExcludingID = `-- name: GetLatestProcessedOpenAPIRevisionByBranchExcludingID :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND branch = $2
@@ -46,7 +46,6 @@ func (q *Queries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(ctx conte
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -66,7 +65,7 @@ func (q *Queries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(ctx conte
 }
 
 const getLatestProcessedRevisionByBranch = `-- name: GetLatestProcessedRevisionByBranch :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND branch = $2
@@ -85,7 +84,6 @@ func (q *Queries) GetLatestProcessedRevisionByBranch(ctx context.Context, arg Ge
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -105,7 +103,7 @@ func (q *Queries) GetLatestProcessedRevisionByBranch(ctx context.Context, arg Ge
 }
 
 const getLatestRevisionByBranch = `-- name: GetLatestRevisionByBranch :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND branch = $2
@@ -123,7 +121,6 @@ func (q *Queries) GetLatestRevisionByBranch(ctx context.Context, arg GetLatestRe
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -143,7 +140,7 @@ func (q *Queries) GetLatestRevisionByBranch(ctx context.Context, arg GetLatestRe
 }
 
 const getRevisionByID = `-- name: GetRevisionByID :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE id = $1
 `
@@ -153,7 +150,6 @@ func (q *Queries) GetRevisionByID(ctx context.Context, id int64) (IngestEvent, e
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -173,7 +169,7 @@ func (q *Queries) GetRevisionByID(ctx context.Context, id int64) (IngestEvent, e
 }
 
 const getRevisionByRepoSHA = `-- name: GetRevisionByRepoSHA :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND sha = $2
@@ -189,7 +185,6 @@ func (q *Queries) GetRevisionByRepoSHA(ctx context.Context, arg GetRevisionByRep
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -209,7 +204,7 @@ func (q *Queries) GetRevisionByRepoSHA(ctx context.Context, arg GetRevisionByRep
 }
 
 const getRevisionByRepoSHAPrefix = `-- name: GetRevisionByRepoSHAPrefix :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND sha LIKE $2 || '%'
@@ -227,7 +222,6 @@ func (q *Queries) GetRevisionByRepoSHAPrefix(ctx context.Context, arg GetRevisio
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,

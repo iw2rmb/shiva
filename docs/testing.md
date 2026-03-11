@@ -40,7 +40,7 @@ Current baseline should be validated by running `go test ./...`.
   - short-SHA selector validation,
   - monorepo delimiter parsing (`/-/{api}/-/`) for spec and route families,
   - selector fallback behavior on `/v1/routes`,
-  - `/v1/specs/{tenant}/{repo}/apis` and selector variant listing responses.
+  - `/v1/specs/{repo}/apis` and selector variant listing responses.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shivad/webhook_to_notify_integration_test.go`.
 - Startup queue seeding in `cmd/shivad/startup_indexer_test.go`:

@@ -25,20 +25,24 @@ Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifac
 ## Read Routes
 
 ### Full Spec
-- `GET /v1/specs/{tenant}/{repo}/{openapi|index}.{yaml|json}`
-- `GET /v1/specs/{tenant}/{repo}/{selector}/{openapi|index}.{yaml|json}`
-- `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{openapi|index}.{yaml|json}`
-- `GET /v1/specs/{tenant}/{repo}/-/{api}/-/{selector}/{openapi|index}.{yaml|json}`
+- `GET /v1/specs/{repo}/{openapi|index}.{yaml|json}`
+- `GET /v1/specs/{repo}/{selector}/{openapi|index}.{yaml|json}`
+- `GET /v1/specs/{repo}/-/{api}/-/{openapi|index}.{yaml|json}`
+- `GET /v1/specs/{repo}/-/{api}/-/{selector}/{openapi|index}.{yaml|json}`
 
 ### API Inventory
-- `GET /v1/specs/{tenant}/{repo}/apis`
-- `GET /v1/specs/{tenant}/{repo}/{selector}/apis`
+- `GET /v1/specs/{repo}/apis`
+- `GET /v1/specs/{repo}/{selector}/apis`
 
 ### Endpoint Operation Slice
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/{selector}/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/-/{api}/-/{path}`
-- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{tenant}/{repo}/-/{api}/-/{selector}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/{selector}/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/-/{api}/-/{path}`
+- `{GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE} /v1/routes/{repo}/-/{api}/-/{selector}/{path}`
+
+Route identity notes:
+- `repo` is the GitLab `path_with_namespace`.
+- callers must URL-escape `repo` when it contains `/`, for example `group%2Fservice`.
 
 Monorepo `api` is the raw root path, bounded by `/-/{api}/-/` in the URL.
 - `api` is decoded and may contain slashes (for example `platform/api`).
@@ -55,13 +59,13 @@ Route method is the endpoint method selector.
 
 ## Selector Semantics
 - selector can only be an 8-character lowercase commit SHA (short SHA prefix).
-- no-selector routes resolve to latest processed `HEAD` on `main`.
+- no-selector routes resolve to the latest processed `HEAD` on the repo's stored `default_branch`.
 - selector operation route is attempted first; if selector is not found it falls through to no-selector operation route.
 - spec routes do not fallback: `/v1/specs/.../{selector}/...` resolves selector only; 404 on selector failure.
 
 Route parser behavior:
-- non-monorepo: `/v1/specs/{tenant}/{repo}/...` and `/v1/routes/{tenant}/{repo}/...`
-- monorepo: `/v1/specs/{tenant}/{repo}/-/{api}/-/...` and `/v1/routes/{tenant}/{repo}/-/{api}/-/...`
+- non-monorepo: `/v1/specs/{repo}/...` and `/v1/routes/{repo}/...`
+- monorepo: `/v1/specs/{repo}/-/{api}/-/...` and `/v1/routes/{repo}/-/{api}/-/...`
 - compatibility: no `/-/{api}/-/` means single-API/legacy behavior based on latest processed API-scoped row for revision.
 
 ## Path Normalization on Reads
@@ -72,8 +76,8 @@ Route parser behavior:
 Default operation-slice format is JSON.
 
 ## API Listing Response Shape
-- `GET /v1/specs/{tenant}/{repo}/apis`
-- `GET /v1/specs/{tenant}/{repo}/{selector}/apis`
+- `GET /v1/specs/{repo}/apis`
+- `GET /v1/specs/{repo}/{selector}/apis`
 - HTTP `200` with `application/json` body:
   - `api`: root path of the API spec (`root_path`)
   - `status`: `active` or `deleted`

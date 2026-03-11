@@ -16,10 +16,10 @@ func TestResolveReadSelector_NoSelectorDefaultsToMainHead(t *testing.T) {
 	queries := newSelectorTestQueries()
 	queries.repo.DefaultBranch = "release"
 	queries.latestByBranch = map[string]sqlc.IngestEvent{
-		mainBranchName: newSelectorTestRevision(500, "processed", boolPtr(false), mainBranchName, "main-head"),
+		"release": newSelectorTestRevision(500, "processed", boolPtr(false), "release", "release-head"),
 	}
 	queries.openAPIByBranch = map[string]sqlc.IngestEvent{
-		mainBranchName: newSelectorTestRevision(490, "processed", boolPtr(true), mainBranchName, "main-artifact"),
+		"release": newSelectorTestRevision(490, "processed", boolPtr(true), "release", "release-artifact"),
 	}
 
 	resolved, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindNoSelector, ""))
@@ -33,8 +33,8 @@ func TestResolveReadSelector_NoSelectorDefaultsToMainHead(t *testing.T) {
 	if resolved.SelectorKind != SelectorKindNoSelector {
 		t.Fatalf("expected selector kind %q, got %q", SelectorKindNoSelector, resolved.SelectorKind)
 	}
-	if queries.lastHeadBranch != mainBranchName {
-		t.Fatalf("expected no-selector to resolve using branch %q, got %q", mainBranchName, queries.lastHeadBranch)
+	if queries.lastHeadBranch != "release" {
+		t.Fatalf("expected no-selector to resolve using branch %q, got %q", "release", queries.lastHeadBranch)
 	}
 }
 
@@ -43,7 +43,7 @@ func TestResolveReadSelector_NoSelectorHeadUnprocessedReturnsConflict(t *testing
 
 	queries := newSelectorTestQueries()
 	queries.latestByBranch = map[string]sqlc.IngestEvent{
-		mainBranchName: newSelectorTestRevision(501, "pending", nil, mainBranchName, "main-head"),
+		"main": newSelectorTestRevision(501, "pending", nil, "main", "main-head"),
 	}
 
 	_, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindNoSelector, ""))
@@ -111,29 +111,18 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "tenant key is required",
-			input: ResolveReadSelectorInput{
-				TenantKey: "",
-				RepoPath:  "acme/platform-api",
-				Selector:  "a1b2c3d4",
-			},
-			expectError: true,
-		},
-		{
 			name: "repo path is required",
 			input: ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "   ",
-				Selector:  "a1b2c3d4",
+				RepoPath: "   ",
+				Selector: "a1b2c3d4",
 			},
 			expectError: true,
 		},
 		{
 			name: "short selector normalized to lower-case",
 			input: ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
-				Selector:  "a1b2c3d4",
+				RepoPath: "acme/platform-api",
+				Selector: "a1b2c3d4",
 			},
 			kind:     SelectorKindSHA,
 			selector: "a1b2c3d4",
@@ -141,34 +130,30 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "invalid short SHA length",
 			input: ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
-				Selector:  "1234567",
+				RepoPath: "acme/platform-api",
+				Selector: "1234567",
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid short SHA charset",
 			input: ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
-				Selector:  "g1b2c3d4",
+				RepoPath: "acme/platform-api",
+				Selector: "g1b2c3d4",
 			},
 			expectError: true,
 		},
 		{
 			name: "upper-case short SHA rejected",
 			input: ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
-				Selector:  "A1B2C3D4",
+				RepoPath: "acme/platform-api",
+				Selector: "A1B2C3D4",
 			},
 			expectError: true,
 		},
 		{
 			name: "no selector mode",
 			input: ResolveReadSelectorInput{
-				TenantKey:  "tenant-a",
 				RepoPath:   "acme/platform-api",
 				NoSelector: true,
 			},
@@ -177,7 +162,6 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "no selector mode rejects explicit selector",
 			input: ResolveReadSelectorInput{
-				TenantKey:  "tenant-a",
 				RepoPath:   "acme/platform-api",
 				Selector:   "a1b2c3d4",
 				NoSelector: true,
@@ -187,8 +171,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "selector required when no-selector is false",
 			input: ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme/platform-api",
+				RepoPath: "acme/platform-api",
 			},
 			expectError: true,
 		},
@@ -222,10 +205,8 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 
 func newSelectorTestQueries() *fakeSelectorResolutionQueries {
 	return &fakeSelectorResolutionQueries{
-		tenant: sqlc.Tenant{ID: 3, Key: "tenant-a"},
 		repo: sqlc.Repo{
 			ID:                44,
-			TenantID:          3,
 			PathWithNamespace: "acme/platform-api",
 			DefaultBranch:     "main",
 		},
@@ -234,16 +215,14 @@ func newSelectorTestQueries() *fakeSelectorResolutionQueries {
 
 func newSelectorTestInput(kind SelectorKind, selector string) normalizedResolveReadSelectorInput {
 	return normalizedResolveReadSelectorInput{
-		tenantKey: "tenant-a",
-		repoPath:  "acme/platform-api",
-		kind:      kind,
-		selector:  selector,
+		repoPath: "acme/platform-api",
+		kind:     kind,
+		selector: selector,
 	}
 }
 
 type fakeSelectorResolutionQueries struct {
-	tenant sqlc.Tenant
-	repo   sqlc.Repo
+	repo sqlc.Repo
 
 	bySHAPrefix     map[string]sqlc.IngestEvent
 	latestByBranch  map[string]sqlc.IngestEvent
@@ -252,18 +231,8 @@ type fakeSelectorResolutionQueries struct {
 	lastHeadBranch string
 }
 
-func (f *fakeSelectorResolutionQueries) GetTenantByKey(_ context.Context, key string) (sqlc.Tenant, error) {
-	if f.tenant.ID == 0 || f.tenant.Key != key {
-		return sqlc.Tenant{}, pgx.ErrNoRows
-	}
-	return f.tenant, nil
-}
-
-func (f *fakeSelectorResolutionQueries) GetRepoByTenantAndPath(
-	_ context.Context,
-	arg sqlc.GetRepoByTenantAndPathParams,
-) (sqlc.Repo, error) {
-	if f.repo.ID == 0 || f.repo.TenantID != arg.TenantID || f.repo.PathWithNamespace != arg.PathWithNamespace {
+func (f *fakeSelectorResolutionQueries) GetRepoByPath(_ context.Context, pathWithNamespace string) (sqlc.Repo, error) {
+	if f.repo.ID == 0 || f.repo.PathWithNamespace != pathWithNamespace {
 		return sqlc.Repo{}, pgx.ErrNoRows
 	}
 	return f.repo, nil

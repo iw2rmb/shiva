@@ -28,7 +28,6 @@ This document describes runtime setup, configuration, and startup behavior of th
 ### Core
 - `SHIVA_HTTP_ADDR` (default `:8080`).
 - `SHIVA_DATABASE_URL` (required).
-- `SHIVA_TENANT_KEY` (default `default`).
 - `SHIVA_LOG_LEVEL` (default `info`).
 - `SHIVA_SHUTDOWN_TIMEOUT_SECONDS` (default `15`).
 

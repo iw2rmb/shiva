@@ -4,32 +4,20 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS tenants (
-    id BIGSERIAL PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS repos (
     id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     gitlab_project_id BIGINT NOT NULL,
     path_with_namespace TEXT NOT NULL,
     default_branch TEXT NOT NULL,
     openapi_force_rescan BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tenant_id, id),
-    UNIQUE (tenant_id, gitlab_project_id),
-    UNIQUE (tenant_id, path_with_namespace)
+    UNIQUE (gitlab_project_id),
+    UNIQUE (path_with_namespace)
 );
-
-CREATE INDEX IF NOT EXISTS repos_tenant_id_idx ON repos(tenant_id);
 
 CREATE TABLE IF NOT EXISTS subscriptions (
     id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
     target_url TEXT NOT NULL,
     secret TEXT NOT NULL,
@@ -39,15 +27,13 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     backoff_max_seconds INTEGER NOT NULL DEFAULT 300 CHECK (backoff_max_seconds > 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tenant_id, repo_id, target_url),
-    FOREIGN KEY (tenant_id, repo_id) REFERENCES repos(tenant_id, id) ON DELETE CASCADE
+    UNIQUE (repo_id, target_url)
 );
 
 CREATE INDEX IF NOT EXISTS subscriptions_repo_enabled_idx ON subscriptions(repo_id, enabled);
 
 CREATE TABLE IF NOT EXISTS ingest_events (
     id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     repo_id BIGINT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
     sha TEXT NOT NULL,
     branch TEXT NOT NULL,
@@ -63,8 +49,7 @@ CREATE TABLE IF NOT EXISTS ingest_events (
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'processed', 'failed')),
     error TEXT NOT NULL DEFAULT '',
     UNIQUE (repo_id, delivery_id),
-    UNIQUE (repo_id, sha),
-    FOREIGN KEY (tenant_id, repo_id) REFERENCES repos(tenant_id, id) ON DELETE CASCADE
+    UNIQUE (repo_id, sha)
 );
 
 CREATE INDEX IF NOT EXISTS ingest_events_status_retry_idx ON ingest_events(status, next_retry_at, id);

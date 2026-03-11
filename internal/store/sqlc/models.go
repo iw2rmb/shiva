@@ -63,7 +63,6 @@ type EndpointIndex struct {
 
 type IngestEvent struct {
 	ID             int64              `json:"id"`
-	TenantID       int64              `json:"tenant_id"`
 	RepoID         int64              `json:"repo_id"`
 	Sha            string             `json:"sha"`
 	Branch         string             `json:"branch"`
@@ -82,7 +81,6 @@ type IngestEvent struct {
 
 type Repo struct {
 	ID                 int64              `json:"id"`
-	TenantID           int64              `json:"tenant_id"`
 	GitlabProjectID    int64              `json:"gitlab_project_id"`
 	PathWithNamespace  string             `json:"path_with_namespace"`
 	DefaultBranch      string             `json:"default_branch"`
@@ -118,7 +116,6 @@ type SpecChange struct {
 
 type Subscription struct {
 	ID                    int64              `json:"id"`
-	TenantID              int64              `json:"tenant_id"`
 	RepoID                int64              `json:"repo_id"`
 	TargetUrl             string             `json:"target_url"`
 	Secret                string             `json:"secret"`
@@ -128,11 +125,4 @@ type Subscription struct {
 	BackoffMaxSeconds     int32              `json:"backoff_max_seconds"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-}
-
-type Tenant struct {
-	ID        int64              `json:"id"`
-	Key       string             `json:"key"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }

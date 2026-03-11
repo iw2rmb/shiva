@@ -442,10 +442,6 @@ func (s *bootstrapPersistenceRevisionStore) PersistSpecChange(_ context.Context,
 	return nil
 }
 
-func (s *bootstrapPersistenceRevisionStore) GetTenantByID(_ context.Context, _ int64) (store.Tenant, error) {
-	return store.Tenant{}, fmt.Errorf("unexpected GetTenantByID call")
-}
-
 func (s *bootstrapPersistenceRevisionStore) GetRevisionByID(_ context.Context, _ int64) (store.Revision, error) {
 	return store.Revision{}, fmt.Errorf("unexpected GetRevisionByID call")
 }

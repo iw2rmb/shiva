@@ -10,7 +10,6 @@ import (
 
 type Subscription struct {
 	ID                    int64
-	TenantID              int64
 	RepoID                int64
 	TargetURL             string
 	Secret                string
@@ -22,30 +21,18 @@ type Subscription struct {
 
 func (s *Store) ListEnabledSubscriptionsByRepo(
 	ctx context.Context,
-	tenantID int64,
 	repoID int64,
 ) ([]Subscription, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return nil, ErrStoreNotConfigured
 	}
-	if tenantID < 1 {
-		return nil, errors.New("tenant id must be positive")
-	}
 	if repoID < 1 {
 		return nil, errors.New("repo id must be positive")
 	}
 
-	rows, err := sqlc.New(s.pool).ListEnabledSubscriptionsByRepo(ctx, sqlc.ListEnabledSubscriptionsByRepoParams{
-		TenantID: tenantID,
-		RepoID:   repoID,
-	})
+	rows, err := sqlc.New(s.pool).ListEnabledSubscriptionsByRepo(ctx, repoID)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"list enabled subscriptions for tenant %d repo %d: %w",
-			tenantID,
-			repoID,
-			err,
-		)
+		return nil, fmt.Errorf("list enabled subscriptions for repo %d: %w", repoID, err)
 	}
 
 	subscriptions := make([]Subscription, 0, len(rows))
@@ -58,7 +45,6 @@ func (s *Store) ListEnabledSubscriptionsByRepo(
 func mapSubscription(row sqlc.Subscription) Subscription {
 	return Subscription{
 		ID:                    row.ID,
-		TenantID:              row.TenantID,
 		RepoID:                row.RepoID,
 		TargetURL:             row.TargetUrl,
 		Secret:                row.Secret,

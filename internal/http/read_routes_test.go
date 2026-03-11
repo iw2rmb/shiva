@@ -30,9 +30,8 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 		{
 			name:   "no-selector spec route",
 			method: http.MethodGet,
-			path:   "/v1/specs/tenant-a/acme-platform-api/openapi.json",
+			path:   "/v1/specs/acme-platform-api/openapi.json",
 			expectedInput: store.ResolveReadSelectorInput{
-				TenantKey:  "tenant-a",
 				RepoPath:   "acme-platform-api",
 				NoSelector: true,
 			},
@@ -40,29 +39,26 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 		{
 			name:   "selector spec route",
 			method: http.MethodGet,
-			path:   "/v1/specs/tenant-a/acme-platform-api/" + shaSelector + "/openapi.json",
+			path:   "/v1/specs/acme-platform-api/" + shaSelector + "/openapi.json",
 			expectedInput: store.ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme-platform-api",
-				Selector:  shaSelector,
+				RepoPath: "acme-platform-api",
+				Selector: shaSelector,
 			},
 		},
 		{
 			name:   "selector spec route with sha",
 			method: http.MethodGet,
-			path:   fmt.Sprintf("/v1/specs/tenant-a/acme-platform-api/%s/openapi.yaml", shaSelector),
+			path:   fmt.Sprintf("/v1/specs/acme-platform-api/%s/openapi.yaml", shaSelector),
 			expectedInput: store.ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme-platform-api",
-				Selector:  shaSelector,
+				RepoPath: "acme-platform-api",
+				Selector: shaSelector,
 			},
 		},
 		{
 			name:   "operation slice route without selector",
 			method: http.MethodGet,
-			path:   "/v1/routes/tenant-a/acme-platform-api/%2Fpets",
+			path:   "/v1/routes/acme-platform-api/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
-				TenantKey:  "tenant-a",
 				RepoPath:   "acme-platform-api",
 				NoSelector: true,
 			},
@@ -70,21 +66,19 @@ func TestReadRoutes_SelectorModesResolveExpectedInput(t *testing.T) {
 		{
 			name:   "operation slice route with selector",
 			method: http.MethodGet,
-			path:   "/v1/routes/tenant-a/acme-platform-api/" + shaSelector + "/%2Fpets",
+			path:   "/v1/routes/acme-platform-api/" + shaSelector + "/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme-platform-api",
-				Selector:  shaSelector,
+				RepoPath: "acme-platform-api",
+				Selector: shaSelector,
 			},
 		},
 		{
 			name:   "operation route uses request method",
 			method: http.MethodPost,
-			path:   "/v1/routes/tenant-a/acme-platform-api/" + shaSelector + "/%2Fpets",
+			path:   "/v1/routes/acme-platform-api/" + shaSelector + "/%2Fpets",
 			expectedInput: store.ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "acme-platform-api",
-				Selector:  shaSelector,
+				RepoPath: "acme-platform-api",
+				Selector: shaSelector,
 			},
 		},
 	}
@@ -146,7 +140,7 @@ func TestReadRoutes_DelimitedMonorepoPathParsing(t *testing.T) {
 	}{
 		{
 			name:                 "single-spec route ignores api delimiter",
-			path:                 "/v1/routes/tenant-a/repo/%2Fpets",
+			path:                 "/v1/routes/repo/%2Fpets",
 			method:               http.MethodGet,
 			expectApiLookup:      false,
 			expectSingleLookup:   true,
@@ -154,7 +148,7 @@ func TestReadRoutes_DelimitedMonorepoPathParsing(t *testing.T) {
 		},
 		{
 			name:                 "monorepo route resolves api path with slash-delimited api root",
-			path:                 "/v1/routes/tenant-a/repo/-/platform/api/-/11111111/%2Fpets",
+			path:                 "/v1/routes/repo/-/platform/api/-/11111111/%2Fpets",
 			method:               http.MethodGet,
 			expectedAPIRoot:      "platform/api",
 			expectApiLookup:      true,
@@ -163,7 +157,7 @@ func TestReadRoutes_DelimitedMonorepoPathParsing(t *testing.T) {
 		},
 		{
 			name:                 "monorepo spec route resolves api path and artifact",
-			path:                 "/v1/specs/tenant-a/repo/-/platform/api/-/openapi.json",
+			path:                 "/v1/specs/repo/-/platform/api/-/openapi.json",
 			method:               http.MethodGet,
 			expectedAPIRoot:      "platform/api",
 			expectApiLookup:      true,
@@ -274,9 +268,8 @@ func TestReadRoutes_APISpecListing_RouteModesAndDeletedVisibility(t *testing.T) 
 	}{
 		{
 			name: "no selector listing resolves main and includes deleted api",
-			path: "/v1/specs/tenant-a/repo/apis",
+			path: "/v1/specs/repo/apis",
 			expectedNoSelectorInput: store.ResolveReadSelectorInput{
-				TenantKey:  "tenant-a",
 				RepoPath:   "repo",
 				NoSelector: true,
 			},
@@ -284,11 +277,10 @@ func TestReadRoutes_APISpecListing_RouteModesAndDeletedVisibility(t *testing.T) 
 		},
 		{
 			name: "selector listing resolves selector revision",
-			path: "/v1/specs/tenant-a/repo/" + shortSHA + "/apis",
+			path: "/v1/specs/repo/" + shortSHA + "/apis",
 			expectedNoSelectorInput: store.ResolveReadSelectorInput{
-				TenantKey: "tenant-a",
-				RepoPath:  "repo",
-				Selector:  shortSHA,
+				RepoPath: "repo",
+				Selector: shortSHA,
 			},
 			expectSelectorListing: true,
 		},
@@ -383,11 +375,11 @@ func TestReadRoutes_RejectMalformedMonorepoDelimiter(t *testing.T) {
 	}{
 		{
 			name: "missing closing delimiter",
-			path: "/v1/routes/tenant-a/repo/-/platform/api/%2Fpets",
+			path: "/v1/routes/repo/-/platform/api/%2Fpets",
 		},
 		{
 			name: "empty api root",
-			path: "/v1/specs/tenant-a/repo/-/-/openapi.json",
+			path: "/v1/specs/repo/-/-/openapi.json",
 		},
 	}
 
@@ -469,7 +461,7 @@ func TestReadRoutes_StatusMappingForSelectorAndArtifactErrors(t *testing.T) {
 			}
 			server := newReadRouteTestServer(readStore)
 
-			req := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/deadbeef/openapi.json", nil)
+			req := httptest.NewRequest(http.MethodGet, "/v1/specs/repo/deadbeef/openapi.json", nil)
 			resp, err := server.App().Test(req, -1)
 			if err != nil {
 				t.Fatalf("http test request failed: %v", err)
@@ -497,7 +489,7 @@ func TestSpecRoutes_ETagSupport(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	etagRequest := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/openapi.json", nil)
+	etagRequest := httptest.NewRequest(http.MethodGet, "/v1/specs/repo/openapi.json", nil)
 	etagRequest.Header.Set("If-None-Match", "\"etag-33\"")
 
 	etagResponse, err := server.App().Test(etagRequest, -1)
@@ -513,7 +505,7 @@ func TestSpecRoutes_ETagSupport(t *testing.T) {
 		t.Fatalf("expected ETag header %q, got %q", "\"etag-33\"", got)
 	}
 
-	normalRequest := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/openapi.yaml", nil)
+	normalRequest := httptest.NewRequest(http.MethodGet, "/v1/specs/repo/openapi.yaml", nil)
 	normalResponse, err := server.App().Test(normalRequest, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -550,7 +542,7 @@ func TestOperationRoute_UsesRequestMethodAndFormatAddon(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	jsonReq := httptest.NewRequest(http.MethodPost, "/v1/routes/tenant-a/repo/%2Fpets", nil)
+	jsonReq := httptest.NewRequest(http.MethodPost, "/v1/routes/repo/%2Fpets", nil)
 	jsonResp, err := server.App().Test(jsonReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -571,7 +563,7 @@ func TestOperationRoute_UsesRequestMethodAndFormatAddon(t *testing.T) {
 		t.Fatalf("expected paths object in operation slice")
 	}
 
-	yamlReq := httptest.NewRequest(http.MethodPatch, "/v1/routes/tenant-a/repo/11111111/%2Fpets.yaml", nil)
+	yamlReq := httptest.NewRequest(http.MethodPatch, "/v1/routes/repo/11111111/%2Fpets.yaml", nil)
 	yamlResp, err := server.App().Test(yamlReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -605,7 +597,7 @@ func TestOperationSlice_DefaultJSONAndYAMLAddon(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	jsonReq := httptest.NewRequest(http.MethodGet, "/v1/routes/tenant-a/repo/%2Fpets%2F%7Bid%7D", nil)
+	jsonReq := httptest.NewRequest(http.MethodGet, "/v1/routes/repo/%2Fpets%2F%7Bid%7D", nil)
 	jsonResp, err := server.App().Test(jsonReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -627,7 +619,7 @@ func TestOperationSlice_DefaultJSONAndYAMLAddon(t *testing.T) {
 		t.Fatalf("expected paths object in operation slice")
 	}
 
-	yamlReq := httptest.NewRequest(http.MethodGet, "/v1/routes/tenant-a/repo/11111111/%2Fpets%2F%7Bid%7D.yaml", nil)
+	yamlReq := httptest.NewRequest(http.MethodGet, "/v1/routes/repo/11111111/%2Fpets%2F%7Bid%7D.yaml", nil)
 	yamlResp, err := server.App().Test(yamlReq, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -668,7 +660,7 @@ func TestOperationRoute_SelectorNotFoundFallsBackToNoSelector(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/routes/tenant-a/repo/v1/%2Fpets", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/routes/repo/v1/%2Fpets", nil)
 	resp, err := server.App().Test(req, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -707,7 +699,7 @@ func TestReadRoutes_SelectorSpecRouteBypassesOperationRoute(t *testing.T) {
 	}
 	server := newReadRouteTestServer(readStore)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/11111111/openapi.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/specs/repo/11111111/openapi.json", nil)
 	resp, err := server.App().Test(req, -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -954,7 +946,7 @@ func TestWriteReadRouteError_DefaultInternalServerError(t *testing.T) {
 	t.Parallel()
 
 	server := newReadRouteTestServer(&fakeReadRouteStore{})
-	req := httptest.NewRequest(http.MethodGet, "/v1/specs/tenant-a/repo/openapi.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/specs/repo/openapi.json", nil)
 
 	server.readStore = &fakeReadRouteStore{
 		resolveErr: errors.New("unexpected"),

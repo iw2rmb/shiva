@@ -30,7 +30,7 @@ const (
 )
 
 type Store interface {
-	ListEnabledSubscriptionsByRepo(ctx context.Context, tenantID, repoID int64) ([]store.Subscription, error)
+	ListEnabledSubscriptionsByRepo(ctx context.Context, repoID int64) ([]store.Subscription, error)
 	GetLatestDeliveryAttemptByKey(
 		ctx context.Context,
 		subscriptionID int64,
@@ -62,8 +62,6 @@ type Notifier struct {
 }
 
 type RevisionNotification struct {
-	TenantID          int64
-	TenantKey         string
 	RepoID            int64
 	RepoPath          string
 	APISpecID         int64
@@ -83,7 +81,6 @@ type RevisionNotification struct {
 type eventEnvelope[T any] struct {
 	Type              string `json:"type"`
 	EventID           string `json:"event_id"`
-	Tenant            string `json:"tenant"`
 	Repo              string `json:"repo"`
 	IngestEventID     int64  `json:"revision_id"`
 	APISpecRevisionID int64  `json:"api_revision_id"`
@@ -194,9 +191,6 @@ func (n *Notifier) NotifyRevision(ctx context.Context, notification RevisionNoti
 	if n.httpClient == nil {
 		return errors.New("notifier http client is not configured")
 	}
-	if notification.TenantID < 1 {
-		return errors.New("tenant id must be positive")
-	}
 	if notification.RepoID < 1 {
 		return errors.New("repo id must be positive")
 	}
@@ -213,7 +207,7 @@ func (n *Notifier) NotifyRevision(ctx context.Context, notification RevisionNoti
 		notification.ProcessedAt = n.now().UTC()
 	}
 
-	subscriptions, err := n.store.ListEnabledSubscriptionsByRepo(ctx, notification.TenantID, notification.RepoID)
+	subscriptions, err := n.store.ListEnabledSubscriptionsByRepo(ctx, notification.RepoID)
 	if err != nil {
 		return fmt.Errorf("list enabled subscriptions: %w", err)
 	}
@@ -240,13 +234,11 @@ func (n *Notifier) NotifyRevision(ctx context.Context, notification RevisionNoti
 func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 	processedAt := notification.ProcessedAt.UTC()
 	processedAtText := processedAt.Format(time.RFC3339Nano)
-	tenantKey := strings.TrimSpace(notification.TenantKey)
 	repoPath := strings.TrimSpace(notification.RepoPath)
 
 	diffEnvelope := eventEnvelope[diffEventPayload]{
 		Type:              store.DeliveryEventTypeSpecUpdatedDiff,
 		EventID:           deterministicEnvelopeEventID(notification.APISpecID, notification.IngestEventID, store.DeliveryEventTypeSpecUpdatedDiff),
-		Tenant:            tenantKey,
 		Repo:              repoPath,
 		IngestEventID:     notification.IngestEventID,
 		APISpecRevisionID: notification.APISpecRevisionID,
@@ -286,7 +278,6 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 	fullEnvelope := eventEnvelope[fullEventPayload]{
 		Type:              store.DeliveryEventTypeSpecUpdatedFull,
 		EventID:           deterministicEnvelopeEventID(notification.APISpecID, notification.IngestEventID, store.DeliveryEventTypeSpecUpdatedFull),
-		Tenant:            tenantKey,
 		Repo:              repoPath,
 		IngestEventID:     notification.IngestEventID,
 		APISpecRevisionID: notification.APISpecRevisionID,

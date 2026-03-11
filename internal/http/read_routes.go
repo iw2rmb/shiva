@@ -304,24 +304,15 @@ func (s *Server) resolveReadSelector(
 		return store.ResolvedReadSelector{}, errors.New("read store is not configured")
 	}
 
-	tenantKey, err := decodePathParam(c.Params("tenant"))
-	if err != nil {
-		return store.ResolvedReadSelector{}, &store.SelectorResolutionError{
-			Code: store.SelectorResolutionInvalidInput,
-			Err:  fmt.Errorf("decode tenant path parameter: %w", err),
-		}
-	}
 	repoPath, err := decodePathParam(c.Params("repo"))
 	if err != nil {
 		return store.ResolvedReadSelector{}, &store.SelectorResolutionError{
-			Code:      store.SelectorResolutionInvalidInput,
-			TenantKey: tenantKey,
-			Err:       fmt.Errorf("decode repo path parameter: %w", err),
+			Code: store.SelectorResolutionInvalidInput,
+			Err:  fmt.Errorf("decode repo path parameter: %w", err),
 		}
 	}
 
 	input := store.ResolveReadSelectorInput{
-		TenantKey:  tenantKey,
 		RepoPath:   repoPath,
 		NoSelector: noSelector,
 	}

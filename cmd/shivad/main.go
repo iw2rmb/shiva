@@ -289,7 +289,6 @@ type revisionStore interface {
 	PersistCanonicalSpec(ctx context.Context, input store.PersistCanonicalSpecInput) error
 	ListEndpointIndexByAPISpecRevision(ctx context.Context, apiSpecRevisionID int64) ([]store.EndpointIndexRecord, error)
 	PersistSpecChange(ctx context.Context, input store.PersistSpecChangeInput) error
-	GetTenantByID(ctx context.Context, tenantID int64) (store.Tenant, error)
 	GetRevisionByID(ctx context.Context, revisionID int64) (store.Revision, error)
 	GetSpecArtifactByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) (store.SpecArtifact, error)
 	GetSpecChangeByAPISpecIDAndToAPISpecRevisionID(
@@ -1173,11 +1172,6 @@ func (p revisionProcessor) emitOutboundNotifications(
 		return nil
 	}
 
-	tenant, err := p.store.GetTenantByID(ctx, repo.TenantID)
-	if err != nil {
-		return fmt.Errorf("load tenant %d: %w", repo.TenantID, err)
-	}
-
 	revision, err := p.store.GetRevisionByID(ctx, revisionID)
 	if err != nil {
 		return fmt.Errorf("load revision %d: %w", revisionID, err)
@@ -1219,8 +1213,6 @@ func (p revisionProcessor) emitOutboundNotifications(
 		}
 
 		if err := p.notifier.NotifyRevision(ctx, notify.RevisionNotification{
-			TenantID:          tenant.ID,
-			TenantKey:         tenant.Key,
 			RepoID:            repo.ID,
 			RepoPath:          repo.PathWithNamespace,
 			APISpecID:         item.apiSpec.ID,

@@ -34,7 +34,7 @@ SET status = 'processing',
     error = ''
 FROM candidate
 WHERE ingest_events.id = candidate.id
-RETURNING ingest_events.id, ingest_events.tenant_id, ingest_events.repo_id, ingest_events.sha, ingest_events.branch, ingest_events.parent_sha, ingest_events.event_type, ingest_events.delivery_id, ingest_events.payload_json, ingest_events.received_at, ingest_events.attempt_count, ingest_events.next_retry_at, ingest_events.processed_at, ingest_events.openapi_changed, ingest_events.status, ingest_events.error
+RETURNING ingest_events.id, ingest_events.repo_id, ingest_events.sha, ingest_events.branch, ingest_events.parent_sha, ingest_events.event_type, ingest_events.delivery_id, ingest_events.payload_json, ingest_events.received_at, ingest_events.attempt_count, ingest_events.next_retry_at, ingest_events.processed_at, ingest_events.openapi_changed, ingest_events.status, ingest_events.error
 `
 
 func (q *Queries) ClaimNextIngestEvent(ctx context.Context) (IngestEvent, error) {
@@ -42,7 +42,6 @@ func (q *Queries) ClaimNextIngestEvent(ctx context.Context) (IngestEvent, error)
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -63,7 +62,6 @@ func (q *Queries) ClaimNextIngestEvent(ctx context.Context) (IngestEvent, error)
 
 const createIngestEvent = `-- name: CreateIngestEvent :one
 INSERT INTO ingest_events (
-    tenant_id,
     repo_id,
     sha,
     branch,
@@ -79,14 +77,12 @@ VALUES (
     $4,
     $5,
     $6,
-    $7,
-    $8
+    $7
 )
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+RETURNING id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
 type CreateIngestEventParams struct {
-	TenantID    int64       `json:"tenant_id"`
 	RepoID      int64       `json:"repo_id"`
 	Sha         string      `json:"sha"`
 	Branch      string      `json:"branch"`
@@ -98,7 +94,6 @@ type CreateIngestEventParams struct {
 
 func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventParams) (IngestEvent, error) {
 	row := q.db.QueryRow(ctx, createIngestEvent,
-		arg.TenantID,
 		arg.RepoID,
 		arg.Sha,
 		arg.Branch,
@@ -110,7 +105,6 @@ func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventPa
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -130,7 +124,7 @@ func (q *Queries) CreateIngestEvent(ctx context.Context, arg CreateIngestEventPa
 }
 
 const getIngestEventByRepoDelivery = `-- name: GetIngestEventByRepoDelivery :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND delivery_id = $2
@@ -146,7 +140,6 @@ func (q *Queries) GetIngestEventByRepoDelivery(ctx context.Context, arg GetInges
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -166,7 +159,7 @@ func (q *Queries) GetIngestEventByRepoDelivery(ctx context.Context, arg GetInges
 }
 
 const getIngestEventByRepoSHA = `-- name: GetIngestEventByRepoSHA :one
-SELECT id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
 WHERE repo_id = $1
   AND sha = $2
@@ -182,7 +175,6 @@ func (q *Queries) GetIngestEventByRepoSHA(ctx context.Context, arg GetIngestEven
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -208,7 +200,7 @@ SET status = 'failed',
     openapi_changed = NULL,
     error = $1
 WHERE id = $2
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+RETURNING id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
 type MarkIngestEventFailedParams struct {
@@ -221,7 +213,6 @@ func (q *Queries) MarkIngestEventFailed(ctx context.Context, arg MarkIngestEvent
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -247,7 +238,7 @@ SET status = 'processed',
     openapi_changed = $1,
     error = ''
 WHERE id = $2
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+RETURNING id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
 type MarkIngestEventProcessedParams struct {
@@ -260,7 +251,6 @@ func (q *Queries) MarkIngestEventProcessed(ctx context.Context, arg MarkIngestEv
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,
@@ -285,7 +275,7 @@ SET status = 'pending',
     error = $1,
     next_retry_at = $2
 WHERE id = $3
-RETURNING id, tenant_id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
+RETURNING id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 `
 
 type ScheduleIngestEventRetryParams struct {
@@ -299,7 +289,6 @@ func (q *Queries) ScheduleIngestEventRetry(ctx context.Context, arg ScheduleInge
 	var i IngestEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RepoID,
 		&i.Sha,
 		&i.Branch,

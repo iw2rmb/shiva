@@ -9,7 +9,7 @@ This design defines a short, script-first Shiva CLI for fetching specs, inspecti
 - `shiva <repo-ref>@<target>#<operationId>`
 - `shiva <repo-ref>@<target> <method> <path>`
 
-The design removes tenant from the current product model, uses `path_with_namespace` as the repo identity, prefers `operation_id` for concise operation lookup, defaults reads to the repo default branch, and adds source-profile selection, execution targets, `--dry-run`, pipe-safe NDJSON, shell completions, and a refreshable local catalog used for operation resolution and completion values.
+The design uses `path_with_namespace` as the repo identity, prefers `operation_id` for concise operation lookup, defaults reads to the repo default branch, and adds source-profile selection, execution targets, `--dry-run`, pipe-safe NDJSON, shell completions, and a refreshable local catalog used for operation resolution and completion values.
 
 The implementation uses Cobra for parsing, help, aliases, and shell completion generation, but the user-facing contract is not a deep command tree.
 
@@ -25,24 +25,22 @@ In scope:
 - Pipe-oriented listing and batch execution behavior.
 - Shell completion behavior.
 - Backend read API and store/query changes required to support the CLI contract.
-- Removal of tenant from schema, config, read APIs, and notification payloads.
 
 Out of scope:
 - Generic remote shell execution over SSH, `kubectl exec`, or similar host transports.
 - CLI write/mutation commands in v1.
 - Interactive TUI output.
-- Preserving backward compatibility with current tenant-based read routes.
+- Preserving backward compatibility with current path-segment read routes.
 - Branch-name selectors in the CLI surface.
 - CLI config mutation subcommands; profiles are file-based in v1.
 
 ## Why This Is Needed
 - The repository currently ships only the server binary in [`cmd/shivad/main.go`](../cmd/shivad/main.go). There is no user CLI.
-- Current read APIs are HTTP-route-oriented and tenant-scoped in [`internal/http/server.go`](../internal/http/server.go), which is too verbose for tests and shell usage.
+- Current read APIs are HTTP-route-oriented and path-segment-based in [`internal/http/server.go`](../internal/http/server.go), which is still too verbose for tests and shell usage.
 - Repo identity in storage is GitLab `path_with_namespace`, not a single path segment, as documented in [`docs/database.md`](../docs/database.md). A CLI and transport contract must support repo names like `allure/allure-deployment`.
 - OpenAPI paths use `{id}` placeholders. In shells, especially `zsh`, that forces quoting or brace escaping. A CLI-specific path notation is needed.
 - `operation_id` is already extracted and stored alongside `(method, path)` in endpoint indexing, as described in [`docs/endpoints.md`](../docs/endpoints.md) and implemented in [`internal/openapi/canonical.go`](../internal/openapi/canonical.go).
-- The current no-selector behavior resolves against hardcoded `main` in [`internal/store/read_selector.go`](../internal/store/read_selector.go), but repo metadata already stores `default_branch`.
-- The current tenant dimension is degenerate for the observed dataset and adds syntax noise without product value. The service config still defaults `SHIVA_TENANT_KEY` to `default` in [`internal/config/config.go`](../internal/config/config.go).
+- The current read API still requires URL-escaped repo path segments in routes such as `/v1/specs/{repo}/...` and `/v1/routes/{repo}/...`, which is not the desired transport contract for a script-first CLI.
 
 ## Goals
 - Make the hot path short enough for tests and frequent shell use.
@@ -56,10 +54,9 @@ Out of scope:
 - Make command output pipe-safe and machine-readable.
 - Support named source profiles and named execution targets.
 - Provide fast shell completions without making interactive usage dependent on network round-trips.
-- Remove tenant from the product model for now instead of hiding it behind CLI defaults.
 
 ## Non-goals
-- Reusing the current tenant/read-route shape and only wrapping it with a CLI.
+- Reusing the current path-segment read-route shape and only wrapping it with a CLI.
 - Making `operation_id` the canonical storage key.
 - Supporting ambiguous implicit API selection.
 - Supporting arbitrary branch names in CLI selectors.
@@ -69,10 +66,9 @@ Out of scope:
 
 ## Current Baseline (Observed)
 - The only command binary today is `shivad` in [`cmd/shivad/main.go`](../cmd/shivad/main.go).
-- The current HTTP server registers read routes under `/v1/specs/:tenant/:repo` and `/v1/routes/:tenant/:repo` in [`internal/http/server.go`](../internal/http/server.go).
-- Read resolution requires a tenant key and then resolves repo by `(tenant, path_with_namespace)` in [`internal/store/read_selector.go`](../internal/store/read_selector.go).
-- No-selector reads currently resolve against constant `mainBranchName = "main"` in [`internal/store/read_selector.go`](../internal/store/read_selector.go), not against `repos.default_branch`.
-- Config still requires the tenant concept and defaults `SHIVA_TENANT_KEY` to `default` in [`internal/config/config.go`](../internal/config/config.go).
+- The current HTTP server registers read routes under `/v1/specs/:repo` and `/v1/routes/:repo` in [`internal/http/server.go`](../internal/http/server.go).
+- Read resolution resolves repos directly by `path_with_namespace` in [`internal/store/read_selector.go`](../internal/store/read_selector.go).
+- No-selector reads resolve against `repos.default_branch` in [`internal/store/read_selector.go`](../internal/store/read_selector.go).
 - Endpoint extraction stores `method`, `path`, `operation_id`, `summary`, `deprecated`, and `raw_json`, and the persisted unique endpoint identity remains `(api_spec_revision_id, method, path)`, as documented in [`docs/endpoints.md`](../docs/endpoints.md).
 - Multi-API repos already exist in the data model through `api_specs` and `api_spec_revisions`, as documented in [`docs/database.md`](../docs/database.md) and designed in [`design/mono.md`](./mono.md).
 - Observed local DB sample on 2026-03-11:
@@ -502,7 +498,7 @@ GET /v1/catalog/status?repo=allure%2Fallure-deployment
 POST /v1/call {"repo":"allure/allure-deployment","operation_id":"getUsers","path_params":{"id":"42"}}
 ```
 
-This transport contract avoids the current ambiguity of path-segment routing once repo identity becomes `path_with_namespace` and tenant is removed.
+This transport contract avoids the current ambiguity of path-segment routing once repo identity is `path_with_namespace`.
 
 ## Implementation Notes
 
@@ -553,20 +549,7 @@ Unsuitable shape:
 
 If Shiva wanted truly dynamic command names such as `shiva repo opName ...` with remote-driven command registration, Cobra would become the wrong abstraction. That is not the recommended design here.
 
-### Tenant Removal
-- Remove `tenants` from [`sql/schema/000001_initial.sql`](../sql/schema/000001_initial.sql).
-- Remove `tenant_id` from `repos`, `subscriptions`, and `ingest_events`.
-- Remove `SHIVA_TENANT_KEY` from [`internal/config/config.go`](../internal/config/config.go).
-- Remove tenant lookups and tenant-based resolver inputs from:
-  - [`internal/store/ingest.go`](../internal/store/ingest.go)
-  - [`internal/store/read_selector.go`](../internal/store/read_selector.go)
-  - [`internal/store/subscriptions.go`](../internal/store/subscriptions.go)
-  - [`internal/store/tenants.go`](../internal/store/tenants.go)
-- Remove tenant from outbound notification payloads in [`internal/notify/notifier.go`](../internal/notify/notifier.go).
-
 ### Read Resolution Changes
-- Resolve repos directly by `path_with_namespace`.
-- Resolve default-branch no-selector requests using `repos.default_branch`, not a constant.
 - Add direct lookup by `revision_id`.
 - Add direct lookup by short SHA from explicit `--sha`.
 - Add store queries for:
@@ -577,7 +560,7 @@ If Shiva wanted truly dynamic command names such as `shiva repo opName ...` with
 - Add an index for `operation_id` lookups, scoped by `api_spec_revision_id`.
 
 ### HTTP Server Changes
-- Replace current tenant/path-segment read endpoints with the query-based endpoints defined above.
+- Replace current path-segment read endpoints with the query-based endpoints defined above.
 - Keep internal webhook and health routes as separate concerns.
 - Make read endpoint handlers return simpler CLI-friendly payloads:
   - full spec body for `/v1/spec`,
@@ -610,24 +593,9 @@ Implementation must update the long-lived docs after the code lands:
 
 ## Milestones
 
-### Milestone 1: Remove Tenant and Fix Read Resolution
+### Milestone 1: Add Query-Based Read Endpoints
 Scope:
-- Remove tenant from schema, config, store, and notifications.
-- Change no-selector read resolution to use repo default branch.
-- Add direct repo lookup by `path_with_namespace`.
-
-Expected Results:
-- Tenant is no longer part of runtime config or persisted identity.
-- Read resolution no longer assumes `main`.
-
-Testable outcome:
-- Repo reads succeed using only `path_with_namespace`.
-- No-selector reads resolve against the repo's stored default branch.
-- Store and HTTP tests no longer mention tenant.
-
-### Milestone 2: Add Query-Based Read Endpoints
-Scope:
-- Replace tenant/path-segment read routes with `/v1/spec`, `/v1/operation`, `/v1/call`, `/v1/apis`, `/v1/operations`, and `/v1/repos`.
+- Replace path-segment read routes with `/v1/spec`, `/v1/operation`, `/v1/call`, `/v1/apis`, `/v1/operations`, and `/v1/repos`.
 - Add operation lookup by `operation_id`.
 - Implement ambiguity handling for multi-API repos.
 - Add catalog freshness endpoint or equivalent metadata contract.
@@ -644,7 +612,7 @@ Testable outcome:
 - `GET /v1/catalog/status?...` or equivalent freshness metadata lets the CLI skip unnecessary catalog downloads.
 - Multi-API ambiguity returns an error payload that lists candidates.
 
-### Milestone 3: Ship `cmd/shiva`
+### Milestone 2: Ship `cmd/shiva`
 Scope:
 - Implement Cobra root parser, profile loading, catalog cache/refresh, dry-run, output formatting, and utility subcommands.
 - Implement `ls`, `batch`, and `completion`.
@@ -665,7 +633,7 @@ Testable outcome:
 - `shiva completion zsh`
 
 ## Acceptance Criteria
-- The primary read path works without tenant syntax anywhere in CLI or HTTP.
+- The primary read path uses raw `path_with_namespace` in CLI and query parameters in HTTP.
 - `shiva <repo-ref>` fetches the full spec for unambiguous API selection.
 - `shiva <repo-ref>#<operationId>` fetches an operation without requiring a method.
 - `shiva <repo-ref> <method> <path>` supports `:param` syntax and does not require `-X`.
@@ -684,7 +652,6 @@ Testable outcome:
 ## Risks
 - Some specs may have duplicate or missing `operation_id`; ambiguity handling must stay precise and visible.
 - Cross-API resolution without `--api` can surprise users if identical selectors appear in multiple APIs.
-- Tenant removal touches schema, store queries, notifications, tests, and docs at once.
 - Query endpoint migration replaces the current read API surface and will require broad test rewrites.
 - Packed selector parsing must be careful about `#` shell-comment behavior and `@target` parsing.
 - Over-eager refresh before every command can make the CLI feel slow if freshness checks are not cheap.
