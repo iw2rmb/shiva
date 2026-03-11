@@ -70,7 +70,7 @@ Out of scope:
 - Read resolution resolves repos directly by `path_with_namespace` in [`internal/store/read_selector.go`](../internal/store/read_selector.go).
 - No-selector reads resolve against `repos.default_branch` in [`internal/store/read_selector.go`](../internal/store/read_selector.go).
 - Endpoint extraction stores `method`, `path`, `operation_id`, `summary`, `deprecated`, and `raw_json`, and the persisted unique endpoint identity remains `(api_spec_revision_id, method, path)`, as documented in [`docs/endpoints.md`](../docs/endpoints.md).
-- Multi-API repos already exist in the data model through `api_specs` and `api_spec_revisions`, as documented in [`docs/database.md`](../docs/database.md) and designed in [`design/mono.md`](./mono.md).
+- Multi-API repos already exist in the data model through `api_specs` and `api_spec_revisions`, as documented in [`docs/database.md`](../docs/database.md) and reflected in the current read-route contract in [`docs/endpoints.md`](../docs/endpoints.md).
 - Observed local DB sample on 2026-03-11:
   - repo `allure/allure-deployment`
   - API root `service-catalog/allure-api.yaml`
@@ -663,7 +663,7 @@ Testable outcome:
 - Current read-route contract: [`docs/endpoints.md`](../docs/endpoints.md)
 - Current schema and entities: [`docs/database.md`](../docs/database.md)
 - Runtime config and startup behavior: [`docs/setup.md`](../docs/setup.md)
-- Monorepo API identity design: [`design/mono.md`](./mono.md)
+- Monorepo API identity and read-route contract: [`docs/endpoints.md`](../docs/endpoints.md)
 - Current server route registration: [`internal/http/server.go`](../internal/http/server.go)
 - Current read selector implementation: [`internal/store/read_selector.go`](../internal/store/read_selector.go)
 - Current config defaults: [`internal/config/config.go`](../internal/config/config.go)
