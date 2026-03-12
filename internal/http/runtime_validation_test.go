@@ -97,6 +97,65 @@ const runtimeValidationSpec = `{
   }
 }`
 
+const runtimePathParamSpec = `{
+  "openapi":"3.1.0",
+  "info":{"title":"Pets","version":"1.0.0"},
+  "paths":{
+    "/pets/{id}":{
+      "get":{
+        "operationId":"getPet",
+        "parameters":[
+          {"name":"id","in":"path","required":true,"schema":{"type":"integer"}}
+        ],
+        "responses":{
+          "200":{
+            "description":"ok",
+            "content":{
+              "application/json":{
+                "example":{"id":7,"name":"Fido"}
+              }
+            }
+          },
+          "404":{
+            "description":"not found",
+            "content":{"application/json":{"example":{"error":"not found"}}}
+          }
+        }
+      }
+    }
+  }
+}`
+
+const runtimeUndocumentedValidationSpec = `{
+  "openapi":"3.1.0",
+  "info":{"title":"Pets","version":"1.0.0"},
+  "paths":{
+    "/pets":{
+      "post":{
+        "operationId":"createPet",
+        "requestBody":{
+          "required":true,
+          "content":{
+            "application/json":{
+              "schema":{
+                "type":"object",
+                "required":["name"],
+                "properties":{"name":{"type":"string"}}
+              }
+            }
+          }
+        },
+        "responses":{
+          "201":{
+            "description":"created",
+            "content":{"application/json":{"example":{"id":1,"name":"Kitty"}}}
+          }
+        }
+      }
+    }
+  }
+}`
+
 func TestRuntimeRouteHandler_ValidatesRequestsAndBuildsStubResponses(t *testing.T) {
 	t.Parallel()
 
@@ -227,7 +286,101 @@ func TestRuntimeRouteHandler_ValidatesRequestsAndBuildsStubResponses(t *testing.
 	}
 }
 
+func TestRuntimeRouteHandler_ValidatesPathParams(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		target         string
+		expectedStatus int
+		expectedBody   map[string]any
+	}{
+		{
+			name:           "invalid path param type returns documented 404",
+			target:         "/gl/acme/platform/pets/not-a-number",
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   map[string]any{"error": "not found"},
+		},
+		{
+			name:           "valid path param returns stub response",
+			target:         "/gl/acme/platform/pets/7",
+			expectedStatus: http.StatusOK,
+			expectedBody:   map[string]any{"id": float64(7), "name": "Fido"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := newQueryTestServer(runtimeValidationReadStoreWithSpec(
+				http.MethodGet,
+				"/pets/{id}",
+				runtimePathParamSpec,
+			))
+			request := httptest.NewRequest(http.MethodGet, testCase.target, nil)
+
+			response, err := server.App().Test(request, -1)
+			if err != nil {
+				t.Fatalf("http test request failed: %v", err)
+			}
+			defer response.Body.Close()
+
+			if response.StatusCode != testCase.expectedStatus {
+				body, _ := io.ReadAll(response.Body)
+				t.Fatalf("expected status %d, got %d body=%s", testCase.expectedStatus, response.StatusCode, string(body))
+			}
+
+			var actualBody map[string]any
+			if err := json.NewDecoder(response.Body).Decode(&actualBody); err != nil {
+				t.Fatalf("decode response body: %v", err)
+			}
+			if !reflect.DeepEqual(actualBody, testCase.expectedBody) {
+				t.Fatalf("unexpected response body: %+v", actualBody)
+			}
+		})
+	}
+}
+
+func TestRuntimeRouteHandler_FallsBackTo400ForUndocumentedValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	server := newQueryTestServer(runtimeValidationReadStoreWithSpec(
+		http.MethodPost,
+		"/pets",
+		runtimeUndocumentedValidationSpec,
+	))
+	request := httptest.NewRequest(http.MethodPost, "/gl/acme/platform/pets", bytes.NewBufferString(`{"name":`))
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := server.App().Test(request, -1)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("expected status 400, got %d body=%s", response.StatusCode, string(body))
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+
+	errorValue, ok := body["error"].(string)
+	if !ok || strings.TrimSpace(errorValue) == "" {
+		t.Fatalf("expected fallback error message, got %+v", body)
+	}
+}
+
 func runtimeValidationReadStore(method string) *fakeQueryReadStore {
+	return runtimeValidationReadStoreWithSpec(method, "/pets", runtimeValidationSpec)
+}
+
+func runtimeValidationReadStoreWithSpec(method string, path string, spec string) *fakeQueryReadStore {
 	return &fakeQueryReadStore{
 		repoLookupResultByPath: map[string]store.Repo{
 			"acme/platform": {ID: 77, Namespace: "acme", Repo: "platform", DefaultBranch: "main"},
@@ -248,8 +401,8 @@ func runtimeValidationReadStore(method string) *fakeQueryReadStore {
 					IngestEventID:     42,
 					IngestEventSHA:    "deadbeef",
 					IngestEventBranch: "main",
-					Method:            method,
-					Path:              "/pets",
+					Method:            strings.ToLower(method),
+					Path:              path,
 					OperationID:       "runtimeOperation",
 					RawJSON:           []byte(`{"operationId":"runtimeOperation"}`),
 				},
@@ -257,7 +410,7 @@ func runtimeValidationReadStore(method string) *fakeQueryReadStore {
 		},
 		specArtifactResult: store.SpecArtifact{
 			APISpecRevisionID: 501,
-			SpecJSON:          []byte(runtimeValidationSpec),
+			SpecJSON:          []byte(spec),
 		},
 	}
 }

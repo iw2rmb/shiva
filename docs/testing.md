@@ -10,8 +10,10 @@ This document describes the current test layout and practical test commands.
 Current baseline should be validated by running `go test ./...`.
 
 ## Focused Commands
-- HTTP query endpoints and webhook handlers:
+- HTTP query/runtime endpoints and webhook handlers:
   - `go test ./internal/http`
+- Runtime endpoint contract and stub-response tests only:
+  - `go test ./internal/http -run Runtime`
 - End-to-end CLI contract and entrypoint wiring:
   - `go test ./cmd/shiva`
 - Shared CLI request-envelope, call-planning, and executor packages:
@@ -46,10 +48,12 @@ Current baseline should be validated by running `go test ./...`.
 - Canonical spec build and endpoint extraction.
 - Semantic diff computation.
 - Query endpoint validation, snapshot resolution, ambiguity reporting, and catalog payload mapping.
+- Runtime route parsing, repo/snapshot resolution, ambiguity handling, request validation, and spec-shaped stub response generation on `/gl/*`.
 - Shared call-envelope normalization, Shiva call-plan generation, direct-target planning, and dispatch behavior.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
 - CLI request-input parsing, selector-driven `ls` rendering, and `batch` NDJSON execution.
 - Endpoint contract tests for:
+  - `/gl/*` repo-path parsing, selector resolution, method/path normalization, ambiguity handling, request validation, fallback `400` behavior, and deterministic stub responses,
   - shared `repo`/`api`/`revision_id`/`sha` query validation,
   - `/v1/spec` format and `ETag` behavior,
   - `/v1/operation` operation-id vs method/path resolution rules,
@@ -74,7 +78,7 @@ Current baseline should be validated by running `go test ./...`.
 ## Cross-Checks
 - `docs/cli.md`: shipped CLI surface, output, and current limits.
 - `docs/database.md`: API-scoped artifact/index/change and listing behavior.
-- `docs/endpoints.md`: query endpoint contract, selector semantics, and response shapes.
+- `docs/endpoints.md`: `/v1/*` query/call-planning contract, `/gl/*` runtime contract, selector semantics, and response shapes.
 - `docs/webhooks.md`: API-scoped notification identity and payload.
 - `docs/gitlab.md`: per-API changed revision flow and notification emission conditions.
 

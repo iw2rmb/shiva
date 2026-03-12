@@ -6,13 +6,16 @@ Shiva is a Go service that ingests GitLab push events, detects OpenAPI changes, 
 - Stack: Go + Fiber + PostgreSQL (`pgx` + `sqlc`).
 - Processing model: async DB-backed worker with retry/backoff.
 - OpenAPI detection: compare-based candidate resolution from GitLab APIs (no full-tree bootstrap discovery yet).
-- Read API: query-driven spec, operation, API inventory, operation inventory, repo inventory, and catalog freshness endpoints.
+- HTTP surfaces:
+  - `/v1/*` query-driven spec, operation, API inventory, operation inventory, repo inventory, catalog freshness, and call-planning endpoints.
+  - `/gl/*` repo-backed runtime endpoints that validate requests against stored OpenAPI snapshots and return deterministic stub responses without proxying upstream traffic.
 - CLI: shipped shorthand inspect/call grammar, XDG-backed profiles and targets, catalog/cache refresh, list/sync/batch flows, and dynamic completion.
 
 ## HTTP Routes
 - `POST /internal/webhooks/gitlab`
 - `GET /healthz`
 - `GET /internal/metrics` (or configured `SHIVA_METRICS_PATH`)
+- `GET|PUT|POST|DELETE|OPTIONS|HEAD|PATCH|TRACE /gl/*`
 - `GET /v1/spec`
 - `GET /v1/operation`
 - `POST /v1/call`
@@ -29,6 +32,9 @@ Query semantics:
 - omitting snapshot selectors resolves the latest processed OpenAPI snapshot on the repo's stored default branch.
 - `/v1/operation` accepts either `operation_id` or `method` plus `path`.
 - `/v1/spec` supports `format=json|yaml` and `ETag`/`If-None-Match`.
+- `/v1/call` is planning-only and does not dispatch outbound traffic.
+- `/gl/*` resolves `<repo-path>` and optional `@latest` or `@<sha8>` selectors from the URL path.
+- `/gl/*` validates requests against the matched operation and returns spec-shaped stub responses instead of proxying upstream traffic.
 
 ## Quick Start
 1. Set required envs for full mode:
@@ -44,7 +50,7 @@ Query semantics:
 - Setup and configuration: [docs/setup.md](docs/setup.md)
 - CLI behavior: [docs/cli.md](docs/cli.md)
 - GitLab spec ingestion flow: [docs/gitlab.md](docs/gitlab.md)
-- Endpoint extraction and query transport: [docs/endpoints.md](docs/endpoints.md)
+- Endpoint extraction, `/v1/*` query transport, and `/gl/*` runtime transport: [docs/endpoints.md](docs/endpoints.md)
 - Inbound/outbound webhook contracts: [docs/webhooks.md](docs/webhooks.md)
 - Test layout and commands: [docs/testing.md](docs/testing.md)
 - Database schema and sqlc generation: [docs/database.md](docs/database.md)

@@ -46,7 +46,7 @@ Legend: [ ] todo, [x] done.
 3. Select validation-error responses deterministically: prefer a documented status for the failure class (`401`, `403`, `404`, `406`, `415`, `422`, then `400`), then `default` if present, then fallback to `400` JSON with an explanation when the spec does not describe an error response.
 4. Select success responses deterministically by the lowest explicit `2xx` status, render the body from `example`, first `examples` entry, or a minimal schema-generated payload, and run `openapi3filter.ValidateResponse` before writing the final response.
 
-- [ ] 1.5 Cover the runtime contract with tests and shipped docs
+- [x] 1.5 Cover the runtime contract with tests and shipped docs
   - Repository: `shiva`
   - Component: `internal/http`, `docs/endpoints.md`, `docs/testing.md`, `README.md`
   - Verification: focused runtime endpoint tests pass, full `go test ./...` passes, docs link check passes, shipped docs describe both `/v1/*` query transport and `/gl/*` runtime transport

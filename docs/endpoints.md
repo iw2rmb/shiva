@@ -29,6 +29,7 @@ Current state:
 - route parsing, repo/snapshot resolution, and runtime operation selection are live
 - request validation is live for security-input presence, query params, headers, path params, request bodies, and request content types
 - valid runtime requests return deterministic spec-shaped stub responses instead of proxying upstream traffic
+- the runtime surface is repo-backed only; it does not forward traffic to upstream services
 
 ### Route Grammar
 - `<method> /gl/<repo-path>/<openapi-path>`
@@ -100,6 +101,9 @@ Current state:
 - generated success responses are validated with `openapi3filter.ValidateResponse` before Shiva writes them
 
 ## Query and Call-Planning Endpoints (`/v1/*`)
+Current state:
+- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/repos`, and `/v1/catalog/status` are shipped query/read endpoints
+- `/v1/call` is shipped as a planning endpoint only; it does not dispatch outbound traffic
 
 ### Registered Surface
 - `GET /v1/spec`
