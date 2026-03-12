@@ -21,7 +21,7 @@ func TestFormatRepoSummaryDimsZeroOpsForTTY(t *testing.T) {
 	t.Parallel()
 
 	got := formatRepoSummary("main", "deadbeef", 0, "updated 12-03-2026 01:29:06", false, true)
-	want := "main (deadbeef), " + newListStyles(true).renderZeroOps("0 ops") + ", updated 12-03-2026 01:29:06"
+	want := newListStyles(true).renderDimmed("main (deadbeef), 0 ops, updated 12-03-2026 01:29:06")
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
@@ -37,20 +37,41 @@ func TestFormatRepoSummaryLeavesNonZeroOpsUndimmedForTTY(t *testing.T) {
 	}
 }
 
+func TestRepoPendingLabelDimsTTYOutput(t *testing.T) {
+	t.Parallel()
+
+	got := repoPendingLabel(clioutput.RepoRow{}, true)
+	want := newListStyles(true).renderDimmed("pending")
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestRepoPendingLabelLeavesNonTTYOutputPlain(t *testing.T) {
+	t.Parallel()
+
+	got := repoPendingLabel(clioutput.RepoRow{}, false)
+	if got != "pending" {
+		t.Fatalf("expected %q, got %q", "pending", got)
+	}
+}
+
 func TestFormatOperationLinesSortsByPathAndFormatsLookupStyle(t *testing.T) {
 	t.Parallel()
 
 	rows := []clioutput.OperationRow{
-		{Method: "post", Path: "/events/filter", OperationID: "searchEvents"},
-		{Method: "get", Path: "/utilities/sendsay/requestId/{requestId}", OperationID: "getSendsayPreview"},
-		{Method: "get", Path: "/event", OperationID: "getEvent"},
+		{Method: "post", Path: "/events/filter", OperationID: "searchEvents", Summary: "Desc2"},
+		{Method: "get", Path: "/utilities/sendsay/requestId/{requestId}", OperationID: "getSendsayPreview", Summary: "Desc3"},
+		{Method: "get", Path: "/event", OperationID: "getEvent", Summary: "Desc1"},
 	}
 
 	got := formatOperationLines(rows, false)
 	want := []string{
-		"GET /event                                   #getEvent",
-		"POST /events/filter                          #searchEvents",
-		"GET /utilities/sendsay/requestId/:requestId  #getSendsayPreview",
+		" GET /event                                   #getEvent           Desc1",
+		"",
+		"POST /events/filter                           #searchEvents       Desc2",
+		"",
+		" GET /utilities/sendsay/requestId/:requestId  #getSendsayPreview  Desc3",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected %#v, got %#v", want, got)
@@ -61,15 +82,16 @@ func TestFormatOperationLinesStylesMethodsAndParamsForTTY(t *testing.T) {
 	t.Parallel()
 
 	rows := []clioutput.OperationRow{
-		{Method: "get", Path: "/utilities/sendsay/requestId/{requestId}", OperationID: "getSendsayPreview"},
-		{Method: "patch", Path: "/events/{eventId}", OperationID: "patchEvent"},
+		{Method: "get", Path: "/utilities/sendsay/requestId/{requestId}", OperationID: "getSendsayPreview", Summary: "Show preview"},
+		{Method: "patch", Path: "/events/{eventId}", OperationID: "patchEvent", Summary: "Update event"},
 	}
 
 	got := formatOperationLines(rows, true)
 	styles := newListStyles(true)
 	want := []string{
-		styles.renderMethod("PATCH") + " /events/" + styles.renderPathParam(":eventId") + "                       #patchEvent",
-		styles.renderMethod("GET") + " /utilities/sendsay/requestId/" + styles.renderPathParam(":requestId") + "  #getSendsayPreview",
+		styles.renderMethod("PATCH") + " /events/" + styles.renderPathParam(":eventId") + "                         " + styles.renderOperationID("#patchEvent") + "         " + styles.renderSummary("Update event"),
+		"",
+		"  " + styles.renderMethod("GET") + " /utilities/sendsay/requestId/" + styles.renderPathParam(":requestId") + "  " + styles.renderOperationID("#getSendsayPreview") + "  " + styles.renderSummary("Show preview"),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected %#v, got %#v", want, got)

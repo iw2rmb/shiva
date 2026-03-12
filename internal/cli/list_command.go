@@ -379,7 +379,7 @@ func repoListSummary(
 	colorize bool,
 ) (string, error) {
 	if repoRowIsPending(row) {
-		return repoPendingLabel(row), nil
+		return repoPendingLabel(row, colorize), nil
 	}
 	if row.ActiveAPICount < 1 {
 		return formatRepoSummary("", shortSHA(repoHeadSHA(row)), 0, repoUpdatedLabel(row), exact, colorize), nil
@@ -402,7 +402,7 @@ func repoOperationSummary(
 	colorize bool,
 ) (string, []clioutput.OperationRow, error) {
 	if repoRowIsPending(row) {
-		return repoPendingLabel(row), nil, nil
+		return repoPendingLabel(row, colorize), nil, nil
 	}
 
 	operationRows, err := loadRepoOperationRows(ctx, service, options, row)
@@ -510,39 +510,81 @@ func formatOperationLines(rows []clioutput.OperationRow, colorize bool) []string
 		}
 	})
 
-	maxLeftWidth := 0
+	maxMethodWidth := 0
+	maxPathWidth := 0
+	maxOperationIDWidth := 0
 	for _, row := range sortedRows {
-		left := operationLeftColumn(row, newListStyles(false))
-		if width := renderedWidth(left); width > maxLeftWidth {
-			maxLeftWidth = width
+		method := operationMethodLabel(row, newListStyles(false), false)
+		if width := renderedWidth(method); width > maxMethodWidth {
+			maxMethodWidth = width
+		}
+		path := operationDisplayPath(row.Path, newListStyles(false))
+		if width := renderedWidth(path); width > maxPathWidth {
+			maxPathWidth = width
+		}
+		operationID := operationIDLabel(row, newListStyles(false))
+		if width := renderedWidth(operationID); width > maxOperationIDWidth {
+			maxOperationIDWidth = width
 		}
 	}
 
 	lines := make([]string, 0, len(sortedRows))
-	for _, row := range sortedRows {
-		lines = append(lines, formatOperationLine(row, styles, maxLeftWidth))
+	previousGroup := ""
+	for index, row := range sortedRows {
+		group := operationPrimaryPathSegment(row.Path)
+		if index > 0 && group != previousGroup {
+			lines = append(lines, "")
+		}
+		lines = append(lines, formatOperationLine(row, styles, maxMethodWidth, maxPathWidth, maxOperationIDWidth))
+		previousGroup = group
 	}
 	return lines
 }
 
-func formatOperationLine(row clioutput.OperationRow, styles listStyles, leftWidth int) string {
-	leftPlain := operationLeftColumn(row, newListStyles(false))
-	leftStyled := operationLeftColumn(row, styles)
-	operationID := strings.TrimSpace(row.OperationID)
-	if operationID == "" {
-		return leftStyled
-	}
+func formatOperationLine(row clioutput.OperationRow, styles listStyles, methodWidth int, pathWidth int, operationIDWidth int) string {
+	methodPlain := operationMethodLabel(row, newListStyles(false), false)
+	methodStyled := operationMethodLabel(row, styles, true)
+	pathPlain := operationDisplayPath(row.Path, newListStyles(false))
+	pathStyled := operationDisplayPath(row.Path, styles)
+	operationIDPlain := operationIDLabel(row, newListStyles(false))
+	operationIDStyled := operationIDLabel(row, styles)
+	summary := strings.TrimSpace(row.Summary)
 
-	padding := leftWidth - renderedWidth(leftPlain)
-	if padding < 0 {
-		padding = 0
+	var buffer strings.Builder
+	buffer.Grow(methodWidth + pathWidth + operationIDWidth + len(summary) + 8)
+	buffer.WriteString(strings.Repeat(" ", max(0, methodWidth-renderedWidth(methodPlain))))
+	buffer.WriteString(methodStyled)
+	buffer.WriteString(" ")
+	buffer.WriteString(pathStyled)
+	buffer.WriteString(strings.Repeat(" ", max(0, pathWidth-renderedWidth(pathPlain))+2))
+	if operationIDPlain != "" {
+		buffer.WriteString(operationIDStyled)
+		if summary != "" {
+			buffer.WriteString(strings.Repeat(" ", max(0, operationIDWidth-renderedWidth(operationIDPlain))+2))
+		}
+	} else if summary != "" {
+		buffer.WriteString(strings.Repeat(" ", operationIDWidth+2))
 	}
-	return leftStyled + strings.Repeat(" ", padding+2) + "#" + operationID
+	if summary != "" {
+		buffer.WriteString(styles.renderSummary(summary))
+	}
+	return buffer.String()
 }
 
-func operationLeftColumn(row clioutput.OperationRow, styles listStyles) string {
+func operationMethodLabel(row clioutput.OperationRow, styles listStyles, colorize bool) string {
 	method := strings.ToUpper(strings.TrimSpace(row.Method))
-	return styles.renderMethod(method) + " " + operationDisplayPath(row.Path, styles)
+	if colorize {
+		return styles.renderMethod(method)
+	}
+	return method
+}
+
+func operationIDLabel(row clioutput.OperationRow, styles listStyles) string {
+	operationID := strings.TrimSpace(row.OperationID)
+	if operationID == "" {
+		return ""
+	}
+	return styles.renderOperationID("#" + operationID)
 }
 
 func operationDisplayPath(path string, styles listStyles) string {
@@ -578,30 +620,41 @@ func operationDisplayPathPlain(path string) string {
 	return operationDisplayPath(path, newListStyles(false))
 }
 
+func operationPrimaryPathSegment(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" || trimmed == "/" {
+		return ""
+	}
+	trimmed = strings.TrimPrefix(trimmed, "/")
+	if trimmed == "" {
+		return ""
+	}
+	segments := strings.Split(trimmed, "/")
+	return segments[0]
+}
+
 func formatRepoSummary(branch string, sha string, ops int, updated string, exact bool, colorize bool) string {
+	styles := newListStyles(colorize)
 	parts := make([]string, 0, 3)
 	ref := formatBranchSHA(branch, sha)
 	if ref != "" {
 		parts = append(parts, ref)
 	}
-	if exact {
-		parts = append(parts, formatRepoOpsLabel(ops, exact, colorize))
-	} else {
-		parts = append(parts, formatRepoOpsLabel(ops, exact, colorize))
-	}
+	parts = append(parts, formatRepoOpsLabel(ops, exact))
 	if updated != "" {
 		parts = append(parts, updated)
 	}
-	return strings.Join(parts, ", ")
+	summary := strings.Join(parts, ", ")
+	if ops == 0 && colorize {
+		return styles.renderDimmed(summary)
+	}
+	return summary
 }
 
-func formatRepoOpsLabel(ops int, exact bool, colorize bool) string {
+func formatRepoOpsLabel(ops int, exact bool) string {
 	label := fmt.Sprintf("%d ops", ops)
 	if exact {
 		label = "total " + label
-	}
-	if ops == 0 && colorize {
-		return newListStyles(true).renderZeroOps(label)
 	}
 	return label
 }
@@ -623,21 +676,22 @@ func formatBranchSHA(branch string, sha string) string {
 
 func repoFallbackSummary(row clioutput.RepoRow, exact bool, colorize bool) string {
 	if repoRowIsPending(row) {
-		return repoPendingLabel(row)
+		return repoPendingLabel(row, colorize)
 	}
 	return formatRepoSummary("", shortSHA(repoHeadSHA(row)), 0, repoUpdatedLabel(row), exact, colorize)
 }
 
-func repoPendingLabel(row clioutput.RepoRow) string {
+func repoPendingLabel(row clioutput.RepoRow, colorize bool) string {
+	styles := newListStyles(colorize)
 	if row.HeadRevision == nil {
-		return "pending"
+		return styles.renderDimmed("pending")
 	}
 	status := strings.TrimSpace(strings.ToLower(row.HeadRevision.Status))
 	switch status {
 	case "processing":
-		return "processing"
+		return styles.renderDimmed("processing")
 	default:
-		return "pending"
+		return styles.renderDimmed("pending")
 	}
 }
 
@@ -705,6 +759,13 @@ func pluralize(count int, singular string, plural string) string {
 		return singular
 	}
 	return plural
+}
+
+func max(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func writerSupportsANSI(writer io.Writer) bool {
