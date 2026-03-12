@@ -116,7 +116,7 @@ High-value additions:
 - better human UX on top of revision and branch selection
 
 Potential traps:
-- generic uptime monitoring against `servers` URLs is a separate market and should stay narrowly scoped to contract reachability or drift checks
+- generic uptime monitoring against `servers` URLs is a separate market; prefer tracing and scenario results, with availability issues inferred from observed failures and drift
 - a TUI can help adoption, but it is not a primary differentiator
 
 ## Strategic Sequence
