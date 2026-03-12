@@ -141,7 +141,10 @@ func TestRootCommandUsageListsOutputModes(t *testing.T) {
 	})
 
 	usage := command.UsageString()
-	if !strings.Contains(usage, "--output yaml|json|body|curl|table|tsv|ndjson") {
+	if !strings.Contains(usage, "--output format") {
+		t.Fatalf("expected usage to show output format placeholder, got %q", usage)
+	}
+	if !strings.Contains(usage, "output in one of the formats: yaml|json|body|curl|table|tsv|ndjson") {
 		t.Fatalf("expected usage to list output modes, got %q", usage)
 	}
 }
