@@ -26,7 +26,7 @@ Legend: [ ] todo, [x] done.
 3. Add a store helper that can answer repo existence or repo lookup by `(namespace, repo)` for the runtime parser without listing the full repo catalog on every request.
 4. Map selector inputs to the existing snapshot-resolution model: no selector and `@latest` use default-branch latest, `@<sha8>` uses SHA resolution, unsupported selectors return `400`.
 
-- [ ] 1.3 Resolve runtime operations and cache parsed OpenAPI documents
+- [x] 1.3 Resolve runtime operations and cache parsed OpenAPI documents
   - Repository: `shiva`
   - Component: `internal/http/runtime_route.go`, `internal/http/runtime_spec_cache.go`, `internal/store`
   - Verification: a runtime request resolves one operation, duplicate cross-API matches return candidates, repeated calls reuse parsed spec state for the same `api_spec_revision_id`

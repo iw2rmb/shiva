@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
-
 	"github.com/iw2rmb/shiva/internal/cli/request"
 	"github.com/iw2rmb/shiva/internal/store"
 )
@@ -21,21 +19,6 @@ type runtimeRoute struct {
 	OpenAPIPath      string
 	SnapshotInput    store.ResolveReadSnapshotInput
 	ExplicitSelector string
-}
-
-func (s *Server) handleRuntimeRoute(c *fiber.Ctx) error {
-	route, err := parseRuntimeRoute(c.Context(), c.Path(), s.readStore)
-	if err != nil {
-		return s.writeQueryError(c, err)
-	}
-
-	if _, err := s.readStore.ResolveReadSnapshot(c.Context(), route.SnapshotInput); err != nil {
-		return s.writeQueryError(c, err)
-	}
-
-	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
-		"error": "runtime operation resolution is not implemented",
-	})
 }
 
 func parseRuntimeRoute(ctx context.Context, path string, lookup runtimeRepoLookup) (runtimeRoute, error) {

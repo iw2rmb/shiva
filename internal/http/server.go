@@ -24,6 +24,7 @@ type Server struct {
 	store          *store.Store
 	gitlabIngestor gitlabWebhookIngestor
 	readStore      queryReadStore
+	runtimeSpecs   *runtimeSpecCache
 	metrics        *observability.Metrics
 	tracer         trace.Tracer
 }
@@ -72,6 +73,7 @@ func New(cfg config.Config, logger *slog.Logger, store *store.Store, options ...
 		store:          store,
 		gitlabIngestor: store,
 		readStore:      store,
+		runtimeSpecs:   newRuntimeSpecCache(),
 		tracer:         trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva"),
 	}
 	for _, option := range options {

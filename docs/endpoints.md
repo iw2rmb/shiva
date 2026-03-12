@@ -25,8 +25,9 @@ Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifac
 ## Runtime Transport (`/gl/*`)
 Current state:
 - the `/gl/*` contract is locked
-- runtime handlers are not registered yet
-- the shipped HTTP surface remains `/v1/*`
+- runtime handlers are registered for all indexed OpenAPI methods
+- route parsing, repo/snapshot resolution, and runtime operation selection are live
+- request validation and spec-shaped stub responses are not implemented yet
 
 ### Route Grammar
 - `<method> /gl/<repo-path>/<openapi-path>`
@@ -49,6 +50,13 @@ Current state:
 - no selector and `@latest` resolve the latest processed snapshot on the repo default branch
 - `@<sha8>` resolves one repo-scoped short SHA prefix
 - there is no fallback from selector errors to another snapshot target
+
+### Runtime Operation Resolution
+- runtime operation lookup reuses the stored `endpoint_index` keyed by `(method, path)` for the selected repo snapshot
+- lookup happens against one resolved snapshot revision id, so selector resolution is deterministic within a request
+- no matching operation returns `404`
+- duplicate cross-API `(method, path)` matches inside the same repo snapshot return `409` with operation candidate rows
+- the matched API spec artifact is loaded by `api_spec_revision_id`, parsed once, and cached immutably by revision id
 
 ### Validation Library Choice
 - runtime request and response validation is fixed to `github.com/getkin/kin-openapi/openapi3` plus `github.com/getkin/kin-openapi/openapi3filter`
@@ -237,6 +245,7 @@ Legacy path-segment endpoints were removed:
   - unprocessed snapshot targets
   - ambiguous no-`api` spec resolution
   - ambiguous operation resolution
+  - ambiguous runtime operation resolution
   - ambiguous call resolution
 - `503`
   - database is not configured

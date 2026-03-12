@@ -193,6 +193,33 @@ func TestRuntimeRouteHandler_ResolvesSnapshotSelectors(t *testing.T) {
 					Repo:     store.Repo{ID: 77, Namespace: testCase.expectedSnapshotInput.Namespace, Repo: testCase.expectedSnapshotInput.Repo},
 					Revision: store.Revision{ID: 42},
 				},
+				resolveOperationByMethodPathResult: store.ResolvedOperationCandidates{
+					Candidates: []store.OperationSnapshot{
+						{
+							API:               "apis/pets/openapi.yaml",
+							APISpecRevisionID: 501,
+							Method:            "get",
+							Path:              "/pets",
+							OperationID:       "listPets",
+							RawJSON:           []byte(`{"operationId":"listPets","responses":{"200":{"description":"ok"}}}`),
+						},
+					},
+				},
+				specArtifactResult: store.SpecArtifact{
+					APISpecRevisionID: 501,
+					SpecJSON: []byte(`{
+						"openapi":"3.1.0",
+						"info":{"title":"Pets","version":"1.0.0"},
+						"paths":{
+							"/pets":{
+								"get":{
+									"operationId":"listPets",
+									"responses":{"200":{"description":"ok"}}
+								}
+							}
+						}
+					}`),
+				},
 			}
 			server := newQueryTestServer(readStore)
 
