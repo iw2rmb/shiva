@@ -67,8 +67,8 @@ func TestRuntimeRouteHandler_ResolvesOperationAndCachesParsedSpec(t *testing.T) 
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Fatalf("expected status 501, got %d body=%s", resp.StatusCode, string(body))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, string(body))
 		}
 	}
 

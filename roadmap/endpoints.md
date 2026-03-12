@@ -36,7 +36,7 @@ Legend: [ ] todo, [x] done.
 3. Load the matched API artifact through `GetSpecArtifactByAPISpecRevisionID`, parse `SpecJSON` into `openapi3.T`, and store the parsed document in an immutable cache keyed by `api_spec_revision_id`.
 4. Keep the cache read-only per revision id so there is no invalidation protocol beyond selecting a different revision id on the next request.
 
-- [ ] 1.4 Validate requests and build spec-shaped stub responses
+- [x] 1.4 Validate requests and build spec-shaped stub responses
   - Repository: `shiva`
   - Component: `internal/http/runtime_validation.go`, `internal/http/runtime_response.go`, `internal/http/query_helpers.go`
   - Verification: invalid query/header/body inputs are rejected by the matched operation schema, documented error responses are preferred, valid requests return response bodies that also pass response validation

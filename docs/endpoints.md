@@ -27,7 +27,8 @@ Current state:
 - the `/gl/*` contract is locked
 - runtime handlers are registered for all indexed OpenAPI methods
 - route parsing, repo/snapshot resolution, and runtime operation selection are live
-- request validation and spec-shaped stub responses are not implemented yet
+- request validation is live for security-input presence, query params, headers, path params, request bodies, and request content types
+- valid runtime requests return deterministic spec-shaped stub responses instead of proxying upstream traffic
 
 ### Route Grammar
 - `<method> /gl/<repo-path>/<openapi-path>`
@@ -63,6 +64,40 @@ Current state:
 - Shiva resolves runtime routes dynamically from stored repo snapshots at request time
 - static middleware generated for one compiled spec, including `oapi-codegen` Fiber adapters, is not a fit for `/gl/*`
 - the runtime surface returns deterministic spec-shaped stub responses and does not proxy upstream traffic
+
+### Runtime Request Validation
+- Shiva converts the incoming Fiber request into an `http.Request`, carries the matched OpenAPI path parameters, and validates the request against the matched runtime operation
+- request validation covers:
+  - required credential presence for supported OpenAPI security schemes:
+    - API key in header, query, or cookie
+    - HTTP bearer credentials in `Authorization`
+    - HTTP basic credentials in `Authorization`
+  - query parameter shape and typing
+  - header presence and schema validation
+  - path parameter typing
+  - request body presence, JSON shape, and content type
+- request-validation failures prefer documented error responses by failure class:
+  - `401`
+  - `403`
+  - `404`
+  - `406`
+  - `415`
+  - `422`
+  - then `400`
+- if the operation does not describe that failure class, Shiva uses the operation `default` response when present
+- if the operation describes neither the failure class nor a `default` response, Shiva falls back to `400` JSON with an error explanation
+
+### Runtime Stub Responses
+- success selection is deterministic:
+  - Shiva picks the lowest explicit `2xx` response status on the matched operation
+  - if the selected response has multiple media types, Shiva picks the first one that matches `Accept`
+  - if none matches `Accept`, the runtime failure class is `406`
+- stub body generation is deterministic:
+  - prefer `content.<media>.example`
+  - then the first `content.<media>.examples` entry by key sort
+  - then a minimal payload generated from the response schema
+- required response headers are stubbed from schema examples, defaults, enums, or minimal schema-derived values
+- generated success responses are validated with `openapi3filter.ValidateResponse` before Shiva writes them
 
 ## Query and Call-Planning Endpoints (`/v1/*`)
 

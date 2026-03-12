@@ -38,7 +38,8 @@ func (s *Server) handleRuntimeRoute(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	if _, err := s.resolveRuntimeOperation(c.Context(), c.Method(), route); err != nil {
+	resolved, err := s.resolveRuntimeOperation(c.Context(), c.Method(), route)
+	if err != nil {
 		var ambiguityErr *runtimeOperationAmbiguityError
 		if errors.As(err, &ambiguityErr) {
 			return writeOperationAmbiguity(c, ambiguityErr.Error(), ambiguityErr.Candidates)
@@ -46,9 +47,31 @@ func (s *Server) handleRuntimeRoute(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
-		"error": "runtime request validation and stub responses are not implemented",
-	})
+	validated, err := validateRuntimeRequest(c.Context(), c, resolved)
+	if err != nil {
+		var failure *runtimeFailure
+		if errors.As(err, &failure) {
+			if responseErr := writeRuntimeFailureResponse(c, resolved, failure); responseErr != nil {
+				return s.writeQueryError(c, responseErr)
+			}
+			return nil
+		}
+		return s.writeQueryError(c, err)
+	}
+
+	response, err := buildRuntimeSuccessResponse(c.Context(), validated, resolved, c.Get(fiber.HeaderAccept))
+	if err != nil {
+		var failure *runtimeFailure
+		if errors.As(err, &failure) {
+			if responseErr := writeRuntimeFailureResponse(c, resolved, failure); responseErr != nil {
+				return s.writeQueryError(c, responseErr)
+			}
+			return nil
+		}
+		return s.writeQueryError(c, err)
+	}
+
+	return writeRuntimePreparedResponse(c, response)
 }
 
 func (s *Server) resolveRuntimeOperation(

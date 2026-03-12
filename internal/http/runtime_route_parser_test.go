@@ -229,9 +229,9 @@ func TestRuntimeRouteHandler_ResolvesSnapshotSelectors(t *testing.T) {
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != http.StatusNotImplemented {
+			if resp.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(resp.Body)
-				t.Fatalf("expected status 501, got %d body=%s", resp.StatusCode, string(body))
+				t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, string(body))
 			}
 			if !reflect.DeepEqual(readStore.resolveReadSnapshotInputs, []store.ResolveReadSnapshotInput{testCase.expectedSnapshotInput}) {
 				t.Fatalf("unexpected snapshot input: %+v", readStore.resolveReadSnapshotInputs)
