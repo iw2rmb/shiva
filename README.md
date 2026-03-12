@@ -22,7 +22,8 @@ Shiva is a Go service that ingests GitLab push events, detects OpenAPI changes, 
 - `GET /v1/catalog/status`
 
 Query semantics:
-- `repo` uses raw GitLab `path_with_namespace`.
+- structured HTTP requests use `namespace` plus `repo`.
+- CLI shorthand still accepts `<namespace>/<repo>` selectors and expands them into those fields.
 - optional snapshot selection uses either `revision_id`, `sha`, or neither.
 - `sha` is an 8-character lowercase commit SHA prefix.
 - omitting snapshot selectors resolves the latest processed OpenAPI snapshot on the repo's stored default branch.

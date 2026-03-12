@@ -72,7 +72,8 @@ func TestNotifierNotifyRevision_EmitsFullAndDiffWithSigning(t *testing.T) {
 
 	err := notifier.NotifyRevision(context.Background(), RevisionNotification{
 		RepoID:            9,
-		RepoPath:          "group/repo",
+		Namespace:         "group",
+		Repo:              "repo",
 		APISpecID:         101,
 		API:               "api/openapi.yaml",
 		APISpecRevisionID: 1001,
@@ -185,7 +186,8 @@ func TestNotifierNotifyRevision_EmitsDiffOnlyWhenFullArtifactMissing(t *testing.
 
 	err := notifier.NotifyRevision(context.Background(), RevisionNotification{
 		RepoID:            9,
-		RepoPath:          "group/repo",
+		Namespace:         "group",
+		Repo:              "repo",
 		APISpecID:         102,
 		API:               "api/openapi.yaml",
 		APISpecRevisionID: 1002,
@@ -290,7 +292,8 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 	inputs := []RevisionNotification{
 		{
 			RepoID:            9,
-			RepoPath:          "group/repo",
+			Namespace:         "group",
+			Repo:              "repo",
 			APISpecID:         101,
 			API:               "api/customers",
 			APISpecRevisionID: 5001,
@@ -303,7 +306,8 @@ func TestNotifierNotifyRevision_EmitsPerAPIPayloadIdentityInOneRevision(t *testi
 		},
 		{
 			RepoID:            9,
-			RepoPath:          "group/repo",
+			Namespace:         "group",
+			Repo:              "repo",
 			APISpecID:         102,
 			API:               "api/orders",
 			APISpecRevisionID: 5002,

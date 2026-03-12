@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -16,15 +17,16 @@ var ErrStoreNotConfigured = errors.New("store is not configured")
 var ErrInvalidIngestInput = errors.New("invalid ingest input")
 
 type GitLabIngestInput struct {
-	GitLabProjectID   int64
-	PathWithNamespace string
-	DefaultBranch     string
-	Sha               string
-	Branch            string
-	ParentSha         string
-	EventType         string
-	DeliveryID        string
-	PayloadJSON       []byte
+	GitLabProjectID int64
+	Namespace       string
+	Repo            string
+	DefaultBranch   string
+	Sha             string
+	Branch          string
+	ParentSha       string
+	EventType       string
+	DeliveryID      string
+	PayloadJSON     []byte
 }
 
 type GitLabIngestResult struct {
@@ -88,7 +90,12 @@ func (s *Store) PersistGitLabWebhook(ctx context.Context, input GitLabIngestInpu
 
 func normalizeGitLabIngestInput(input GitLabIngestInput) (GitLabIngestInput, error) {
 	normalized := input
-	normalized.PathWithNamespace = strings.TrimSpace(input.PathWithNamespace)
+	identity, err := repoid.Normalize(input.Namespace, input.Repo)
+	if err != nil {
+		return GitLabIngestInput{}, fmt.Errorf("%w: %s", ErrInvalidIngestInput, err)
+	}
+	normalized.Namespace = identity.Namespace
+	normalized.Repo = identity.Repo
 	normalized.DefaultBranch = strings.TrimSpace(input.DefaultBranch)
 	normalized.Sha = strings.TrimSpace(input.Sha)
 	normalized.Branch = strings.TrimSpace(input.Branch)
@@ -99,8 +106,6 @@ func normalizeGitLabIngestInput(input GitLabIngestInput) (GitLabIngestInput, err
 	switch {
 	case normalized.GitLabProjectID <= 0:
 		return GitLabIngestInput{}, fmt.Errorf("%w: gitlab project id must be positive", ErrInvalidIngestInput)
-	case normalized.PathWithNamespace == "":
-		return GitLabIngestInput{}, fmt.Errorf("%w: path_with_namespace is required", ErrInvalidIngestInput)
 	case normalized.DefaultBranch == "":
 		return GitLabIngestInput{}, fmt.Errorf("%w: default branch is required", ErrInvalidIngestInput)
 	case normalized.Sha == "":
@@ -121,11 +126,12 @@ func normalizeGitLabIngestInput(input GitLabIngestInput) (GitLabIngestInput, err
 func ensureRepo(ctx context.Context, queries *sqlc.Queries, input GitLabIngestInput) (sqlc.Repo, error) {
 	repo, err := queries.GetRepoByProjectID(ctx, input.GitLabProjectID)
 	if err == nil {
-		if repo.PathWithNamespace != input.PathWithNamespace || repo.DefaultBranch != input.DefaultBranch {
+		if repo.Namespace != input.Namespace || repo.Repo != input.Repo || repo.DefaultBranch != input.DefaultBranch {
 			repo, err = queries.UpdateRepoMetadata(ctx, sqlc.UpdateRepoMetadataParams{
-				PathWithNamespace: input.PathWithNamespace,
-				DefaultBranch:     input.DefaultBranch,
-				ID:                repo.ID,
+				Namespace:     input.Namespace,
+				Repo:          input.Repo,
+				DefaultBranch: input.DefaultBranch,
+				ID:            repo.ID,
 			})
 			if err != nil {
 				return sqlc.Repo{}, fmt.Errorf("update metadata for repo %d: %w", repo.ID, err)
@@ -138,9 +144,10 @@ func ensureRepo(ctx context.Context, queries *sqlc.Queries, input GitLabIngestIn
 	}
 
 	repo, err = queries.CreateRepo(ctx, sqlc.CreateRepoParams{
-		GitlabProjectID:   input.GitLabProjectID,
-		PathWithNamespace: input.PathWithNamespace,
-		DefaultBranch:     input.DefaultBranch,
+		GitlabProjectID: input.GitLabProjectID,
+		Namespace:       input.Namespace,
+		Repo:            input.Repo,
+		DefaultBranch:   input.DefaultBranch,
 	})
 	if err == nil {
 		return repo, nil
@@ -154,11 +161,12 @@ func ensureRepo(ctx context.Context, queries *sqlc.Queries, input GitLabIngestIn
 		return sqlc.Repo{}, fmt.Errorf("load repo for project %d after conflict: %w", input.GitLabProjectID, err)
 	}
 
-	if repo.PathWithNamespace != input.PathWithNamespace || repo.DefaultBranch != input.DefaultBranch {
+	if repo.Namespace != input.Namespace || repo.Repo != input.Repo || repo.DefaultBranch != input.DefaultBranch {
 		repo, err = queries.UpdateRepoMetadata(ctx, sqlc.UpdateRepoMetadataParams{
-			PathWithNamespace: input.PathWithNamespace,
-			DefaultBranch:     input.DefaultBranch,
-			ID:                repo.ID,
+			Namespace:     input.Namespace,
+			Repo:          input.Repo,
+			DefaultBranch: input.DefaultBranch,
+			ID:            repo.ID,
 		})
 		if err != nil {
 			return sqlc.Repo{}, fmt.Errorf("update metadata for repo %d after conflict: %w", repo.ID, err)

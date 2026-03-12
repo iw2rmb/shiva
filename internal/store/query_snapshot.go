@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -20,7 +21,8 @@ const (
 )
 
 type ResolveReadSnapshotInput struct {
-	RepoPath   string
+	Namespace  string
+	Repo       string
 	APIPath    string
 	RevisionID int64
 	SHA        string
@@ -108,6 +110,8 @@ var (
 )
 
 type normalizedResolveReadSnapshotInput struct {
+	namespace  string
+	repo       string
 	repoPath   string
 	apiPath    string
 	revisionID int64
@@ -116,7 +120,7 @@ type normalizedResolveReadSnapshotInput struct {
 }
 
 type readSnapshotQueries interface {
-	GetRepoByPath(ctx context.Context, pathWithNamespace string) (sqlc.Repo, error)
+	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error)
 	GetRevisionByID(ctx context.Context, id int64) (sqlc.IngestEvent, error)
 	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.IngestEvent, error)
 	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.IngestEvent, error)
@@ -144,7 +148,10 @@ func resolveReadSnapshot(
 	queries readSnapshotQueries,
 	input normalizedResolveReadSnapshotInput,
 ) (ResolvedReadSnapshot, error) {
-	repo, err := queries.GetRepoByPath(ctx, input.repoPath)
+	repo, err := queries.GetRepoByNamespaceAndRepo(ctx, sqlc.GetRepoByNamespaceAndRepoParams{
+		Namespace: input.namespace,
+		Repo:      input.repo,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedReadSnapshot{}, &ReadSnapshotResolutionError{
@@ -307,10 +314,11 @@ func resolveReadSnapshotByDefaultBranchLatest(
 
 	return ResolvedReadSnapshot{
 		Repo: Repo{
-			ID:                repo.ID,
-			GitLabProjectID:   repo.GitlabProjectID,
-			PathWithNamespace: repo.PathWithNamespace,
-			DefaultBranch:     repo.DefaultBranch,
+			ID:              repo.ID,
+			GitLabProjectID: repo.GitlabProjectID,
+			Namespace:       repo.Namespace,
+			Repo:            repo.Repo,
+			DefaultBranch:   repo.DefaultBranch,
 		},
 		APIPath:      input.apiPath,
 		SelectorKind: input.kind,
@@ -337,10 +345,11 @@ func buildResolvedReadSnapshot(
 
 	return ResolvedReadSnapshot{
 		Repo: Repo{
-			ID:                repo.ID,
-			GitLabProjectID:   repo.GitlabProjectID,
-			PathWithNamespace: repo.PathWithNamespace,
-			DefaultBranch:     repo.DefaultBranch,
+			ID:              repo.ID,
+			GitLabProjectID: repo.GitlabProjectID,
+			Namespace:       repo.Namespace,
+			Repo:            repo.Repo,
+			DefaultBranch:   repo.DefaultBranch,
 		},
 		APIPath:      input.apiPath,
 		SelectorKind: input.kind,
@@ -350,16 +359,25 @@ func buildResolvedReadSnapshot(
 
 func normalizeResolveReadSnapshotInput(input ResolveReadSnapshotInput) (normalizedResolveReadSnapshotInput, error) {
 	normalized := normalizedResolveReadSnapshotInput{
-		repoPath:   strings.TrimSpace(input.RepoPath),
+		namespace:  strings.TrimSpace(input.Namespace),
+		repo:       strings.TrimSpace(input.Repo),
 		apiPath:    strings.TrimSpace(input.APIPath),
 		revisionID: input.RevisionID,
 		sha:        strings.TrimSpace(input.SHA),
 	}
+	normalized.repoPath = repoid.Identity{Namespace: normalized.namespace, Repo: normalized.repo}.Path()
 
-	if normalized.repoPath == "" {
+	if normalized.namespace == "" {
 		return normalizedResolveReadSnapshotInput{}, &ReadSnapshotResolutionError{
 			Code: ReadSnapshotResolutionInvalidInput,
-			Err:  errors.New("repo path must not be empty"),
+			Err:  errors.New("namespace must not be empty"),
+		}
+	}
+
+	if normalized.repo == "" {
+		return normalizedResolveReadSnapshotInput{}, &ReadSnapshotResolutionError{
+			Code: ReadSnapshotResolutionInvalidInput,
+			Err:  errors.New("repo must not be empty"),
 		}
 	}
 

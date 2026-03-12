@@ -36,7 +36,8 @@ func TestExecute(t *testing.T) {
 
 	plan, err := PlanDirectCall(request.Envelope{
 		Kind:       request.KindCall,
-		Repo:       "acme/platform",
+		Namespace:  "acme",
+		Repo:       "platform",
 		API:        "apis/pets/openapi.yaml",
 		RevisionID: 42,
 		Target:     "prod",
@@ -65,7 +66,8 @@ func TestPlanDirectCallPreservesRawBody(t *testing.T) {
 
 	plan, err := PlanDirectCall(request.Envelope{
 		Kind:       request.KindCall,
-		Repo:       "acme/platform",
+		Namespace:  "acme",
+		Repo:       "platform",
 		API:        "apis/pets/openapi.yaml",
 		RevisionID: 42,
 		Target:     "prod",

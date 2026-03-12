@@ -28,6 +28,7 @@ type RevisionState struct {
 }
 
 type RepoRow struct {
+	Namespace          string         `json:"namespace"`
 	Repo               string         `json:"repo"`
 	GitLabProjectID    int64          `json:"gitlab_project_id"`
 	DefaultBranch      string         `json:"default_branch"`
@@ -38,6 +39,7 @@ type RepoRow struct {
 }
 
 type APIRow struct {
+	Namespace         string `json:"namespace,omitempty"`
 	Repo              string `json:"repo,omitempty"`
 	API               string `json:"api"`
 	Status            string `json:"status"`
@@ -53,6 +55,7 @@ type APIRow struct {
 }
 
 type OperationRow struct {
+	Namespace         string          `json:"namespace,omitempty"`
 	Repo              string          `json:"repo,omitempty"`
 	API               string          `json:"api"`
 	Status            string          `json:"status"`
@@ -116,11 +119,12 @@ func RenderOperations(rows []OperationRow, format ListFormat) ([]byte, error) {
 func renderRepoTable(rows []RepoRow) []byte {
 	buffer := &bytes.Buffer{}
 	writer := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "REPO\tDEFAULT_BRANCH\tACTIVE_APIS\tSNAPSHOT\tHEAD")
+	fmt.Fprintln(writer, "NAMESPACE\tREPO\tDEFAULT_BRANCH\tACTIVE_APIS\tSNAPSHOT\tHEAD")
 	for _, row := range rows {
 		fmt.Fprintf(
 			writer,
-			"%s\t%s\t%d\t%s\t%s\n",
+			"%s\t%s\t%s\t%d\t%s\t%s\n",
+			sanitizeCell(row.Namespace),
 			sanitizeCell(row.Repo),
 			sanitizeCell(row.DefaultBranch),
 			row.ActiveAPICount,
@@ -134,11 +138,12 @@ func renderRepoTable(rows []RepoRow) []byte {
 
 func renderRepoTSV(rows []RepoRow) []byte {
 	buffer := &bytes.Buffer{}
-	fmt.Fprintln(buffer, "repo\tdefault_branch\tactive_api_count\tsnapshot_revision\thead_revision")
+	fmt.Fprintln(buffer, "namespace\trepo\tdefault_branch\tactive_api_count\tsnapshot_revision\thead_revision")
 	for _, row := range rows {
 		fmt.Fprintf(
 			buffer,
-			"%s\t%s\t%d\t%s\t%s\n",
+			"%s\t%s\t%s\t%d\t%s\t%s\n",
+			sanitizeCell(row.Namespace),
 			sanitizeCell(row.Repo),
 			sanitizeCell(row.DefaultBranch),
 			row.ActiveAPICount,
@@ -170,11 +175,12 @@ func renderAPITable(rows []APIRow) []byte {
 
 func renderAPITSV(rows []APIRow) []byte {
 	buffer := &bytes.Buffer{}
-	fmt.Fprintln(buffer, "repo\tapi\tstatus\thas_snapshot\toperation_count\tdisplay_name")
+	fmt.Fprintln(buffer, "namespace\trepo\tapi\tstatus\thas_snapshot\toperation_count\tdisplay_name")
 	for _, row := range rows {
 		fmt.Fprintf(
 			buffer,
-			"%s\t%s\t%s\t%t\t%d\t%s\n",
+			"%s\t%s\t%s\t%s\t%t\t%d\t%s\n",
+			sanitizeCell(row.Namespace),
 			sanitizeCell(row.Repo),
 			sanitizeCell(row.API),
 			sanitizeCell(row.Status),
@@ -208,11 +214,12 @@ func renderOperationTable(rows []OperationRow) []byte {
 
 func renderOperationTSV(rows []OperationRow) []byte {
 	buffer := &bytes.Buffer{}
-	fmt.Fprintln(buffer, "repo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary")
+	fmt.Fprintln(buffer, "namespace\trepo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary")
 	for _, row := range rows {
 		fmt.Fprintf(
 			buffer,
-			"%s\t%s\t%s\t%s\t%s\t%t\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%t\t%s\n",
+			sanitizeCell(row.Namespace),
 			sanitizeCell(row.Repo),
 			sanitizeCell(row.API),
 			sanitizeCell(row.Method),

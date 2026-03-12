@@ -22,7 +22,8 @@ func TestListRepoCatalogInventory_MapsHeadAndSnapshotMetadata(t *testing.T) {
 			{
 				ID:                          44,
 				GitlabProjectID:             444,
-				PathWithNamespace:           "acme/platform-api",
+				Namespace:                   "acme",
+				Repo:                        "platform-api",
 				DefaultBranch:               "main",
 				OpenapiForceRescan:          true,
 				ActiveApiCount:              3,
@@ -50,8 +51,8 @@ func TestListRepoCatalogInventory_MapsHeadAndSnapshotMetadata(t *testing.T) {
 	}
 
 	item := items[0]
-	if item.Repo.PathWithNamespace != "acme/platform-api" {
-		t.Fatalf("unexpected repo path %q", item.Repo.PathWithNamespace)
+	if item.Repo.Namespace != "acme" || item.Repo.Repo != "platform-api" {
+		t.Fatalf("unexpected repo identity %+v", item.Repo)
 	}
 	if item.HeadRevision == nil || item.HeadRevision.ID != 500 {
 		t.Fatalf("expected head revision id=500, got %+v", item.HeadRevision)
@@ -67,12 +68,12 @@ func TestListRepoCatalogInventory_MapsHeadAndSnapshotMetadata(t *testing.T) {
 	}
 }
 
-func TestGetRepoCatalogFreshnessByPath_NotFound(t *testing.T) {
+func TestGetRepoCatalogFreshness_NotFound(t *testing.T) {
 	t.Parallel()
 
 	queries := &fakeCLICatalogQueries{freshnessErr: pgx.ErrNoRows}
 
-	_, err := getRepoCatalogFreshnessByPath(context.Background(), queries, "missing/repo")
+	_, err := getRepoCatalogFreshness(context.Background(), queries, "missing", "repo")
 	if err == nil {
 		t.Fatalf("expected not found error")
 	}
@@ -112,8 +113,10 @@ func TestResolveSpecSnapshots_FiltersToResolvedSpecCandidates(t *testing.T) {
 	}
 
 	resolved, err := resolveSpecSnapshots(context.Background(), queries, normalizedResolveReadSnapshotInput{
-		repoPath:   "acme/platform-api",
-		revisionID: 71,
+			namespace:  "acme",
+			repo:       "platform-api",
+			repoPath:   "acme/platform-api",
+			revisionID: 71,
 		kind:       ReadSnapshotSelectorRevisionID,
 	})
 	if err != nil {
@@ -170,6 +173,8 @@ func TestResolveOperationCandidatesByOperationID_PreservesRepoSnapshotAmbiguity(
 		context.Background(),
 		queries,
 		normalizedResolveReadSnapshotInput{
+			namespace:  "acme",
+			repo:       "platform-api",
 			repoPath:   "acme/platform-api",
 			revisionID: 81,
 			kind:       ReadSnapshotSelectorRevisionID,
@@ -216,7 +221,9 @@ func TestResolveOperationCandidatesByMethodPath_ScopesToExplicitAPI(t *testing.T
 		context.Background(),
 		queries,
 		normalizedResolveReadSnapshotInput{
-			repoPath: "acme/platform-api",
+			namespace: "acme",
+			repo:      "platform-api",
+			repoPath:  "acme/platform-api",
 			apiPath:  "apis/users.yaml",
 			sha:      "deadbeef",
 			kind:     ReadSnapshotSelectorSHA,
@@ -240,7 +247,7 @@ type fakeCLICatalogQueries struct {
 	*fakeReadSnapshotQueries
 
 	repoInventoryRows []sqlc.ListRepoCatalogInventoryRow
-	freshnessRow      sqlc.GetRepoCatalogFreshnessByPathRow
+	freshnessRow      sqlc.GetRepoCatalogFreshnessRow
 	freshnessErr      error
 
 	apiInventoryRows []sqlc.ListAPISnapshotInventoryByRepoRevisionRow
@@ -266,9 +273,9 @@ func (f *fakeCLICatalogQueries) ListRepoCatalogInventory(_ context.Context) ([]s
 	return f.repoInventoryRows, nil
 }
 
-func (f *fakeCLICatalogQueries) GetRepoCatalogFreshnessByPath(_ context.Context, _ string) (sqlc.GetRepoCatalogFreshnessByPathRow, error) {
+func (f *fakeCLICatalogQueries) GetRepoCatalogFreshness(_ context.Context, _ sqlc.GetRepoCatalogFreshnessParams) (sqlc.GetRepoCatalogFreshnessRow, error) {
 	if f.freshnessErr != nil {
-		return sqlc.GetRepoCatalogFreshnessByPathRow{}, f.freshnessErr
+		return sqlc.GetRepoCatalogFreshnessRow{}, f.freshnessErr
 	}
 	return f.freshnessRow, nil
 }

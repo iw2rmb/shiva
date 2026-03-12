@@ -19,7 +19,8 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 		{
 			name: "operation id selector with default target",
 			input: Envelope{
-				Repo:        " acme/platform ",
+				Namespace:   " acme ",
+				Repo:        " platform ",
 				OperationID: "listPets",
 				PathParams:  map[string]string{"id": "42"},
 				QueryParams: map[string][]string{"expand": []string{"owners"}},
@@ -33,7 +34,8 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 			},
 			expected: Envelope{
 				Kind:        KindCall,
-				Repo:        "acme/platform",
+				Namespace:   "acme",
+				Repo:        "platform",
 				Target:      DefaultShivaTarget,
 				OperationID: "listPets",
 				PathParams:  map[string]string{"id": "42"},
@@ -47,7 +49,8 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 			name: "method path selector normalizes casing and leading slash",
 			input: Envelope{
 				Kind:   KindCall,
-				Repo:   "acme/platform",
+				Namespace: "acme",
+				Repo:   "platform",
 				API:    "apis/pets.yaml",
 				Method: "PATCH",
 				Path:   "pets/{id}",
@@ -55,7 +58,8 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 			options: NormalizeCallOptions{},
 			expected: Envelope{
 				Kind:   KindCall,
-				Repo:   "acme/platform",
+				Namespace: "acme",
+				Repo:   "platform",
 				API:    "apis/pets.yaml",
 				Method: "patch",
 				Path:   "/pets/{id}",
@@ -65,14 +69,16 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 			name: "method path selector normalizes cli colon segments",
 			input: Envelope{
 				Kind:   KindCall,
-				Repo:   "acme/platform",
+				Namespace: "acme",
+				Repo:   "platform",
 				Method: "GET",
 				Path:   "/pets/:id/owners/:ownerId",
 			},
 			options: NormalizeCallOptions{},
 			expected: Envelope{
 				Kind:   KindCall,
-				Repo:   "acme/platform",
+				Namespace: "acme",
+				Repo:   "platform",
 				Method: "get",
 				Path:   "/pets/{id}/owners/{ownerId}",
 			},
@@ -81,7 +87,8 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 			name: "rejects invalid selector combination",
 			input: Envelope{
 				Kind:        KindCall,
-				Repo:        "acme/platform",
+				Namespace:   "acme",
+				Repo:        "platform",
 				OperationID: "listPets",
 				Method:      "get",
 				Path:        "/pets",
@@ -93,7 +100,8 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 			name: "rejects invalid json and raw body combination",
 			input: Envelope{
 				Kind:     KindCall,
-				Repo:     "acme/platform",
+				Namespace: "acme",
+				Repo:     "platform",
 				Method:   "get",
 				Path:     "/pets",
 				JSONBody: json.RawMessage(`{"ok":true}`),
@@ -133,7 +141,7 @@ func TestNormalizeCallEnvelope(t *testing.T) {
 func TestNormalizeSnapshotSelectorRejectsInvalidRevisionSelector(t *testing.T) {
 	t.Parallel()
 
-	_, _, _, _, err := NormalizeSnapshotSelector("acme/platform", "", 12, "deadbeef")
+	_, _, _, _, _, err := NormalizeSnapshotSelector("acme", "platform", "", 12, "deadbeef")
 	if err == nil {
 		t.Fatal("expected revision selector error, got nil")
 	}
@@ -149,20 +157,22 @@ func TestNormalizeEnvelope(t *testing.T) {
 		t.Parallel()
 
 		actual, err := NormalizeEnvelope(Envelope{
-			Kind:   KindOperation,
-			Repo:   "acme/platform",
-			Method: "PATCH",
-			Path:   "pets/{id}",
+			Kind:      KindOperation,
+			Namespace: "acme",
+			Repo:      "platform",
+			Method:    "PATCH",
+			Path:      "pets/{id}",
 		}, NormalizeOptions{DefaultKind: KindOperation})
 		if err != nil {
 			t.Fatalf("normalize envelope failed: %v", err)
 		}
 
 		expected := Envelope{
-			Kind:   KindOperation,
-			Repo:   "acme/platform",
-			Method: "patch",
-			Path:   "/pets/{id}",
+			Kind:      KindOperation,
+			Namespace: "acme",
+			Repo:      "platform",
+			Method:    "patch",
+			Path:      "/pets/{id}",
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Fatalf("expected envelope %+v, got %+v", expected, actual)
@@ -173,9 +183,10 @@ func TestNormalizeEnvelope(t *testing.T) {
 		t.Parallel()
 
 		_, err := NormalizeEnvelope(Envelope{
-			Kind:   KindSpec,
-			Repo:   "acme/platform",
-			Target: "shiva",
+			Kind:      KindSpec,
+			Namespace: "acme",
+			Repo:      "platform",
+			Target:    "shiva",
 		}, NormalizeOptions{DefaultKind: KindSpec})
 		if err == nil {
 			t.Fatal("expected error, got nil")

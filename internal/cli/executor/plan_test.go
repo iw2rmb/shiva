@@ -14,7 +14,8 @@ func TestPlanShivaCall(t *testing.T) {
 
 	actual, err := PlanShivaDispatchCall(request.Envelope{
 		Kind:        request.KindCall,
-		Repo:        "acme/platform",
+		Namespace:   "acme",
+		Repo:        "platform",
 		API:         "apis/pets/openapi.yaml",
 		RevisionID:  42,
 		SHA:         "deadbeef",
@@ -30,7 +31,8 @@ func TestPlanShivaCall(t *testing.T) {
 	expected := CallPlan{
 		Request: request.Envelope{
 			Kind:        request.KindCall,
-			Repo:        "acme/platform",
+			Namespace:   "acme",
+			Repo:        "platform",
 			API:         "apis/pets/openapi.yaml",
 			RevisionID:  42,
 			SHA:         "deadbeef",
@@ -51,7 +53,7 @@ func TestPlanShivaCall(t *testing.T) {
 					"Authorization": []string{"Bearer token"},
 					"Content-Type":  []string{"application/json"},
 				},
-				Body: []byte(`{"kind":"call","repo":"acme/platform","api":"apis/pets/openapi.yaml","revision_id":42,"sha":"deadbeef","target":"shiva","operation_id":"listPets","method":"get","path":"/pets","dry_run":true}`),
+				Body: []byte(`{"kind":"call","namespace":"acme","repo":"platform","api":"apis/pets/openapi.yaml","revision_id":42,"sha":"deadbeef","target":"shiva","operation_id":"listPets","method":"get","path":"/pets","dry_run":true}`),
 			},
 			Timeout: 5 * time.Second,
 		},
@@ -76,7 +78,8 @@ func TestPlanDirectCall(t *testing.T) {
 
 	actual, err := PlanDirectCall(request.Envelope{
 		Kind:        request.KindCall,
-		Repo:        "acme/platform",
+		Namespace:   "acme",
+		Repo:        "platform",
 		API:         "apis/pets/openapi.yaml",
 		RevisionID:  42,
 		SHA:         "deadbeef",
@@ -95,7 +98,8 @@ func TestPlanDirectCall(t *testing.T) {
 	expected := CallPlan{
 		Request: request.Envelope{
 			Kind:        request.KindCall,
-			Repo:        "acme/platform",
+			Namespace:   "acme",
+			Repo:        "platform",
 			API:         "apis/pets/openapi.yaml",
 			RevisionID:  42,
 			SHA:         "deadbeef",
@@ -142,7 +146,8 @@ func TestPlanDirectCallRejectsMissingOrUnusedPathParams(t *testing.T) {
 
 	_, err := PlanDirectCall(request.Envelope{
 		Kind:        request.KindCall,
-		Repo:        "acme/platform",
+		Namespace:   "acme",
+		Repo:        "platform",
 		API:         "apis/pets/openapi.yaml",
 		RevisionID:  42,
 		Target:      "prod",

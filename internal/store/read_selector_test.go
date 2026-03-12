@@ -113,7 +113,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "repo path is required",
 			input: ResolveReadSelectorInput{
-				RepoPath: "   ",
+				Repo:     "   ",
 				Selector: "a1b2c3d4",
 			},
 			expectError: true,
@@ -121,7 +121,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "short selector normalized to lower-case",
 			input: ResolveReadSelectorInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 				Selector: "a1b2c3d4",
 			},
 			kind:     SelectorKindSHA,
@@ -130,7 +130,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "invalid short SHA length",
 			input: ResolveReadSelectorInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 				Selector: "1234567",
 			},
 			expectError: true,
@@ -138,7 +138,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "invalid short SHA charset",
 			input: ResolveReadSelectorInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 				Selector: "g1b2c3d4",
 			},
 			expectError: true,
@@ -146,7 +146,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "upper-case short SHA rejected",
 			input: ResolveReadSelectorInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 				Selector: "A1B2C3D4",
 			},
 			expectError: true,
@@ -154,7 +154,8 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "no selector mode",
 			input: ResolveReadSelectorInput{
-				RepoPath:   "acme/platform-api",
+				Namespace:  "acme",
+				Repo:       "platform-api",
 				NoSelector: true,
 			},
 			kind: SelectorKindNoSelector,
@@ -162,7 +163,8 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "no selector mode rejects explicit selector",
 			input: ResolveReadSelectorInput{
-				RepoPath:   "acme/platform-api",
+				Namespace:  "acme",
+				Repo:       "platform-api",
 				Selector:   "a1b2c3d4",
 				NoSelector: true,
 			},
@@ -171,7 +173,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 		{
 			name: "selector required when no-selector is false",
 			input: ResolveReadSelectorInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 			},
 			expectError: true,
 		},
@@ -207,7 +209,7 @@ func newSelectorTestQueries() *fakeSelectorResolutionQueries {
 	return &fakeSelectorResolutionQueries{
 		repo: sqlc.Repo{
 			ID:                44,
-			PathWithNamespace: "acme/platform-api",
+			Namespace: "acme", Repo: "platform-api",
 			DefaultBranch:     "main",
 		},
 	}
@@ -215,9 +217,11 @@ func newSelectorTestQueries() *fakeSelectorResolutionQueries {
 
 func newSelectorTestInput(kind SelectorKind, selector string) normalizedResolveReadSelectorInput {
 	return normalizedResolveReadSelectorInput{
-		repoPath: "acme/platform-api",
-		kind:     kind,
-		selector: selector,
+		namespace: "acme",
+		repo:      "platform-api",
+		repoPath:  "acme/platform-api",
+		kind:      kind,
+		selector:  selector,
 	}
 }
 
@@ -231,8 +235,8 @@ type fakeSelectorResolutionQueries struct {
 	lastHeadBranch string
 }
 
-func (f *fakeSelectorResolutionQueries) GetRepoByPath(_ context.Context, pathWithNamespace string) (sqlc.Repo, error) {
-	if f.repo.ID == 0 || f.repo.PathWithNamespace != pathWithNamespace {
+func (f *fakeSelectorResolutionQueries) GetRepoByNamespaceAndRepo(_ context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error) {
+	if f.repo.ID == 0 || f.repo.Namespace != arg.Namespace || f.repo.Repo != arg.Repo {
 		return sqlc.Repo{}, pgx.ErrNoRows
 	}
 	return f.repo, nil

@@ -12,6 +12,7 @@ import (
 )
 
 type SyncResult struct {
+	Namespace             string                   `json:"namespace"`
 	Repo                  string                   `json:"repo"`
 	Scope                 string                   `json:"scope"`
 	SnapshotRevision      *clioutput.RevisionState `json:"snapshot_revision,omitempty"`
@@ -72,6 +73,7 @@ func (s *RuntimeService) ListAPIs(
 	if err != nil {
 		return nil, err
 	}
+	repoKey := normalized.RepoPath()
 
 	source, err := s.resolveSource(options.Profile, "")
 	if err != nil {
@@ -88,12 +90,12 @@ func (s *RuntimeService) ListAPIs(
 		return nil, normalizeServiceError(err)
 	}
 
-	record, found, err := s.catalogStore.LoadAPIs(source.Name, normalized.Repo, prepared.Scope)
+	record, found, err := s.catalogStore.LoadAPIs(source.Name, repoKey, prepared.Scope)
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
 	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("api catalog for repo %q is not cached", normalized.Repo)}
+		return nil, &NotFoundError{Message: fmt.Sprintf("api catalog for repo %q is not cached", repoKey)}
 	}
 
 	var rows []clioutput.APIRow
@@ -101,6 +103,7 @@ func (s *RuntimeService) ListAPIs(
 		return nil, fmt.Errorf("decode api inventory: %w", err)
 	}
 	for index := range rows {
+		rows[index].Namespace = normalized.Namespace
 		rows[index].Repo = normalized.Repo
 	}
 
@@ -121,6 +124,7 @@ func (s *RuntimeService) ListOperations(
 	if err != nil {
 		return nil, err
 	}
+	repoKey := normalized.RepoPath()
 
 	source, err := s.resolveSource(options.Profile, "")
 	if err != nil {
@@ -137,12 +141,12 @@ func (s *RuntimeService) ListOperations(
 		return nil, normalizeServiceError(err)
 	}
 
-	record, found, err := s.catalogStore.LoadOperations(source.Name, normalized.Repo, normalized.API, prepared.Scope)
+	record, found, err := s.catalogStore.LoadOperations(source.Name, repoKey, normalized.API, prepared.Scope)
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
 	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("operation catalog for repo %q is not cached", normalized.Repo)}
+		return nil, &NotFoundError{Message: fmt.Sprintf("operation catalog for repo %q is not cached", repoKey)}
 	}
 
 	var rows []clioutput.OperationRow
@@ -150,6 +154,7 @@ func (s *RuntimeService) ListOperations(
 		return nil, fmt.Errorf("decode operation inventory: %w", err)
 	}
 	for index := range rows {
+		rows[index].Namespace = normalized.Namespace
 		rows[index].Repo = normalized.Repo
 	}
 
@@ -169,6 +174,7 @@ func (s *RuntimeService) Sync(
 	if err != nil {
 		return nil, err
 	}
+	repoKey := normalized.RepoPath()
 	if normalized.API != "" {
 		return nil, &InvalidInputError{Message: "sync does not accept --api; it refreshes the whole repo snapshot"}
 	}
@@ -194,12 +200,12 @@ func (s *RuntimeService) Sync(
 		return nil, normalizeServiceError(err)
 	}
 
-	apiRecord, found, err := s.catalogStore.LoadAPIs(source.Name, normalized.Repo, prepared.Scope)
+	apiRecord, found, err := s.catalogStore.LoadAPIs(source.Name, repoKey, prepared.Scope)
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
 	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("api catalog for repo %q is not cached", normalized.Repo)}
+		return nil, &NotFoundError{Message: fmt.Sprintf("api catalog for repo %q is not cached", repoKey)}
 	}
 
 	var apiRows []clioutput.APIRow
@@ -228,6 +234,7 @@ func (s *RuntimeService) Sync(
 	}
 
 	body, err := json.Marshal(SyncResult{
+		Namespace:             normalized.Namespace,
 		Repo:                  normalized.Repo,
 		Scope:                 prepared.Scope.Key,
 		SnapshotRevision:      revisionStateFromFingerprint(prepared.Fingerprint),
@@ -242,7 +249,8 @@ func (s *RuntimeService) Sync(
 }
 
 func normalizeInventorySelector(selector request.Envelope, allowAPI bool) (request.Envelope, error) {
-	repo, api, revisionID, sha, err := request.NormalizeSnapshotSelector(
+	namespace, repo, api, revisionID, sha, err := request.NormalizeSnapshotSelector(
+		selector.Namespace,
 		selector.Repo,
 		selector.API,
 		selector.RevisionID,
@@ -256,6 +264,7 @@ func normalizeInventorySelector(selector request.Envelope, allowAPI bool) (reque
 	}
 
 	return request.Envelope{
+		Namespace:  namespace,
 		Repo:       repo,
 		API:        api,
 		RevisionID: revisionID,

@@ -26,8 +26,8 @@ func TestRuntimeServiceExecuteCallUsesTargetSourceProfile(t *testing.T) {
 	}
 
 	client := &recordingTransportClient{
-		reposBody:      []byte(`[{"repo":"acme/platform"}]`),
-		statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
 	}
@@ -54,7 +54,7 @@ func TestRuntimeServiceExecuteCallUsesTargetSourceProfile(t *testing.T) {
 	}
 
 	body, err := service.ExecuteCall(context.Background(), request.Envelope{
-		Repo:        "acme/platform",
+		Namespace: "acme", Repo: "platform",
 		Target:      "prod",
 		OperationID: "listPets",
 		DryRun:      true,
@@ -86,14 +86,14 @@ func TestRuntimeServicePinsFloatingRequestsToPreparedSnapshot(t *testing.T) {
 		{
 			name: "spec",
 			client: &recordingTransportClient{
-				reposBody:  []byte(`[{"repo":"acme/platform"}]`),
-				statusBody: []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+				reposBody:  []byte(`[{"namespace":"acme","repo":"platform"}]`),
+				statusBody: []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 				apisBody:   []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 				specBody:   []byte("openapi: 3.1.0\n"),
 			},
 			run: func(t *testing.T, service *RuntimeService) error {
 				_, err := service.GetSpec(context.Background(), request.Envelope{
-					Repo: "acme/platform",
+					Namespace: "acme", Repo: "platform",
 				}, RequestOptions{}, SpecFormatYAML)
 				return err
 			},
@@ -106,15 +106,15 @@ func TestRuntimeServicePinsFloatingRequestsToPreparedSnapshot(t *testing.T) {
 		{
 			name: "operation",
 			client: &recordingTransportClient{
-				reposBody:      []byte(`[{"repo":"acme/platform"}]`),
-				statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+				reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
+				statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 				apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 				operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
 				operationBody:  []byte(`{"operationId":"listPets"}`),
 			},
 			run: func(t *testing.T, service *RuntimeService) error {
 				_, err := service.GetOperation(context.Background(), request.Envelope{
-					Repo:        "acme/platform",
+					Namespace: "acme", Repo: "platform",
 					OperationID: "listPets",
 				}, RequestOptions{})
 				return err
@@ -172,7 +172,7 @@ func TestRuntimeServiceGetOperationOfflineUsesCachedResponseOnly(t *testing.T) {
 	}
 
 	onlineClient := &recordingTransportClient{
-		reposBody:      []byte(`[{"repo":"acme/platform"}]`),
+		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
 		operationBody:  []byte(`{"operationId":"listPets"}`),
@@ -199,7 +199,7 @@ func TestRuntimeServiceGetOperationOfflineUsesCachedResponseOnly(t *testing.T) {
 	}
 
 	selector := request.Envelope{
-		Repo:        "acme/platform",
+		Namespace: "acme", Repo: "platform",
 		RevisionID:  42,
 		OperationID: "listPets",
 	}
@@ -274,7 +274,7 @@ func TestRuntimeServiceGetOperationOfflineUsesExplicitCacheWithoutCatalogSlices(
 	}
 
 	body, err := service.GetOperation(context.Background(), request.Envelope{
-		Repo:        "acme/platform",
+		Namespace: "acme", Repo: "platform",
 		RevisionID:  42,
 		OperationID: "listPets",
 	}, RequestOptions{
@@ -317,8 +317,8 @@ func TestRuntimeServiceListOperationsUsesCatalogAndAddsRepoField(t *testing.T) {
 	}
 
 	client := &recordingTransportClient{
-		reposBody:      []byte(`[{"repo":"acme/platform"}]`),
-		statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","summary":"List pets","deprecated":false}]`),
 	}
@@ -341,12 +341,12 @@ func TestRuntimeServiceListOperationsUsesCatalogAndAddsRepoField(t *testing.T) {
 	}
 
 	body, err := service.ListOperations(context.Background(), request.Envelope{
-		Repo: "acme/platform",
+		Namespace: "acme", Repo: "platform",
 	}, RequestOptions{}, clioutput.ListFormatNDJSON)
 	if err != nil {
 		t.Fatalf("list operations failed: %v", err)
 	}
-	if string(body) != "{\"repo\":\"acme/platform\",\"api\":\"apis/pets/openapi.yaml\",\"status\":\"\",\"api_spec_revision_id\":0,\"ingest_event_id\":0,\"ingest_event_sha\":\"\",\"ingest_event_branch\":\"\",\"method\":\"get\",\"path\":\"/pets\",\"operation_id\":\"listPets\",\"summary\":\"List pets\",\"deprecated\":false}\n" {
+	if string(body) != "{\"namespace\":\"acme\",\"repo\":\"platform\",\"api\":\"apis/pets/openapi.yaml\",\"status\":\"\",\"api_spec_revision_id\":0,\"ingest_event_id\":0,\"ingest_event_sha\":\"\",\"ingest_event_branch\":\"\",\"method\":\"get\",\"path\":\"/pets\",\"operation_id\":\"listPets\",\"summary\":\"List pets\",\"deprecated\":false}\n" {
 		t.Fatalf("unexpected list ops body %q", string(body))
 	}
 	if client.operationsCalls != 1 {
@@ -363,8 +363,8 @@ func TestRuntimeServiceSyncRefreshesRepoWideAndPerAPIOperationCatalogs(t *testin
 	}
 
 	client := &recordingTransportClient{
-		reposBody:  []byte(`[{"repo":"acme/platform"}]`),
-		statusBody: []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		reposBody:  []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		statusBody: []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody: []byte(`[
 			{"api":"apis/pets/openapi.yaml","has_snapshot":true},
 			{"api":"apis/orders/openapi.yaml","has_snapshot":true},
@@ -391,7 +391,7 @@ func TestRuntimeServiceSyncRefreshesRepoWideAndPerAPIOperationCatalogs(t *testin
 	}
 
 	body, err := service.Sync(context.Background(), request.Envelope{
-		Repo: "acme/platform",
+		Namespace: "acme", Repo: "platform",
 	}, RequestOptions{})
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
@@ -413,8 +413,8 @@ func TestRuntimeServiceNormalizesAmbiguousConflictsIntoCLIInputErrors(t *testing
 	}
 
 	client := &recordingTransportClient{
-		reposBody:      []byte(`[{"repo":"acme/platform"}]`),
-		statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","operation_id":"listPets"}]`),
 		operationErr: &httpclient.HTTPError{
@@ -442,7 +442,7 @@ func TestRuntimeServiceNormalizesAmbiguousConflictsIntoCLIInputErrors(t *testing
 	}
 
 	_, err = service.GetOperation(context.Background(), request.Envelope{
-		Repo:        "acme/platform",
+		Namespace: "acme", Repo: "platform",
 		OperationID: "listPets",
 	}, RequestOptions{})
 	if err == nil {
@@ -467,8 +467,8 @@ func TestRuntimeServiceNormalizesAPIAmbiguityIntoAPIError(t *testing.T) {
 	}
 
 	client := &recordingTransportClient{
-		reposBody:  []byte(`[{"repo":"acme/platform"}]`),
-		statusBody: []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		reposBody:  []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		statusBody: []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody: []byte(`[
 			{"api":"apis/pets/openapi.yaml","status":"active","has_snapshot":true},
 			{"api":"apis/orders/openapi.yaml","status":"active","has_snapshot":true}
@@ -498,7 +498,7 @@ func TestRuntimeServiceNormalizesAPIAmbiguityIntoAPIError(t *testing.T) {
 	}
 
 	_, err = service.GetSpec(context.Background(), request.Envelope{
-		Repo: "acme/platform",
+		Namespace: "acme", Repo: "platform",
 	}, RequestOptions{}, SpecFormatJSON)
 	if err == nil {
 		t.Fatalf("expected api ambiguity error")

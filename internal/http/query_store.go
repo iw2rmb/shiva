@@ -41,5 +41,5 @@ type queryReadStore interface {
 		snapshotRevisionID int64,
 	) ([]store.OperationSnapshot, error)
 	ListRepoCatalogInventory(ctx context.Context) ([]store.RepoCatalogEntry, error)
-	GetRepoCatalogFreshnessByPath(ctx context.Context, repoPath string) (store.RepoCatalogFreshness, error)
+	GetRepoCatalogFreshness(ctx context.Context, namespace string, repo string) (store.RepoCatalogFreshness, error)
 }

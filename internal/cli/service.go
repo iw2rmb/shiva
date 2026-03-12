@@ -96,6 +96,7 @@ func (s *RuntimeService) GetSpec(
 	}
 
 	scope := catalog.ScopeFromSelector(normalized.RevisionID, normalized.SHA)
+	repoKey := normalized.RepoPath()
 	source, err := s.resolveSource(options.Profile, normalized.Target)
 	if err != nil {
 		return nil, err
@@ -107,7 +108,7 @@ func (s *RuntimeService) GetSpec(
 		return cached.Payload, nil
 	}
 	if options.Offline {
-		return nil, &NotFoundError{Message: fmt.Sprintf("offline cache miss: spec for repo %q", normalized.Repo)}
+		return nil, &NotFoundError{Message: fmt.Sprintf("offline cache miss: spec for repo %q", repoKey)}
 	}
 
 	client, err := s.newTransportClient(source)
@@ -138,7 +139,7 @@ func (s *RuntimeService) GetSpec(
 
 	if err := s.catalogStore.SaveSpec(
 		source.Name,
-		normalized.Repo,
+		repoKey,
 		normalized.API,
 		prepared.Scope,
 		string(format),
@@ -168,6 +169,7 @@ func (s *RuntimeService) GetOperation(
 	}
 
 	scope := catalog.ScopeFromSelector(normalized.RevisionID, normalized.SHA)
+	repoKey := normalized.RepoPath()
 	source, err := s.resolveSource(options.Profile, normalized.Target)
 	if err != nil {
 		return nil, err
@@ -184,7 +186,7 @@ func (s *RuntimeService) GetOperation(
 		return cached.Payload, nil
 	}
 	if options.Offline {
-		return nil, &NotFoundError{Message: fmt.Sprintf("offline cache miss: operation for repo %q", normalized.Repo)}
+		return nil, &NotFoundError{Message: fmt.Sprintf("offline cache miss: operation for repo %q", repoKey)}
 	}
 
 	client, err := s.newTransportClient(source)
@@ -215,7 +217,7 @@ func (s *RuntimeService) GetOperation(
 
 	if err := s.catalogStore.SaveOperationResponse(
 		source.Name,
-		normalized.Repo,
+		repoKey,
 		normalized.API,
 		prepared.Scope,
 		selectorKey,
@@ -284,7 +286,7 @@ func (s *RuntimeService) loadCachedSpecRecord(
 	scope catalog.Scope,
 	format SpecFormat,
 ) (catalog.Record, bool, error) {
-	record, found, err := s.catalogStore.LoadSpec(profileName, selector.Repo, selector.API, scope, string(format))
+	record, found, err := s.catalogStore.LoadSpec(profileName, selector.RepoPath(), selector.API, scope, string(format))
 	if err != nil || !found {
 		return catalog.Record{}, found, err
 	}
@@ -297,7 +299,7 @@ func (s *RuntimeService) loadCachedOperationRecord(
 	scope catalog.Scope,
 	selectorKey string,
 ) (catalog.Record, bool, error) {
-	record, found, err := s.catalogStore.LoadOperationResponse(profileName, selector.Repo, selector.API, scope, selectorKey)
+	record, found, err := s.catalogStore.LoadOperationResponse(profileName, selector.RepoPath(), selector.API, scope, selectorKey)
 	if err != nil || !found {
 		return catalog.Record{}, found, err
 	}

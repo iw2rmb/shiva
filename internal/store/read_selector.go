@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,7 +25,8 @@ const (
 )
 
 type ResolveReadSelectorInput struct {
-	RepoPath   string
+	Namespace  string
+	Repo       string
 	Selector   string
 	NoSelector bool
 }
@@ -104,13 +106,15 @@ var (
 )
 
 type normalizedResolveReadSelectorInput struct {
-	repoPath string
-	selector string
-	kind     SelectorKind
+	namespace string
+	repo      string
+	repoPath  string
+	selector  string
+	kind      SelectorKind
 }
 
 type selectorResolutionQueries interface {
-	GetRepoByPath(ctx context.Context, pathWithNamespace string) (sqlc.Repo, error)
+	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error)
 	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.IngestEvent, error)
 	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.IngestEvent, error)
 	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
@@ -141,7 +145,10 @@ func resolveReadSelector(
 	queries selectorResolutionQueries,
 	input normalizedResolveReadSelectorInput,
 ) (ResolvedReadSelector, error) {
-	repo, err := queries.GetRepoByPath(ctx, input.repoPath)
+	repo, err := queries.GetRepoByNamespaceAndRepo(ctx, sqlc.GetRepoByNamespaceAndRepoParams{
+		Namespace: input.namespace,
+		Repo:      input.repo,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedReadSelector{}, &SelectorResolutionError{
@@ -217,7 +224,7 @@ func resolveReadSelectorBySHA(
 
 	return ResolvedReadSelector{
 		RepoID:       repo.ID,
-		RepoPath:     repo.PathWithNamespace,
+		RepoPath:     repoid.Identity{Namespace: repo.Namespace, Repo: repo.Repo}.Path(),
 		SelectorKind: input.kind,
 		Selector:     input.selector,
 		Revision:     mapRevision(revision),
@@ -287,7 +294,7 @@ func resolveReadSelectorByBranch(
 
 	return ResolvedReadSelector{
 		RepoID:       repo.ID,
-		RepoPath:     repo.PathWithNamespace,
+		RepoPath:     repoid.Identity{Namespace: repo.Namespace, Repo: repo.Repo}.Path(),
 		SelectorKind: input.kind,
 		Selector:     input.selector,
 		Revision:     mapRevision(revision),
@@ -296,14 +303,23 @@ func resolveReadSelectorByBranch(
 
 func normalizeResolveReadSelectorInput(input ResolveReadSelectorInput) (normalizedResolveReadSelectorInput, error) {
 	normalized := normalizedResolveReadSelectorInput{
-		repoPath: strings.TrimSpace(input.RepoPath),
-		selector: strings.TrimSpace(input.Selector),
+		namespace: strings.TrimSpace(input.Namespace),
+		repo:      strings.TrimSpace(input.Repo),
+		selector:  strings.TrimSpace(input.Selector),
 	}
+	normalized.repoPath = repoid.Identity{Namespace: normalized.namespace, Repo: normalized.repo}.Path()
 
-	if normalized.repoPath == "" {
+	if normalized.namespace == "" {
 		return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
 			Code: SelectorResolutionInvalidInput,
-			Err:  errors.New("repo path must not be empty"),
+			Err:  errors.New("namespace must not be empty"),
+		}
+	}
+
+	if normalized.repo == "" {
+		return normalizedResolveReadSelectorInput{}, &SelectorResolutionError{
+			Code: SelectorResolutionInvalidInput,
+			Err:  errors.New("repo must not be empty"),
 		}
 	}
 

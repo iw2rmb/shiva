@@ -63,7 +63,8 @@ type Notifier struct {
 
 type RevisionNotification struct {
 	RepoID            int64
-	RepoPath          string
+	Namespace         string
+	Repo              string
 	APISpecID         int64
 	API               string
 	APISpecRevisionID int64
@@ -81,6 +82,7 @@ type RevisionNotification struct {
 type eventEnvelope[T any] struct {
 	Type              string `json:"type"`
 	EventID           string `json:"event_id"`
+	Namespace         string `json:"namespace"`
 	Repo              string `json:"repo"`
 	IngestEventID     int64  `json:"revision_id"`
 	APISpecRevisionID int64  `json:"api_revision_id"`
@@ -234,12 +236,14 @@ func (n *Notifier) NotifyRevision(ctx context.Context, notification RevisionNoti
 func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 	processedAt := notification.ProcessedAt.UTC()
 	processedAtText := processedAt.Format(time.RFC3339Nano)
-	repoPath := strings.TrimSpace(notification.RepoPath)
+	namespace := strings.TrimSpace(notification.Namespace)
+	repo := strings.TrimSpace(notification.Repo)
 
 	diffEnvelope := eventEnvelope[diffEventPayload]{
 		Type:              store.DeliveryEventTypeSpecUpdatedDiff,
 		EventID:           deterministicEnvelopeEventID(notification.APISpecID, notification.IngestEventID, store.DeliveryEventTypeSpecUpdatedDiff),
-		Repo:              repoPath,
+		Namespace:         namespace,
+		Repo:              repo,
 		IngestEventID:     notification.IngestEventID,
 		APISpecRevisionID: notification.APISpecRevisionID,
 		API:               notification.API,
@@ -278,7 +282,8 @@ func buildEvents(notification RevisionNotification) ([]builtEvent, error) {
 	fullEnvelope := eventEnvelope[fullEventPayload]{
 		Type:              store.DeliveryEventTypeSpecUpdatedFull,
 		EventID:           deterministicEnvelopeEventID(notification.APISpecID, notification.IngestEventID, store.DeliveryEventTypeSpecUpdatedFull),
-		Repo:              repoPath,
+		Namespace:         namespace,
+		Repo:              repo,
 		IngestEventID:     notification.IngestEventID,
 		APISpecRevisionID: notification.APISpecRevisionID,
 		API:               notification.API,

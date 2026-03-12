@@ -36,7 +36,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedFormat: SpecFormatYAML,
 			expectedRequest: request.Envelope{
 				Kind: request.KindSpec,
-				Repo: "allure/allure-deployment",
+				Namespace: "allure", Repo: "allure-deployment",
 			},
 		},
 		{
@@ -46,7 +46,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedOp:     1,
 			expectedRequest: request.Envelope{
 				Kind:        request.KindOperation,
-				Repo:        "allure/allure-deployment",
+				Namespace: "allure", Repo: "allure-deployment",
 				OperationID: "findAll_42",
 			},
 		},
@@ -57,7 +57,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedOp:     1,
 			expectedRequest: request.Envelope{
 				Kind:   request.KindOperation,
-				Repo:   "allure/allure-deployment",
+				Namespace: "allure", Repo: "allure-deployment",
 				Method: "patch",
 				Path:   "/pets/{id}",
 			},
@@ -70,7 +70,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedCallFmt: CallFormatJSON,
 			expectedRequest: request.Envelope{
 				Kind:        request.KindCall,
-				Repo:        "allure/allure-deployment",
+				Namespace: "allure", Repo: "allure-deployment",
 				Target:      "shiva",
 				OperationID: "getUsers",
 				DryRun:      true,
@@ -200,42 +200,42 @@ func TestRootCommandListAndSyncSubcommands(t *testing.T) {
 		{
 			name:              "ls repos defaults to ndjson on non tty",
 			args:              []string{"ls", "repos"},
-			expectedStdout:    "{\"repo\":\"acme/platform\"}\n",
+			expectedStdout:    "{\"namespace\":\"acme\",\"repo\":\"platform\"}\n",
 			expectedListRepos: 1,
 			expectedFormat:    "ndjson",
 		},
 		{
 			name:             "ls apis accepts snapshot selector",
 			args:             []string{"ls", "apis", "--rev", "42", "-o", "json", "acme/platform"},
-			expectedStdout:   "[{\"repo\":\"acme/platform\",\"api\":\"apis/pets/openapi.yaml\"}]\n",
+			expectedStdout:   "[{\"namespace\":\"acme\",\"repo\":\"platform\",\"api\":\"apis/pets/openapi.yaml\"}]\n",
 			expectedListAPIs: 1,
 			expectedFormat:   "json",
 			expectListTarget: true,
 			expectedListTarget: request.Envelope{
-				Repo:       "acme/platform",
+				Namespace: "acme", Repo: "platform",
 				RevisionID: 42,
 			},
 		},
 		{
 			name:             "ls ops forwards api selector",
 			args:             []string{"ls", "ops", "--api", "apis/pets/openapi.yaml", "-o", "tsv", "acme/platform"},
-			expectedStdout:   "repo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n",
+			expectedStdout:   "namespace\trepo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n",
 			expectedListOps:  1,
 			expectedFormat:   "tsv",
 			expectListTarget: true,
 			expectedListTarget: request.Envelope{
-				Repo: "acme/platform",
+				Namespace: "acme", Repo: "platform",
 				API:  "apis/pets/openapi.yaml",
 			},
 		},
 		{
 			name:             "sync refreshes repo snapshot",
 			args:             []string{"sync", "--rev", "42", "acme/platform"},
-			expectedStdout:   "{\"repo\":\"acme/platform\",\"scope\":\"rev:42\"}\n",
+			expectedStdout:   "{\"namespace\":\"acme\",\"repo\":\"platform\",\"scope\":\"rev:42\"}\n",
 			expectedSync:     1,
 			expectListTarget: true,
 			expectedListTarget: request.Envelope{
-				Repo:       "acme/platform",
+				Namespace: "acme", Repo: "platform",
 				RevisionID: 42,
 			},
 		},
@@ -247,10 +247,10 @@ func TestRootCommandListAndSyncSubcommands(t *testing.T) {
 			t.Parallel()
 
 			service := &fakeService{
-				listReposBody: []byte("{\"repo\":\"acme/platform\"}\n"),
-				listAPIsBody:  []byte("[{\"repo\":\"acme/platform\",\"api\":\"apis/pets/openapi.yaml\"}]"),
-				listOpsBody:   []byte("repo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n"),
-				syncBody:      []byte("{\"repo\":\"acme/platform\",\"scope\":\"rev:42\"}"),
+				listReposBody: []byte("{\"namespace\":\"acme\",\"repo\":\"platform\"}\n"),
+				listAPIsBody:  []byte("[{\"namespace\":\"acme\",\"repo\":\"platform\",\"api\":\"apis/pets/openapi.yaml\"}]"),
+				listOpsBody:   []byte("namespace\trepo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n"),
+				syncBody:      []byte("{\"namespace\":\"acme\",\"repo\":\"platform\",\"scope\":\"rev:42\"}"),
 			}
 
 			stdout := &bytes.Buffer{}
@@ -382,10 +382,10 @@ targets:
 	}
 	scope := catalog.ScopeFromSelector(0, "")
 	fingerprint := catalog.SnapshotFingerprint{RevisionID: 42, SHA: "deadbeef"}
-	if err := store.SaveRepos("default", []byte(`[{"repo":"acme/platform"}]`)); err != nil {
+	if err := store.SaveRepos("default", []byte(`[{"namespace":"acme","repo":"platform"}]`)); err != nil {
 		t.Fatalf("save repos cache: %v", err)
 	}
-	if err := store.SaveStatus("default", "acme/platform", []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`), fingerprint); err != nil {
+	if err := store.SaveStatus("default", "acme/platform", []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`), fingerprint); err != nil {
 		t.Fatalf("save status cache: %v", err)
 	}
 	if err := store.SaveAPIs("default", "acme/platform", scope, []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`), fingerprint); err != nil {

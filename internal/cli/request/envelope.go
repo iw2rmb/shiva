@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/iw2rmb/shiva/internal/repoid"
 )
 
 type Kind string
@@ -18,6 +20,7 @@ const (
 
 type Envelope struct {
 	Kind        Kind                `json:"kind,omitempty"`
+	Namespace   string              `json:"namespace"`
 	Repo        string              `json:"repo"`
 	API         string              `json:"api,omitempty"`
 	RevisionID  int64               `json:"revision_id,omitempty"`
@@ -32,6 +35,10 @@ type Envelope struct {
 	JSONBody    json.RawMessage     `json:"json,omitempty"`
 	Body        string              `json:"body,omitempty"`
 	DryRun      bool                `json:"dry_run,omitempty"`
+}
+
+func (e Envelope) RepoPath() string {
+	return repoid.Identity{Namespace: e.Namespace, Repo: e.Repo}.Path()
 }
 
 type ValidationError struct {
@@ -57,7 +64,13 @@ type NormalizeOptions struct {
 }
 
 func NormalizeEnvelope(input Envelope, options NormalizeOptions) (Envelope, error) {
-	repo, api, revisionID, sha, err := NormalizeSnapshotSelector(input.Repo, input.API, input.RevisionID, input.SHA)
+	namespace, repo, api, revisionID, sha, err := NormalizeSnapshotSelector(
+		input.Namespace,
+		input.Repo,
+		input.API,
+		input.RevisionID,
+		input.SHA,
+	)
 	if err != nil {
 		return Envelope{}, err
 	}
@@ -79,6 +92,7 @@ func NormalizeEnvelope(input Envelope, options NormalizeOptions) (Envelope, erro
 
 	normalized := Envelope{
 		Kind:        kind,
+		Namespace:   namespace,
 		Repo:        repo,
 		API:         api,
 		RevisionID:  revisionID,
@@ -143,9 +157,9 @@ func NormalizeResolvedCallEnvelope(input Envelope, defaultTarget string) (Envelo
 		return Envelope{}, invalid("kind must be %q", KindCall)
 	}
 
-	repo := strings.TrimSpace(input.Repo)
-	if repo == "" {
-		return Envelope{}, invalid("repo must not be empty")
+	identity, err := repoid.Normalize(input.Namespace, input.Repo)
+	if err != nil {
+		return Envelope{}, invalid(err.Error())
 	}
 	api := strings.TrimSpace(input.API)
 	if api == "" {
@@ -177,7 +191,8 @@ func NormalizeResolvedCallEnvelope(input Envelope, defaultTarget string) (Envelo
 
 	return Envelope{
 		Kind:        kind,
-		Repo:        repo,
+		Namespace:   identity.Namespace,
+		Repo:        identity.Repo,
 		API:         api,
 		RevisionID:  input.RevisionID,
 		SHA:         sha,
@@ -194,34 +209,40 @@ func NormalizeResolvedCallEnvelope(input Envelope, defaultTarget string) (Envelo
 	}, nil
 }
 
-func NormalizeSnapshotSelector(repo string, api string, revisionID int64, sha string) (string, string, int64, string, error) {
-	repo = strings.TrimSpace(repo)
-	if repo == "" {
-		return "", "", 0, "", invalid("repo must not be empty")
+func NormalizeSnapshotSelector(
+	namespace string,
+	repo string,
+	api string,
+	revisionID int64,
+	sha string,
+) (string, string, string, int64, string, error) {
+	identity, err := repoid.Normalize(namespace, repo)
+	if err != nil {
+		return "", "", "", 0, "", invalid(err.Error())
 	}
 
 	api = strings.TrimSpace(api)
 	if revisionID < 0 {
-		return "", "", 0, "", invalid("revision_id must be a positive integer")
+		return "", "", "", 0, "", invalid("revision_id must be a positive integer")
 	}
 	if revisionID == 0 && sha == "" {
-		return repo, api, 0, "", nil
+		return identity.Namespace, identity.Repo, api, 0, "", nil
 	}
 	if revisionID == 0 && strings.TrimSpace(sha) == "" && sha != "" {
-		return "", "", 0, "", invalid("sha must not be empty")
+		return "", "", "", 0, "", invalid("sha must not be empty")
 	}
 	if revisionID > 0 && strings.TrimSpace(sha) != "" {
-		return "", "", 0, "", invalid("revision_id and sha are mutually exclusive")
+		return "", "", "", 0, "", invalid("revision_id and sha are mutually exclusive")
 	}
 
 	sha = strings.TrimSpace(sha)
 	if sha != "" && !IsShortSHA(sha) {
-		return "", "", 0, "", invalid("sha must be exactly 8 lowercase hex characters")
+		return "", "", "", 0, "", invalid("sha must be exactly 8 lowercase hex characters")
 	}
 	if revisionID == 0 && sha == "" {
-		return repo, api, 0, "", nil
+		return identity.Namespace, identity.Repo, api, 0, "", nil
 	}
-	return repo, api, revisionID, sha, nil
+	return identity.Namespace, identity.Repo, api, revisionID, sha, nil
 }
 
 func NormalizeOperationSelector(operationID string, method string, path string) (string, string, string, error) {

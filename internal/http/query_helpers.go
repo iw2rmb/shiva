@@ -62,6 +62,7 @@ type operationSnapshotResponse struct {
 }
 
 type repoCatalogResponse struct {
+	Namespace          string                        `json:"namespace"`
 	Repo               string                        `json:"repo"`
 	GitLabProjectID    int64                         `json:"gitlab_project_id"`
 	DefaultBranch      string                        `json:"default_branch"`
@@ -247,7 +248,8 @@ func mapRepoCatalogEntries(items []store.RepoCatalogEntry) []repoCatalogResponse
 
 func mapRepoCatalogEntry(item store.RepoCatalogEntry) repoCatalogResponse {
 	return repoCatalogResponse{
-		Repo:               item.Repo.PathWithNamespace,
+		Namespace:          item.Repo.Namespace,
+		Repo:               item.Repo.Repo,
 		GitLabProjectID:    item.Repo.GitLabProjectID,
 		DefaultBranch:      item.Repo.DefaultBranch,
 		OpenAPIForceRescan: item.OpenAPIForceRescan,

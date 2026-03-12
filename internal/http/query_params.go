@@ -54,7 +54,8 @@ func parseSpecQuery(c *fiber.Ctx) (normalizedSpecQuery, error) {
 
 	envelope, err := request.NormalizeEnvelope(request.Envelope{
 		Kind:       request.KindSpec,
-		Repo:       snapshot.RepoPath,
+		Namespace:  snapshot.Namespace,
+		Repo:       snapshot.Repo,
 		API:        snapshot.APIPath,
 		RevisionID: snapshot.RevisionID,
 		SHA:        snapshot.SHA,
@@ -83,7 +84,8 @@ func parseOperationEndpointQuery(c *fiber.Ctx) (request.Envelope, error) {
 
 	envelope, err := request.NormalizeEnvelope(request.Envelope{
 		Kind:        request.KindOperation,
-		Repo:        snapshot.RepoPath,
+		Namespace:   snapshot.Namespace,
+		Repo:        snapshot.Repo,
 		API:         snapshot.APIPath,
 		RevisionID:  snapshot.RevisionID,
 		SHA:         snapshot.SHA,
@@ -119,11 +121,15 @@ func parseCatalogStatusQuery(c *fiber.Ctx) (string, error) {
 		return "", err
 	}
 
-	repoPath := strings.TrimSpace(c.Query("repo"))
-	if repoPath == "" {
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	repo := strings.TrimSpace(c.Query("repo"))
+	if namespace == "" {
+		return "", invalidQuery("namespace must not be empty")
+	}
+	if repo == "" {
 		return "", invalidQuery("repo must not be empty")
 	}
-	return repoPath, nil
+	return namespace + "/" + repo, nil
 }
 
 func parseReposQuery(c *fiber.Ctx) error {
@@ -135,8 +141,13 @@ type snapshotQueryOptions struct {
 }
 
 func parseSnapshotQuery(c *fiber.Ctx, options snapshotQueryOptions) (store.ResolveReadSnapshotInput, error) {
-	repoPath := strings.TrimSpace(c.Query("repo"))
-	if repoPath == "" {
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	if namespace == "" {
+		return store.ResolveReadSnapshotInput{}, invalidQuery("namespace must not be empty")
+	}
+
+	repo := strings.TrimSpace(c.Query("repo"))
+	if repo == "" {
 		return store.ResolveReadSnapshotInput{}, invalidQuery("repo must not be empty")
 	}
 
@@ -169,7 +180,8 @@ func parseSnapshotQuery(c *fiber.Ctx, options snapshotQueryOptions) (store.Resol
 	}
 
 	return store.ResolveReadSnapshotInput{
-		RepoPath:   repoPath,
+		Namespace:  namespace,
+		Repo:       repo,
 		APIPath:    apiPath,
 		RevisionID: revisionID,
 		SHA:        sha,

@@ -42,13 +42,13 @@ func TestServer_QueryReadSurfaceIsRegistered(t *testing.T) {
 		method string
 		path   string
 	}{
-		{name: "spec query endpoint", method: http.MethodGet, path: "/v1/spec?repo=acme%2Fplatform"},
-		{name: "operation query endpoint", method: http.MethodGet, path: "/v1/operation?repo=acme%2Fplatform&operation_id=listPets"},
+		{name: "spec query endpoint", method: http.MethodGet, path: "/v1/spec?namespace=acme&repo=platform"},
+		{name: "operation query endpoint", method: http.MethodGet, path: "/v1/operation?namespace=acme&repo=platform&operation_id=listPets"},
 		{name: "call endpoint", method: http.MethodPost, path: "/v1/call"},
-		{name: "apis query endpoint", method: http.MethodGet, path: "/v1/apis?repo=acme%2Fplatform"},
-		{name: "operations query endpoint", method: http.MethodGet, path: "/v1/operations?repo=acme%2Fplatform"},
+		{name: "apis query endpoint", method: http.MethodGet, path: "/v1/apis?namespace=acme&repo=platform"},
+		{name: "operations query endpoint", method: http.MethodGet, path: "/v1/operations?namespace=acme&repo=platform"},
 		{name: "repos query endpoint", method: http.MethodGet, path: "/v1/repos"},
-		{name: "catalog status endpoint", method: http.MethodGet, path: "/v1/catalog/status?repo=acme%2Fplatform"},
+		{name: "catalog status endpoint", method: http.MethodGet, path: "/v1/catalog/status?namespace=acme&repo=platform"},
 	}
 
 	for _, testCase := range testCases {

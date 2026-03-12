@@ -214,7 +214,8 @@ func parseRepoSnapshotSelector(raw string, flags RootFlags, allowAPI bool, allow
 	}
 
 	return request.Envelope{
-		Repo:       packed.RepoPath,
+		Namespace:  packed.Namespace,
+		Repo:       packed.Repo,
 		API:        flags.API,
 		RevisionID: flags.RevisionID,
 		SHA:        flags.SHA,

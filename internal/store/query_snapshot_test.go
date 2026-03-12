@@ -23,8 +23,10 @@ func TestResolveReadSnapshot_DefaultBranchLatestUsesLatestProcessedOpenAPISnapsh
 	}
 
 	resolved, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
-		repoPath: "acme/platform-api",
-		kind:     ReadSnapshotSelectorDefaultBranchLatest,
+		namespace: "acme",
+		repo:      "platform-api",
+		repoPath:  "acme/platform-api",
+		kind:      ReadSnapshotSelectorDefaultBranchLatest,
 	})
 	if err != nil {
 		t.Fatalf("resolveReadSnapshot() unexpected error: %v", err)
@@ -50,9 +52,11 @@ func TestResolveReadSnapshot_SHAAllowsProcessedSnapshotWithoutOpenAPIChange(t *t
 	}
 
 	resolved, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
-		repoPath: "acme/platform-api",
-		sha:      "11111111",
-		kind:     ReadSnapshotSelectorSHA,
+		namespace: "acme",
+		repo:      "platform-api",
+		repoPath:  "acme/platform-api",
+		sha:       "11111111",
+		kind:      ReadSnapshotSelectorSHA,
 	})
 	if err != nil {
 		t.Fatalf("resolveReadSnapshot() unexpected error: %v", err)
@@ -78,6 +82,8 @@ func TestResolveReadSnapshot_RevisionIDRequiresMatchingRepoAndProcessedState(t *
 		}
 
 		_, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
+			namespace:  "acme",
+			repo:       "platform-api",
 			repoPath:   "acme/platform-api",
 			revisionID: 91,
 			kind:       ReadSnapshotSelectorRevisionID,
@@ -99,6 +105,8 @@ func TestResolveReadSnapshot_RevisionIDRequiresMatchingRepoAndProcessedState(t *
 		}
 
 		_, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
+			namespace:  "acme",
+			repo:       "platform-api",
 			repoPath:   "acme/platform-api",
 			revisionID: 92,
 			kind:       ReadSnapshotSelectorRevisionID,
@@ -124,14 +132,14 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 		{
 			name: "default branch latest when sha and revision are absent",
 			input: ResolveReadSnapshotInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 			},
 			kind: ReadSnapshotSelectorDefaultBranchLatest,
 		},
 		{
 			name: "sha selector",
 			input: ResolveReadSnapshotInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 				SHA:      "deadbeef",
 			},
 			kind: ReadSnapshotSelectorSHA,
@@ -139,7 +147,8 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 		{
 			name: "revision selector",
 			input: ResolveReadSnapshotInput{
-				RepoPath:   "acme/platform-api",
+				Namespace:  "acme",
+				Repo:       "platform-api",
 				RevisionID: 17,
 			},
 			kind: ReadSnapshotSelectorRevisionID,
@@ -147,7 +156,8 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 		{
 			name: "sha and revision are mutually exclusive",
 			input: ResolveReadSnapshotInput{
-				RepoPath:   "acme/platform-api",
+				Namespace:  "acme",
+				Repo:       "platform-api",
 				RevisionID: 17,
 				SHA:        "deadbeef",
 			},
@@ -156,7 +166,7 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 		{
 			name: "sha must be lowercase short hex",
 			input: ResolveReadSnapshotInput{
-				RepoPath: "acme/platform-api",
+				Namespace: "acme", Repo: "platform-api",
 				SHA:      "DEADBEEF",
 			},
 			expectError: true,
@@ -190,7 +200,7 @@ func newReadSnapshotTestQueries() *fakeReadSnapshotQueries {
 		repo: sqlc.Repo{
 			ID:                44,
 			GitlabProjectID:   444,
-			PathWithNamespace: "acme/platform-api",
+			Namespace: "acme", Repo: "platform-api",
 			DefaultBranch:     "main",
 		},
 	}
@@ -207,8 +217,8 @@ type fakeReadSnapshotQueries struct {
 	lastHeadBranch string
 }
 
-func (f *fakeReadSnapshotQueries) GetRepoByPath(_ context.Context, pathWithNamespace string) (sqlc.Repo, error) {
-	if f.repo.ID == 0 || f.repo.PathWithNamespace != pathWithNamespace {
+func (f *fakeReadSnapshotQueries) GetRepoByNamespaceAndRepo(_ context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error) {
+	if f.repo.ID == 0 || f.repo.Namespace != arg.Namespace || f.repo.Repo != arg.Repo {
 		return sqlc.Repo{}, pgx.ErrNoRows
 	}
 	return f.repo, nil

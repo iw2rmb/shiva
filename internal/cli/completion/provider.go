@@ -16,6 +16,7 @@ import (
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/profile"
 	"github.com/iw2rmb/shiva/internal/cli/request"
+	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/spf13/cobra"
 )
 
@@ -40,16 +41,26 @@ type Provider struct {
 }
 
 type Selector struct {
+	Namespace  string
 	Repo       string
 	API        string
 	RevisionID int64
 	SHA        string
 }
 
+func (s Selector) RepoPath() string {
+	return repoid.Identity{Namespace: s.Namespace, Repo: s.Repo}.Path()
+}
+
 type PackedSelector struct {
-	RepoPath    string
+	Namespace   string
+	Repo        string
 	Target      string
 	OperationID string
+}
+
+func (s PackedSelector) RepoPath() string {
+	return repoid.Identity{Namespace: s.Namespace, Repo: s.Repo}.Path()
 }
 
 type state struct {
@@ -177,7 +188,7 @@ func (p *Provider) completePackedOperation(ctx context.Context, cmd *cobra.Comma
 	}
 
 	packed, err := parsePackedSelector(strings.TrimSuffix(toComplete, "#"+operationPart))
-	if err != nil || strings.TrimSpace(packed.RepoPath) == "" {
+	if err != nil || strings.TrimSpace(packed.RepoPath()) == "" {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
@@ -228,7 +239,7 @@ func (p *Provider) listAPIs(ctx context.Context, selector Selector, profileName 
 	}
 
 	scope := catalog.ScopeFromSelector(selector.RevisionID, selector.SHA)
-	record, found, err := st.store.LoadAPIs(source.Name, selector.Repo, scope)
+	record, found, err := st.store.LoadAPIs(source.Name, selector.RepoPath(), scope)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +262,7 @@ func (p *Provider) listOperationIDs(ctx context.Context, selector Selector, prof
 	}
 
 	scope := catalog.ScopeFromSelector(selector.RevisionID, selector.SHA)
-	record, found, err := st.store.LoadOperations(source.Name, selector.Repo, selector.API, scope)
+	record, found, err := st.store.LoadOperations(source.Name, selector.RepoPath(), selector.API, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +283,7 @@ func (p *Provider) snapshotSliceStale(store *catalog.Store, profileName string, 
 	if !scope.Floating {
 		return false
 	}
-	status, found, err := store.LoadStatus(profileName, selector.Repo)
+	status, found, err := store.LoadStatus(profileName, selector.RepoPath())
 	if err != nil || !found {
 		return true
 	}
@@ -320,7 +331,7 @@ func (p *Provider) refreshAPIs(ctx context.Context, st state, source profile.Sou
 		return nil, err
 	}
 
-	record, found, err := st.store.LoadAPIs(source.Name, selector.Repo, catalog.ScopeFromSelector(selector.RevisionID, selector.SHA))
+	record, found, err := st.store.LoadAPIs(source.Name, selector.RepoPath(), catalog.ScopeFromSelector(selector.RevisionID, selector.SHA))
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +355,7 @@ func (p *Provider) refreshOperations(ctx context.Context, st state, source profi
 		return nil, err
 	}
 
-	record, found, err := st.store.LoadOperations(source.Name, selector.Repo, selector.API, catalog.ScopeFromSelector(selector.RevisionID, selector.SHA))
+	record, found, err := st.store.LoadOperations(source.Name, selector.RepoPath(), selector.API, catalog.ScopeFromSelector(selector.RevisionID, selector.SHA))
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +416,7 @@ func (p *Provider) selectorFromCommand(cmd *cobra.Command, args []string) (Selec
 }
 
 func (p *Provider) selectorFromPacked(cmd *cobra.Command, packed PackedSelector) (Selector, string, bool) {
-	if strings.TrimSpace(packed.RepoPath) == "" {
+	if strings.TrimSpace(packed.RepoPath()) == "" {
 		return Selector{}, "", false
 	}
 
@@ -427,7 +438,8 @@ func (p *Provider) selectorFromPacked(cmd *cobra.Command, packed PackedSelector)
 	}
 
 	return Selector{
-		Repo:       packed.RepoPath,
+		Namespace:  packed.Namespace,
+		Repo:       packed.Repo,
 		API:        api,
 		RevisionID: revisionID,
 		SHA:        sha,
@@ -485,8 +497,13 @@ func parsePackedSelector(raw string) (PackedSelector, error) {
 	if repoPath == "" {
 		return PackedSelector{}, errors.New("repo path must not be empty")
 	}
+	identity, err := repoid.ParsePath(repoPath)
+	if err != nil {
+		return PackedSelector{}, err
+	}
 	return PackedSelector{
-		RepoPath:    repoPath,
+		Namespace:   identity.Namespace,
+		Repo:        identity.Repo,
 		Target:      target,
 		OperationID: operationID,
 	}, nil
@@ -592,7 +609,7 @@ func decodeRepoRefs(payload []byte) []string {
 	}
 	values := make([]string, 0, len(rows))
 	for _, row := range rows {
-		values = append(values, row.Repo)
+		values = append(values, repoid.Identity{Namespace: row.Namespace, Repo: row.Repo}.Path())
 	}
 	return values
 }
@@ -623,6 +640,7 @@ func decodeOperationIDs(payload []byte) []string {
 
 func (s Selector) asEnvelope() request.Envelope {
 	return request.Envelope{
+		Namespace:  s.Namespace,
 		Repo:       s.Repo,
 		API:        s.API,
 		RevisionID: s.RevisionID,

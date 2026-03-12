@@ -19,7 +19,7 @@ func (s *Server) handleGetOperation(c *fiber.Ctx) error {
 
 	switch len(resolved.Candidates) {
 	case 0:
-		return s.writeQueryError(c, fmt.Errorf("%w: repo=%q", errOperationNotFound, resolved.Snapshot.Repo.PathWithNamespace))
+		return s.writeQueryError(c, fmt.Errorf("%w: repo=%q", errOperationNotFound, resolved.Snapshot.Repo.Path()))
 	case 1:
 		return writeRawOperationResponse(c, resolved.Candidates[0].RawJSON)
 	default:

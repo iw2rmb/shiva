@@ -555,11 +555,12 @@ func (q *Queries) GetAPISnapshotByRepoRevisionAndAPI(ctx context.Context, arg Ge
 	return i, err
 }
 
-const getRepoCatalogFreshnessByPath = `-- name: GetRepoCatalogFreshnessByPath :one
+const getRepoCatalogFreshness = `-- name: GetRepoCatalogFreshness :one
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.path_with_namespace,
+    repos.namespace,
+    repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
     COALESCE(active_api_counts.active_api_count, 0)::BIGINT AS active_api_count,
@@ -599,13 +600,20 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-WHERE repos.path_with_namespace = $1
+WHERE repos.namespace = $1
+  AND repos.repo = $2
 `
 
-type GetRepoCatalogFreshnessByPathRow struct {
+type GetRepoCatalogFreshnessParams struct {
+	Namespace string `json:"namespace"`
+	Repo      string `json:"repo"`
+}
+
+type GetRepoCatalogFreshnessRow struct {
 	ID                          int64              `json:"id"`
 	GitlabProjectID             int64              `json:"gitlab_project_id"`
-	PathWithNamespace           string             `json:"path_with_namespace"`
+	Namespace                   string             `json:"namespace"`
+	Repo                        string             `json:"repo"`
 	DefaultBranch               string             `json:"default_branch"`
 	OpenapiForceRescan          bool               `json:"openapi_force_rescan"`
 	ActiveApiCount              int64              `json:"active_api_count"`
@@ -622,13 +630,14 @@ type GetRepoCatalogFreshnessByPathRow struct {
 	SnapshotRevisionProcessedAt pgtype.Timestamptz `json:"snapshot_revision_processed_at"`
 }
 
-func (q *Queries) GetRepoCatalogFreshnessByPath(ctx context.Context, pathWithNamespace string) (GetRepoCatalogFreshnessByPathRow, error) {
-	row := q.db.QueryRow(ctx, getRepoCatalogFreshnessByPath, pathWithNamespace)
-	var i GetRepoCatalogFreshnessByPathRow
+func (q *Queries) GetRepoCatalogFreshness(ctx context.Context, arg GetRepoCatalogFreshnessParams) (GetRepoCatalogFreshnessRow, error) {
+	row := q.db.QueryRow(ctx, getRepoCatalogFreshness, arg.Namespace, arg.Repo)
+	var i GetRepoCatalogFreshnessRow
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
-		&i.PathWithNamespace,
+		&i.Namespace,
+		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
 		&i.ActiveApiCount,
@@ -967,7 +976,8 @@ const listRepoCatalogInventory = `-- name: ListRepoCatalogInventory :many
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.path_with_namespace,
+    repos.namespace,
+    repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
     COALESCE(active_api_counts.active_api_count, 0)::BIGINT AS active_api_count,
@@ -1007,13 +1017,14 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-ORDER BY repos.path_with_namespace ASC
+ORDER BY repos.namespace ASC, repos.repo ASC
 `
 
 type ListRepoCatalogInventoryRow struct {
 	ID                          int64              `json:"id"`
 	GitlabProjectID             int64              `json:"gitlab_project_id"`
-	PathWithNamespace           string             `json:"path_with_namespace"`
+	Namespace                   string             `json:"namespace"`
+	Repo                        string             `json:"repo"`
 	DefaultBranch               string             `json:"default_branch"`
 	OpenapiForceRescan          bool               `json:"openapi_force_rescan"`
 	ActiveApiCount              int64              `json:"active_api_count"`
@@ -1042,7 +1053,8 @@ func (q *Queries) ListRepoCatalogInventory(ctx context.Context) ([]ListRepoCatal
 		if err := rows.Scan(
 			&i.ID,
 			&i.GitlabProjectID,
-			&i.PathWithNamespace,
+			&i.Namespace,
+			&i.Repo,
 			&i.DefaultBranch,
 			&i.OpenapiForceRescan,
 			&i.ActiveApiCount,

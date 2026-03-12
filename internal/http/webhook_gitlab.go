@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store"
 	"github.com/iw2rmb/shiva/internal/textutil"
 	"go.opentelemetry.io/otel/attribute"
@@ -150,16 +151,25 @@ func (s *Server) handleGitLabWebhook(c *fiber.Ctx) (handlerErr error) {
 		parentSha = ""
 	}
 
+	repoIdentity, err := repoid.ParsePath(payload.Project.PathWithNamespace)
+	if err != nil {
+		statusCode = fiber.StatusBadRequest
+		return c.Status(statusCode).JSON(fiber.Map{
+			"error": "project.path_with_namespace must be <namespace>/<repo>",
+		})
+	}
+
 	result, err := s.gitlabIngestor.PersistGitLabWebhook(ctx, store.GitLabIngestInput{
-		GitLabProjectID:   payload.Project.ID,
-		PathWithNamespace: payload.Project.PathWithNamespace,
-		DefaultBranch:     payload.Project.DefaultBranch,
-		Sha:               sha,
-		Branch:            branch,
-		ParentSha:         parentSha,
-		EventType:         eventType,
-		DeliveryID:        deliveryID,
-		PayloadJSON:       body,
+		GitLabProjectID: payload.Project.ID,
+		Namespace:       repoIdentity.Namespace,
+		Repo:            repoIdentity.Repo,
+		DefaultBranch:   payload.Project.DefaultBranch,
+		Sha:             sha,
+		Branch:          branch,
+		ParentSha:       parentSha,
+		EventType:       eventType,
+		DeliveryID:      deliveryID,
+		PayloadJSON:     body,
 	})
 	if err != nil {
 		span.RecordError(err)

@@ -24,30 +24,39 @@ func (q *Queries) ClearRepoForceRescan(ctx context.Context, repoID int64) error 
 const createRepo = `-- name: CreateRepo :one
 INSERT INTO repos (
     gitlab_project_id,
-    path_with_namespace,
+    namespace,
+    repo,
     default_branch
 )
 VALUES (
     $1,
     $2,
-    $3
+    $3,
+    $4
 )
-RETURNING id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+RETURNING id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 `
 
 type CreateRepoParams struct {
-	GitlabProjectID   int64  `json:"gitlab_project_id"`
-	PathWithNamespace string `json:"path_with_namespace"`
-	DefaultBranch     string `json:"default_branch"`
+	GitlabProjectID int64  `json:"gitlab_project_id"`
+	Namespace       string `json:"namespace"`
+	Repo            string `json:"repo"`
+	DefaultBranch   string `json:"default_branch"`
 }
 
 func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Repo, error) {
-	row := q.db.QueryRow(ctx, createRepo, arg.GitlabProjectID, arg.PathWithNamespace, arg.DefaultBranch)
+	row := q.db.QueryRow(ctx, createRepo,
+		arg.GitlabProjectID,
+		arg.Namespace,
+		arg.Repo,
+		arg.DefaultBranch,
+	)
 	var i Repo
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
-		&i.PathWithNamespace,
+		&i.Namespace,
+		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
 		&i.CreatedAt,
@@ -82,7 +91,7 @@ func (q *Queries) GetRepoBootstrapState(ctx context.Context, repoID int64) (GetR
 }
 
 const getRepoByID = `-- name: GetRepoByID :one
-SELECT id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
 WHERE id = $1
 `
@@ -93,7 +102,8 @@ func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repo, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
-		&i.PathWithNamespace,
+		&i.Namespace,
+		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
 		&i.CreatedAt,
@@ -102,19 +112,26 @@ func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repo, error) {
 	return i, err
 }
 
-const getRepoByPath = `-- name: GetRepoByPath :one
-SELECT id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+const getRepoByNamespaceAndRepo = `-- name: GetRepoByNamespaceAndRepo :one
+SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
-WHERE path_with_namespace = $1
+WHERE namespace = $1
+  AND repo = $2
 `
 
-func (q *Queries) GetRepoByPath(ctx context.Context, pathWithNamespace string) (Repo, error) {
-	row := q.db.QueryRow(ctx, getRepoByPath, pathWithNamespace)
+type GetRepoByNamespaceAndRepoParams struct {
+	Namespace string `json:"namespace"`
+	Repo      string `json:"repo"`
+}
+
+func (q *Queries) GetRepoByNamespaceAndRepo(ctx context.Context, arg GetRepoByNamespaceAndRepoParams) (Repo, error) {
+	row := q.db.QueryRow(ctx, getRepoByNamespaceAndRepo, arg.Namespace, arg.Repo)
 	var i Repo
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
-		&i.PathWithNamespace,
+		&i.Namespace,
+		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
 		&i.CreatedAt,
@@ -124,7 +141,7 @@ func (q *Queries) GetRepoByPath(ctx context.Context, pathWithNamespace string) (
 }
 
 const getRepoByProjectID = `-- name: GetRepoByProjectID :one
-SELECT id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
 WHERE gitlab_project_id = $1
 `
@@ -135,7 +152,8 @@ func (q *Queries) GetRepoByProjectID(ctx context.Context, gitlabProjectID int64)
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
-		&i.PathWithNamespace,
+		&i.Namespace,
+		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
 		&i.CreatedAt,
@@ -146,26 +164,34 @@ func (q *Queries) GetRepoByProjectID(ctx context.Context, gitlabProjectID int64)
 
 const updateRepoMetadata = `-- name: UpdateRepoMetadata :one
 UPDATE repos
-SET path_with_namespace = $1,
-    default_branch = $2,
+SET namespace = $1,
+    repo = $2,
+    default_branch = $3,
     updated_at = NOW()
-WHERE id = $3
-RETURNING id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+WHERE id = $4
+RETURNING id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 `
 
 type UpdateRepoMetadataParams struct {
-	PathWithNamespace string `json:"path_with_namespace"`
-	DefaultBranch     string `json:"default_branch"`
-	ID                int64  `json:"id"`
+	Namespace     string `json:"namespace"`
+	Repo          string `json:"repo"`
+	DefaultBranch string `json:"default_branch"`
+	ID            int64  `json:"id"`
 }
 
 func (q *Queries) UpdateRepoMetadata(ctx context.Context, arg UpdateRepoMetadataParams) (Repo, error) {
-	row := q.db.QueryRow(ctx, updateRepoMetadata, arg.PathWithNamespace, arg.DefaultBranch, arg.ID)
+	row := q.db.QueryRow(ctx, updateRepoMetadata,
+		arg.Namespace,
+		arg.Repo,
+		arg.DefaultBranch,
+		arg.ID,
+	)
 	var i Repo
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
-		&i.PathWithNamespace,
+		&i.Namespace,
+		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
 		&i.CreatedAt,

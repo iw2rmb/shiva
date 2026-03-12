@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/iw2rmb/shiva/internal/cli/request"
+	"github.com/iw2rmb/shiva/internal/repoid"
 )
 
 type Config struct {
@@ -55,8 +56,11 @@ func New(cfg Config) (*Client, error) {
 }
 
 func (c *Client) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {
+	if strings.TrimSpace(selector.Namespace) == "" {
+		return nil, fmt.Errorf("namespace must not be empty")
+	}
 	if strings.TrimSpace(selector.Repo) == "" {
-		return nil, fmt.Errorf("repo path must not be empty")
+		return nil, fmt.Errorf("repo must not be empty")
 	}
 	if format != SpecFormatJSON && format != SpecFormatYAML {
 		return nil, fmt.Errorf("unsupported spec format %q", format)
@@ -69,8 +73,11 @@ func (c *Client) GetSpec(ctx context.Context, selector request.Envelope, format 
 }
 
 func (c *Client) GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	if strings.TrimSpace(selector.Namespace) == "" {
+		return nil, fmt.Errorf("namespace must not be empty")
+	}
 	if strings.TrimSpace(selector.Repo) == "" {
-		return nil, fmt.Errorf("repo path must not be empty")
+		return nil, fmt.Errorf("repo must not be empty")
 	}
 
 	query := snapshotQuery(selector)
@@ -89,13 +96,14 @@ func (c *Client) ListRepos(ctx context.Context) ([]byte, error) {
 }
 
 func (c *Client) GetCatalogStatus(ctx context.Context, repo string) ([]byte, error) {
-	repo = strings.TrimSpace(repo)
-	if repo == "" {
-		return nil, fmt.Errorf("repo path must not be empty")
+	identity, err := repoid.ParsePath(repo)
+	if err != nil {
+		return nil, fmt.Errorf("repo path must be <namespace>/<repo>")
 	}
 
 	query := url.Values{}
-	query.Set("repo", repo)
+	query.Set("namespace", identity.Namespace)
+	query.Set("repo", identity.Repo)
 	return c.get(ctx, "/v1/catalog/status?"+query.Encode())
 }
 
@@ -115,6 +123,7 @@ func (c *Client) Health(ctx context.Context) ([]byte, error) {
 
 func snapshotQuery(selector request.Envelope) url.Values {
 	query := url.Values{}
+	query.Set("namespace", selector.Namespace)
 	query.Set("repo", selector.Repo)
 	if strings.TrimSpace(selector.API) != "" {
 		query.Set("api", selector.API)

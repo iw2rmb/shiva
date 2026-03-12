@@ -1,38 +1,42 @@
 -- name: CreateRepo :one
 INSERT INTO repos (
     gitlab_project_id,
-    path_with_namespace,
+    namespace,
+    repo,
     default_branch
 )
 VALUES (
     sqlc.arg(gitlab_project_id),
-    sqlc.arg(path_with_namespace),
+    sqlc.arg(namespace),
+    sqlc.arg(repo),
     sqlc.arg(default_branch)
 )
-RETURNING id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at;
+RETURNING id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at;
 
--- name: GetRepoByPath :one
-SELECT id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+-- name: GetRepoByNamespaceAndRepo :one
+SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
-WHERE path_with_namespace = sqlc.arg(path_with_namespace);
+WHERE namespace = sqlc.arg(namespace)
+  AND repo = sqlc.arg(repo);
 
 -- name: GetRepoByProjectID :one
-SELECT id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
 WHERE gitlab_project_id = sqlc.arg(gitlab_project_id);
 
 -- name: GetRepoByID :one
-SELECT id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
 FROM repos
 WHERE id = sqlc.arg(id);
 
 -- name: UpdateRepoMetadata :one
 UPDATE repos
-SET path_with_namespace = sqlc.arg(path_with_namespace),
+SET namespace = sqlc.arg(namespace),
+    repo = sqlc.arg(repo),
     default_branch = sqlc.arg(default_branch),
     updated_at = NOW()
 WHERE id = sqlc.arg(id)
-RETURNING id, gitlab_project_id, path_with_namespace, default_branch, openapi_force_rescan, created_at, updated_at;
+RETURNING id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at;
 
 -- name: GetRepoBootstrapState :one
 SELECT

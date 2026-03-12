@@ -7,13 +7,14 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 CREATE TABLE IF NOT EXISTS repos (
     id BIGSERIAL PRIMARY KEY,
     gitlab_project_id BIGINT NOT NULL,
-    path_with_namespace TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    repo TEXT NOT NULL,
     default_branch TEXT NOT NULL,
     openapi_force_rescan BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (gitlab_project_id),
-    UNIQUE (path_with_namespace)
+    UNIQUE (namespace, repo)
 );
 
 CREATE TABLE IF NOT EXISTS startup_index_state (

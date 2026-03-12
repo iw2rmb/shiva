@@ -91,7 +91,7 @@ type repoCatalogInventoryQueries interface {
 }
 
 type repoCatalogFreshnessQueries interface {
-	GetRepoCatalogFreshnessByPath(ctx context.Context, pathWithNamespace string) (sqlc.GetRepoCatalogFreshnessByPathRow, error)
+	GetRepoCatalogFreshness(ctx context.Context, arg sqlc.GetRepoCatalogFreshnessParams) (sqlc.GetRepoCatalogFreshnessRow, error)
 }
 
 type apiSnapshotInventoryQueries interface {
@@ -175,30 +175,38 @@ func listRepoCatalogInventory(ctx context.Context, queries repoCatalogInventoryQ
 	return items, nil
 }
 
-func (s *Store) GetRepoCatalogFreshnessByPath(ctx context.Context, repoPath string) (RepoCatalogFreshness, error) {
+func (s *Store) GetRepoCatalogFreshness(ctx context.Context, namespace string, repo string) (RepoCatalogFreshness, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return RepoCatalogFreshness{}, ErrStoreNotConfigured
 	}
 
-	repoPath = strings.TrimSpace(repoPath)
-	if repoPath == "" {
-		return RepoCatalogFreshness{}, errors.New("repo path must not be empty")
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return RepoCatalogFreshness{}, errors.New("namespace must not be empty")
+	}
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return RepoCatalogFreshness{}, errors.New("repo must not be empty")
 	}
 
-	return getRepoCatalogFreshnessByPath(ctx, sqlc.New(s.pool), repoPath)
+	return getRepoCatalogFreshness(ctx, sqlc.New(s.pool), namespace, repo)
 }
 
-func getRepoCatalogFreshnessByPath(
+func getRepoCatalogFreshness(
 	ctx context.Context,
 	queries repoCatalogFreshnessQueries,
-	repoPath string,
+	namespace string,
+	repo string,
 ) (RepoCatalogFreshness, error) {
-	row, err := queries.GetRepoCatalogFreshnessByPath(ctx, repoPath)
+	row, err := queries.GetRepoCatalogFreshness(ctx, sqlc.GetRepoCatalogFreshnessParams{
+		Namespace: namespace,
+		Repo:      repo,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return RepoCatalogFreshness{}, fmt.Errorf("%w: path=%s", ErrRepoNotFound, repoPath)
+			return RepoCatalogFreshness{}, fmt.Errorf("%w: namespace=%s repo=%s", ErrRepoNotFound, namespace, repo)
 		}
-		return RepoCatalogFreshness{}, fmt.Errorf("get repo catalog freshness for %q: %w", repoPath, err)
+		return RepoCatalogFreshness{}, fmt.Errorf("get repo catalog freshness for %s/%s: %w", namespace, repo, err)
 	}
 
 	return mapRepoCatalogFreshnessRow(row), nil
@@ -624,10 +632,11 @@ func filterAPISnapshotsWithResolvedSpec(items []APISnapshot) []APISnapshot {
 func mapRepoCatalogInventoryRow(row sqlc.ListRepoCatalogInventoryRow) RepoCatalogEntry {
 	return RepoCatalogEntry{
 		Repo: Repo{
-			ID:                row.ID,
-			GitLabProjectID:   row.GitlabProjectID,
-			PathWithNamespace: row.PathWithNamespace,
-			DefaultBranch:     row.DefaultBranch,
+			ID:              row.ID,
+			GitLabProjectID: row.GitlabProjectID,
+			Namespace:       row.Namespace,
+			Repo:            row.Repo,
+			DefaultBranch:   row.DefaultBranch,
 		},
 		OpenAPIForceRescan: row.OpenapiForceRescan,
 		ActiveAPICount:     row.ActiveApiCount,
@@ -636,13 +645,14 @@ func mapRepoCatalogInventoryRow(row sqlc.ListRepoCatalogInventoryRow) RepoCatalo
 	}
 }
 
-func mapRepoCatalogFreshnessRow(row sqlc.GetRepoCatalogFreshnessByPathRow) RepoCatalogEntry {
+func mapRepoCatalogFreshnessRow(row sqlc.GetRepoCatalogFreshnessRow) RepoCatalogEntry {
 	return RepoCatalogEntry{
 		Repo: Repo{
-			ID:                row.ID,
-			GitLabProjectID:   row.GitlabProjectID,
-			PathWithNamespace: row.PathWithNamespace,
-			DefaultBranch:     row.DefaultBranch,
+			ID:              row.ID,
+			GitLabProjectID: row.GitlabProjectID,
+			Namespace:       row.Namespace,
+			Repo:            row.Repo,
+			DefaultBranch:   row.DefaultBranch,
 		},
 		OpenAPIForceRescan: row.OpenapiForceRescan,
 		ActiveAPICount:     row.ActiveApiCount,

@@ -22,7 +22,7 @@ func TestQueryEndpoints_GetSpec_ResolvesQueryAndWritesRequestedFormat(t *testing
 	readStore := &fakeQueryReadStore{
 		resolveSpecSnapshotsResult: store.ResolvedSpecSnapshots{
 			Snapshot: store.ResolvedReadSnapshot{
-				Repo:     store.Repo{ID: 77, PathWithNamespace: "acme/platform"},
+				Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
 				Revision: store.Revision{ID: 42},
 			},
 			Candidates: []store.APISnapshot{
@@ -44,7 +44,7 @@ func TestQueryEndpoints_GetSpec_ResolvesQueryAndWritesRequestedFormat(t *testing
 
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/v1/spec?repo=acme%2Fplatform&api=apis%2Fpets%2Fopenapi.yaml&revision_id=42&format=yaml",
+		"/v1/spec?namespace=acme&repo=platform&api=apis%2Fpets%2Fopenapi.yaml&revision_id=42&format=yaml",
 		nil,
 	)
 	resp, err := server.App().Test(req, -1)
@@ -59,7 +59,8 @@ func TestQueryEndpoints_GetSpec_ResolvesQueryAndWritesRequestedFormat(t *testing
 	}
 	if !reflect.DeepEqual(readStore.resolveSpecSnapshotsInputs, []store.ResolveReadSnapshotInput{
 		{
-			RepoPath:   "acme/platform",
+			Namespace:  "acme",
+			Repo:       "platform",
 			APIPath:    "apis/pets/openapi.yaml",
 			RevisionID: 42,
 		},
@@ -84,7 +85,7 @@ func TestQueryEndpoints_GetSpec_ETagShortCircuits(t *testing.T) {
 	readStore := &fakeQueryReadStore{
 		resolveSpecSnapshotsResult: store.ResolvedSpecSnapshots{
 			Snapshot: store.ResolvedReadSnapshot{
-				Repo:     store.Repo{ID: 77, PathWithNamespace: "acme/platform"},
+				Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
 				Revision: store.Revision{ID: 42},
 			},
 			Candidates: []store.APISnapshot{
@@ -104,7 +105,7 @@ func TestQueryEndpoints_GetSpec_ETagShortCircuits(t *testing.T) {
 	}
 	server := newQueryTestServer(readStore)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/spec?repo=acme%2Fplatform", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/spec?namespace=acme&repo=platform", nil)
 	req.Header.Set("If-None-Match", "\"etag-501\"")
 
 	resp, err := server.App().Test(req, -1)
@@ -124,7 +125,7 @@ func TestQueryEndpoints_GetSpec_AmbiguousWithoutAPI(t *testing.T) {
 	readStore := &fakeQueryReadStore{
 		resolveSpecSnapshotsResult: store.ResolvedSpecSnapshots{
 			Snapshot: store.ResolvedReadSnapshot{
-				Repo:     store.Repo{ID: 77, PathWithNamespace: "acme/platform"},
+				Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
 				Revision: store.Revision{ID: 42},
 			},
 			Candidates: []store.APISnapshot{
@@ -135,7 +136,7 @@ func TestQueryEndpoints_GetSpec_AmbiguousWithoutAPI(t *testing.T) {
 	}
 	server := newQueryTestServer(readStore)
 
-	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/spec?repo=acme%2Fplatform", nil), -1)
+	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/spec?namespace=acme&repo=platform", nil), -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestQueryEndpoints_GetOperation_UsesOperationIDAndMethodPathSelectors(t *te
 		readStore := &fakeQueryReadStore{
 			resolveOperationByIDResult: store.ResolvedOperationCandidates{
 				Snapshot: store.ResolvedReadSnapshot{
-					Repo: store.Repo{PathWithNamespace: "acme/platform"},
+					Repo: store.Repo{Namespace: "acme", Repo: "platform"},
 				},
 				Candidates: []store.OperationSnapshot{
 					{
@@ -182,7 +183,7 @@ func TestQueryEndpoints_GetOperation_UsesOperationIDAndMethodPathSelectors(t *te
 		server := newQueryTestServer(readStore)
 
 		resp, err := server.App().Test(
-			httptest.NewRequest(http.MethodGet, "/v1/operation?repo=acme%2Fplatform&sha=deadbeef&operation_id=listPets", nil),
+			httptest.NewRequest(http.MethodGet, "/v1/operation?namespace=acme&repo=platform&sha=deadbeef&operation_id=listPets", nil),
 			-1,
 		)
 		if err != nil {
@@ -197,7 +198,7 @@ func TestQueryEndpoints_GetOperation_UsesOperationIDAndMethodPathSelectors(t *te
 		if !reflect.DeepEqual(readStore.resolveOperationByIDInputs, []store.ResolveOperationByIDInput{
 			{
 				ResolveReadSnapshotInput: store.ResolveReadSnapshotInput{
-					RepoPath: "acme/platform",
+					Namespace: "acme", Repo: "platform",
 					SHA:      "deadbeef",
 				},
 				OperationID: "listPets",
@@ -217,7 +218,7 @@ func TestQueryEndpoints_GetOperation_UsesOperationIDAndMethodPathSelectors(t *te
 		readStore := &fakeQueryReadStore{
 			resolveOperationByMethodPathResult: store.ResolvedOperationCandidates{
 				Snapshot: store.ResolvedReadSnapshot{
-					Repo: store.Repo{PathWithNamespace: "acme/platform"},
+					Repo: store.Repo{Namespace: "acme", Repo: "platform"},
 				},
 				Candidates: []store.OperationSnapshot{
 					{
@@ -233,7 +234,7 @@ func TestQueryEndpoints_GetOperation_UsesOperationIDAndMethodPathSelectors(t *te
 		server := newQueryTestServer(readStore)
 
 		resp, err := server.App().Test(
-			httptest.NewRequest(http.MethodGet, "/v1/operation?repo=acme%2Fplatform&method=PATCH&path=pets%2F%7Bid%7D", nil),
+			httptest.NewRequest(http.MethodGet, "/v1/operation?namespace=acme&repo=platform&method=PATCH&path=pets%2F%7Bid%7D", nil),
 			-1,
 		)
 		if err != nil {
@@ -247,7 +248,7 @@ func TestQueryEndpoints_GetOperation_UsesOperationIDAndMethodPathSelectors(t *te
 		if !reflect.DeepEqual(readStore.resolveOperationByMethodPathInputs, []store.ResolveOperationByMethodPathInput{
 			{
 				ResolveReadSnapshotInput: store.ResolveReadSnapshotInput{
-					RepoPath: "acme/platform",
+					Namespace: "acme", Repo: "platform",
 				},
 				Method: "patch",
 				Path:   "/pets/{id}",
@@ -264,7 +265,7 @@ func TestQueryEndpoints_GetOperation_RejectsInvalidSelectorCombination(t *testin
 	server := newQueryTestServer(&fakeQueryReadStore{})
 
 	resp, err := server.App().Test(
-		httptest.NewRequest(http.MethodGet, "/v1/operation?repo=acme%2Fplatform&operation_id=listPets&method=get&path=%2Fpets", nil),
+		httptest.NewRequest(http.MethodGet, "/v1/operation?namespace=acme&repo=platform&operation_id=listPets&method=get&path=%2Fpets", nil),
 		-1,
 	)
 	if err != nil {
@@ -283,7 +284,7 @@ func TestQueryEndpoints_GetOperation_AmbiguityIncludesCandidates(t *testing.T) {
 	readStore := &fakeQueryReadStore{
 		resolveOperationByIDResult: store.ResolvedOperationCandidates{
 			Snapshot: store.ResolvedReadSnapshot{
-				Repo: store.Repo{PathWithNamespace: "acme/platform"},
+				Repo: store.Repo{Namespace: "acme", Repo: "platform"},
 			},
 			Candidates: []store.OperationSnapshot{
 				{
@@ -314,7 +315,7 @@ func TestQueryEndpoints_GetOperation_AmbiguityIncludesCandidates(t *testing.T) {
 	server := newQueryTestServer(readStore)
 
 	resp, err := server.App().Test(
-		httptest.NewRequest(http.MethodGet, "/v1/operation?repo=acme%2Fplatform&operation_id=listPets", nil),
+		httptest.NewRequest(http.MethodGet, "/v1/operation?namespace=acme&repo=platform&operation_id=listPets", nil),
 		-1,
 	)
 	if err != nil {
@@ -332,7 +333,7 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 
 	readStore := &fakeQueryReadStore{
 		resolveReadSnapshotResult: store.ResolvedReadSnapshot{
-			Repo:     store.Repo{ID: 77, PathWithNamespace: "acme/platform"},
+			Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
 			Revision: store.Revision{ID: 42},
 		},
 		apiInventoryResult: []store.APISnapshot{
@@ -360,7 +361,7 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 	}
 	server := newQueryTestServer(readStore)
 
-	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/apis?repo=acme%2Fplatform&sha=deadbeef", nil), -1)
+	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/apis?namespace=acme&repo=platform&sha=deadbeef", nil), -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
 	}
@@ -371,7 +372,7 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 	}
 	if !reflect.DeepEqual(readStore.resolveReadSnapshotInputs, []store.ResolveReadSnapshotInput{
 		{
-			RepoPath: "acme/platform",
+			Namespace: "acme", Repo: "platform",
 			SHA:      "deadbeef",
 		},
 	}) {
@@ -389,7 +390,7 @@ func TestQueryEndpoints_ListOperations_ValidatesExplicitAPI(t *testing.T) {
 
 	readStore := &fakeQueryReadStore{
 		resolveReadSnapshotResult: store.ResolvedReadSnapshot{
-			Repo:     store.Repo{ID: 77, PathWithNamespace: "acme/platform"},
+			Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
 			Revision: store.Revision{ID: 42},
 		},
 		apiSnapshotResult: store.APISnapshot{
@@ -417,7 +418,7 @@ func TestQueryEndpoints_ListOperations_ValidatesExplicitAPI(t *testing.T) {
 	server := newQueryTestServer(readStore)
 
 	resp, err := server.App().Test(
-		httptest.NewRequest(http.MethodGet, "/v1/operations?repo=acme%2Fplatform&api=apis%2Fpets%2Fopenapi.yaml", nil),
+		httptest.NewRequest(http.MethodGet, "/v1/operations?namespace=acme&repo=platform&api=apis%2Fpets%2Fopenapi.yaml", nil),
 		-1,
 	)
 	if err != nil {
@@ -460,7 +461,7 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 				Repo: store.Repo{
 					ID:                77,
 					GitLabProjectID:   1001,
-					PathWithNamespace: "acme/platform",
+					Namespace: "acme", Repo: "platform",
 					DefaultBranch:     "main",
 				},
 				OpenAPIForceRescan: true,
@@ -486,7 +487,7 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 			Repo: store.Repo{
 				ID:                77,
 				GitLabProjectID:   1001,
-				PathWithNamespace: "acme/platform",
+				Namespace: "acme", Repo: "platform",
 				DefaultBranch:     "main",
 			},
 			OpenAPIForceRescan: true,
@@ -521,7 +522,7 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 	}
 
 	statusResp, err := server.App().Test(
-		httptest.NewRequest(http.MethodGet, "/v1/catalog/status?repo=acme%2Fplatform", nil),
+		httptest.NewRequest(http.MethodGet, "/v1/catalog/status?namespace=acme&repo=platform", nil),
 		-1,
 	)
 	if err != nil {
@@ -549,7 +550,7 @@ func TestQueryEndpoints_StatusMapping(t *testing.T) {
 		{
 			name:         "invalid query returns 400",
 			store:        &fakeQueryReadStore{},
-			path:         "/v1/spec?repo=acme%2Fplatform&revision_id=1&sha=deadbeef",
+			path:         "/v1/spec?namespace=acme&repo=platform&revision_id=1&sha=deadbeef",
 			expectedCode: http.StatusBadRequest,
 		},
 		{
@@ -559,7 +560,7 @@ func TestQueryEndpoints_StatusMapping(t *testing.T) {
 					Code: store.ReadSnapshotResolutionUnprocessed,
 				},
 			},
-			path:         "/v1/apis?repo=acme%2Fplatform",
+			path:         "/v1/apis?namespace=acme&repo=platform",
 			expectedCode: http.StatusConflict,
 		},
 		{
@@ -799,8 +800,8 @@ func (f *fakeQueryReadStore) ListRepoCatalogInventory(_ context.Context) ([]stor
 	return result, nil
 }
 
-func (f *fakeQueryReadStore) GetRepoCatalogFreshnessByPath(_ context.Context, repoPath string) (store.RepoCatalogFreshness, error) {
-	f.catalogStatusInputs = append(f.catalogStatusInputs, repoPath)
+func (f *fakeQueryReadStore) GetRepoCatalogFreshness(_ context.Context, namespace string, repo string) (store.RepoCatalogFreshness, error) {
+	f.catalogStatusInputs = append(f.catalogStatusInputs, namespace+"/"+repo)
 	if f.catalogStatusErr != nil {
 		return store.RepoCatalogFreshness{}, f.catalogStatusErr
 	}

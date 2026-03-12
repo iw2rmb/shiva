@@ -82,7 +82,8 @@ type IngestEvent struct {
 type Repo struct {
 	ID                 int64              `json:"id"`
 	GitlabProjectID    int64              `json:"gitlab_project_id"`
-	PathWithNamespace  string             `json:"path_with_namespace"`
+	Namespace          string             `json:"namespace"`
+	Repo               string             `json:"repo"`
 	DefaultBranch      string             `json:"default_branch"`
 	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`

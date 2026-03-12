@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
 )
@@ -14,10 +15,15 @@ import (
 var ErrRepoNotFound = errors.New("repo not found")
 
 type Repo struct {
-	ID                int64
-	GitLabProjectID   int64
-	PathWithNamespace string
-	DefaultBranch     string
+	ID              int64
+	GitLabProjectID int64
+	Namespace       string
+	Repo            string
+	DefaultBranch   string
+}
+
+func (r Repo) Path() string {
+	return repoid.Identity{Namespace: r.Namespace, Repo: r.Repo}.Path()
 }
 
 type Revision struct {
@@ -49,10 +55,11 @@ func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
 	}
 
 	return Repo{
-		ID:                repo.ID,
-		GitLabProjectID:   repo.GitlabProjectID,
-		PathWithNamespace: repo.PathWithNamespace,
-		DefaultBranch:     repo.DefaultBranch,
+		ID:              repo.ID,
+		GitLabProjectID: repo.GitlabProjectID,
+		Namespace:       repo.Namespace,
+		Repo:            repo.Repo,
+		DefaultBranch:   repo.DefaultBranch,
 	}, nil
 }
 

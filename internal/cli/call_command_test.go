@@ -49,7 +49,8 @@ func TestRootCommandAppliesCallInputFlags(t *testing.T) {
 
 	expected := request.Envelope{
 		Kind:        request.KindCall,
-		Repo:        "acme/platform",
+		Namespace:   "acme",
+		Repo:        "platform",
 		Target:      "prod",
 		OperationID: "getPet",
 		PathParams:  map[string]string{"id": "42"},
@@ -89,7 +90,7 @@ func TestRootCommandListEmitRequestUsesEmitServiceMethods(t *testing.T) {
 	if service.emitOpsCalls != 1 || service.listOpsCalls != 0 {
 		t.Fatalf("expected emit ops call only, got emit=%d list=%d", service.emitOpsCalls, service.listOpsCalls)
 	}
-	if service.lastListRequest.Repo != "acme/platform" {
+	if service.lastListRequest.Namespace != "acme" || service.lastListRequest.Repo != "platform" {
 		t.Fatalf("expected repo selector to be forwarded, got %+v", service.lastListRequest)
 	}
 }
@@ -107,7 +108,7 @@ func TestRootCommandBatchReadsNDJSONAndAppliesBatchDryRun(t *testing.T) {
 	})
 	command.SetOut(stdout)
 	command.SetErr(&bytes.Buffer{})
-	command.SetIn(strings.NewReader(`{"kind":"call","repo":"acme/platform","target":"prod","operation_id":"getPet"}` + "\n"))
+	command.SetIn(strings.NewReader(`{"kind":"call","namespace":"acme","repo":"platform","target":"prod","operation_id":"getPet"}` + "\n"))
 	command.SetArgs([]string{"batch", "--dry-run"})
 
 	if err := command.ExecuteContext(context.Background()); err != nil {

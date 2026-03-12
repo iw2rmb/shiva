@@ -10,7 +10,7 @@ This document describes current schema layout and SQL code generation workflow.
 
 ## Core Tables
 - `schema_migrations`: startup schema bootstrap record (`version`, `checksum`, `applied_at`).
-- `repos`: repo identity (`gitlab_project_id`, `path_with_namespace`, `default_branch`, `openapi_force_rescan`).
+- `repos`: repo identity (`gitlab_project_id`, `namespace`, `repo`, `default_branch`, `openapi_force_rescan`).
 - `startup_index_state`: singleton startup-index checkpoint (`last_project_id`).
 - `subscriptions`: outbound webhook subscribers and retry policy.
 - `ingest_events`: inbound queue records and canonical repo revision rows (`sha`, `branch`, retry state, terminal processing result).
@@ -47,16 +47,17 @@ This document describes current schema layout and SQL code generation workflow.
 - `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained only as compatibility helpers for store-level callers and tests.
 - They resolve the latest processed API-scoped row for the requested canonical `ingest_events.id` across all APIs in that ingest event, then return that row only when a matching method/path exists.
 - The HTTP read surface no longer uses these helpers; query endpoints resolve through API-scoped snapshot primitives instead.
-- Read resolution identifies repos directly by `repos.path_with_namespace`.
+- Read resolution identifies repos directly by `(repos.namespace, repos.repo)`.
 - No-selector reads resolve against the repo's persisted `default_branch`, not a global branch constant.
 
 ## CLI Snapshot Read Primitives
 - `ResolveReadSnapshot(repo, api?, revision_id|sha|default-branch-latest)`: resolves the canonical repo snapshot used by the query-style CLI read contract.
+  - structured callers provide `namespace` and `repo`; CLI shorthand still parses `<namespace>/<repo>` and normalizes it before transport.
   - `revision_id` and `sha` both anchor to an exact processed repo snapshot, even when `openapi_changed=false`.
   - default-branch reads still resolve through the repo's stored `default_branch` and then pick the latest processed OpenAPI snapshot on that branch.
 - Snapshot-scoped API and operation queries for the CLI walk the selected revision's `parent_sha` ancestry chain; they do not assume that `ingest_events.id` ordering alone defines repo history across branches.
 - `ListRepoCatalogInventory()`: returns repo catalog rows with repo identity, `active_api_count`, default-branch head state, and latest processed OpenAPI snapshot state.
-- `GetRepoCatalogFreshnessByPath(path_with_namespace)`: returns the same freshness metadata for one repo so the CLI can decide whether a cached default-branch catalog slice is stale.
+- `GetRepoCatalogFreshness(namespace, repo)`: returns the same freshness metadata for one repo so the CLI can decide whether a cached default-branch catalog slice is stale.
 - `ListAPISnapshotInventoryByRepoRevision(repo_id, snapshot_revision_id)`: returns API inventory at a repo snapshot with optional resolved API revision metadata, artifact metadata (`etag`, `size_bytes`), and operation counts.
 - `GetAPISnapshotByRepoRevisionAndAPI(repo_id, api, snapshot_revision_id)`: resolves one API row inside a repo snapshot without collapsing “API exists but has no processed snapshot yet” into a lookup error.
 - `ListOperationInventoryByRepoRevision(repo_id, snapshot_revision_id)` and `ListOperationInventoryByRepoRevisionAndAPI(...)`: return operation inventory rows with `api`, `method`, `path`, `operation_id`, `summary`, `deprecated`, and `raw_json`.

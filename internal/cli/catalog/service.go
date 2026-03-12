@@ -183,7 +183,8 @@ func (s *Service) prepareFloating(
 	options RefreshOptions,
 	needOperations bool,
 ) (PreparedSnapshot, error) {
-	statusRecord, foundStatus, err := s.store.LoadStatus(profile, selector.Repo)
+	repoKey := selector.RepoPath()
+	statusRecord, foundStatus, err := s.store.LoadStatus(profile, repoKey)
 	if err != nil {
 		return PreparedSnapshot{}, err
 	}
@@ -203,7 +204,7 @@ func (s *Service) prepareFloating(
 	}
 
 	if options.Refresh || statusStale {
-		payload, err := client.GetCatalogStatus(ctx, selector.Repo)
+		payload, err := client.GetCatalogStatus(ctx, repoKey)
 		if err != nil {
 			if !foundStatus || options.Refresh {
 				return PreparedSnapshot{}, err
@@ -221,13 +222,13 @@ func (s *Service) prepareFloating(
 		if err != nil {
 			return PreparedSnapshot{}, err
 		}
-		if err := s.store.SaveStatus(profile, selector.Repo, payload, fingerprint); err != nil {
+		if err := s.store.SaveStatus(profile, repoKey, payload, fingerprint); err != nil {
 			return PreparedSnapshot{}, err
 		}
 		statusRecord, foundStatus = Record{
 			Kind:        kindStatus,
 			Profile:     profile,
-			Repo:        selector.Repo,
+			Repo:        repoKey,
 			Fingerprint: fingerprint,
 			CheckedAt:   timePtr(s.now().UTC()),
 			RefreshedAt: s.now().UTC(),
@@ -236,7 +237,7 @@ func (s *Service) prepareFloating(
 	}
 
 	scope := ScopeFromSelector(selector.RevisionID, selector.SHA)
-	apisRecord, apisFound, err := s.store.LoadAPIs(profile, selector.Repo, scope)
+	apisRecord, apisFound, err := s.store.LoadAPIs(profile, repoKey, scope)
 	if err != nil {
 		return PreparedSnapshot{}, err
 	}
@@ -247,13 +248,13 @@ func (s *Service) prepareFloating(
 			if !apisFound || options.Refresh {
 				return PreparedSnapshot{}, err
 			}
-		} else if err := s.store.SaveAPIs(profile, selector.Repo, scope, payload, statusRecord.Fingerprint); err != nil {
+		} else if err := s.store.SaveAPIs(profile, repoKey, scope, payload, statusRecord.Fingerprint); err != nil {
 			return PreparedSnapshot{}, err
 		}
 	}
 
 	if needOperations {
-		opsRecord, opsFound, err := s.store.LoadOperations(profile, selector.Repo, selector.API, scope)
+		opsRecord, opsFound, err := s.store.LoadOperations(profile, repoKey, selector.API, scope)
 		if err != nil {
 			return PreparedSnapshot{}, err
 		}
@@ -264,14 +265,14 @@ func (s *Service) prepareFloating(
 				if !opsFound || options.Refresh {
 					return PreparedSnapshot{}, err
 				}
-			} else if err := s.store.SaveOperations(profile, selector.Repo, selector.API, scope, payload, statusRecord.Fingerprint); err != nil {
+			} else if err := s.store.SaveOperations(profile, repoKey, selector.API, scope, payload, statusRecord.Fingerprint); err != nil {
 				return PreparedSnapshot{}, err
 			}
 		}
 	}
 
 	if !options.Refresh && foundStatus && statusStale {
-		if err := s.store.TouchStatus(profile, selector.Repo, statusRecord); err != nil {
+		if err := s.store.TouchStatus(profile, repoKey, statusRecord); err != nil {
 			return PreparedSnapshot{}, err
 		}
 	}
@@ -291,12 +292,13 @@ func (s *Service) preparePinned(
 	scope Scope,
 	needOperations bool,
 ) (PreparedSnapshot, error) {
+	repoKey := selector.RepoPath()
 	fingerprint := SnapshotFingerprint{
 		RevisionID: selector.RevisionID,
 		SHA:        strings.TrimSpace(selector.SHA),
 	}
 
-	_, apisFound, err := s.store.LoadAPIs(profile, selector.Repo, scope)
+	_, apisFound, err := s.store.LoadAPIs(profile, repoKey, scope)
 	if err != nil {
 		return PreparedSnapshot{}, err
 	}
@@ -309,13 +311,13 @@ func (s *Service) preparePinned(
 			if !apisFound || options.Refresh {
 				return PreparedSnapshot{}, err
 			}
-		} else if err := s.store.SaveAPIs(profile, selector.Repo, scope, payload, fingerprint); err != nil {
+		} else if err := s.store.SaveAPIs(profile, repoKey, scope, payload, fingerprint); err != nil {
 			return PreparedSnapshot{}, err
 		}
 	}
 
 	if needOperations {
-		_, opsFound, err := s.store.LoadOperations(profile, selector.Repo, selector.API, scope)
+		_, opsFound, err := s.store.LoadOperations(profile, repoKey, selector.API, scope)
 		if err != nil {
 			return PreparedSnapshot{}, err
 		}
@@ -332,7 +334,7 @@ func (s *Service) preparePinned(
 				if !opsFound || options.Refresh {
 					return PreparedSnapshot{}, err
 				}
-			} else if err := s.store.SaveOperations(profile, selector.Repo, selector.API, scope, payload, fingerprint); err != nil {
+			} else if err := s.store.SaveOperations(profile, repoKey, selector.API, scope, payload, fingerprint); err != nil {
 				return PreparedSnapshot{}, err
 			}
 		}
@@ -350,14 +352,15 @@ func (s *Service) ensureCachedSlices(
 	needOperations bool,
 ) error {
 	scope := ScopeFromSelector(selector.RevisionID, selector.SHA)
-	if _, found, err := s.store.LoadAPIs(profile, selector.Repo, scope); err != nil {
+	repoKey := selector.RepoPath()
+	if _, found, err := s.store.LoadAPIs(profile, repoKey, scope); err != nil {
 		return err
 	} else if !found {
 		return fmt.Errorf("offline cache miss: api catalog for repo %q", selector.Repo)
 	}
 
 	if needOperations {
-		if _, found, err := s.store.LoadOperations(profile, selector.Repo, selector.API, scope); err != nil {
+		if _, found, err := s.store.LoadOperations(profile, repoKey, selector.API, scope); err != nil {
 			return err
 		} else if !found {
 			return fmt.Errorf("offline cache miss: operation catalog for repo %q", selector.Repo)

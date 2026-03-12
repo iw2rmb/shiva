@@ -45,7 +45,8 @@ Per event attempt headers:
 - `X-Shiva-Event-ID: sub:<subscription_id>:api:<api_spec_id>:rev:<revision_id>:event:<event_type>`
 
 Outgoing payload fields:
-- `repo`: repository path with namespace.
+- `namespace`: repository namespace path.
+- `repo`: repository slug.
 - `revision_id`: canonical repository revision id that triggered the webhook (`ingest_events.id`).
 - `api`: API root path that changed.
 - `api_revision_id`: API spec revision id that changed.

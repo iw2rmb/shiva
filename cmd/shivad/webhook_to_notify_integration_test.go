@@ -796,7 +796,7 @@ func newIntegrationRevisionStore() *integrationRevisionStore {
 		repo: store.Repo{
 			ID:                44,
 			GitLabProjectID:   42,
-			PathWithNamespace: "acme/platform-api",
+			Namespace: "acme", Repo: "platform-api",
 			DefaultBranch:     "main",
 		},
 		bootstrapState: store.RepoBootstrapState{

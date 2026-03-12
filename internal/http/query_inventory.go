@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/iw2rmb/shiva/internal/repoid"
 )
 
 func (s *Server) handleListAPIs(c *fiber.Ctx) error {
@@ -54,7 +56,7 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 		if !found || !apiSnapshot.HasSnapshot {
 			return s.writeQueryError(
 				c,
-				fmt.Errorf("%w: repo=%q api=%q", errAPISnapshotNotFound, resolved.Repo.PathWithNamespace, snapshotQuery.APIPath),
+				fmt.Errorf("%w: repo=%q api=%q", errAPISnapshotNotFound, resolved.Repo.Path(), snapshotQuery.APIPath),
 			)
 		}
 
@@ -110,7 +112,12 @@ func (s *Server) handleGetCatalogStatus(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	item, err := s.readStore.GetRepoCatalogFreshnessByPath(c.Context(), repoPath)
+	identity, err := repoid.ParsePath(repoPath)
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	item, err := s.readStore.GetRepoCatalogFreshness(c.Context(), identity.Namespace, identity.Repo)
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}

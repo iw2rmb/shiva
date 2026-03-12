@@ -17,7 +17,7 @@ func TestProviderListReposUsesRefreshedValuesWhenCacheIsStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create catalog store: %v", err)
 	}
-	if err := store.SaveRepos("default", []byte(`[{"repo":"cached/repo"}]`)); err != nil {
+	if err := store.SaveRepos("default", []byte(`[{"namespace":"cached","repo":"repo"}]`)); err != nil {
 		t.Fatalf("save cached repos: %v", err)
 	}
 
@@ -39,7 +39,7 @@ func TestProviderListReposUsesRefreshedValuesWhenCacheIsStale(t *testing.T) {
 		NewClient: func(source profile.Source, timeout time.Duration) (inventoryClient, error) {
 			return fakeInventoryClient{
 				listRepos: func(ctx context.Context) ([]byte, error) {
-					return []byte(`[{"repo":"fresh/repo"}]`), nil
+					return []byte(`[{"namespace":"fresh","repo":"repo"}]`), nil
 				},
 			}, nil
 		},
@@ -62,7 +62,7 @@ func TestProviderListReposFallsBackToCachedValuesOnTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create catalog store: %v", err)
 	}
-	if err := store.SaveRepos("default", []byte(`[{"repo":"cached/repo"}]`)); err != nil {
+	if err := store.SaveRepos("default", []byte(`[{"namespace":"cached","repo":"repo"}]`)); err != nil {
 		t.Fatalf("save cached repos: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestProviderListReposFallsBackToCachedValuesOnTimeout(t *testing.T) {
 				listRepos: func(ctx context.Context) ([]byte, error) {
 					select {
 					case <-time.After(200 * time.Millisecond):
-						return []byte(`[{"repo":"fresh/repo"}]`), nil
+						return []byte(`[{"namespace":"fresh","repo":"repo"}]`), nil
 					case <-ctx.Done():
 						return nil, ctx.Err()
 					}

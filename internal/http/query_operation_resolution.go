@@ -9,7 +9,8 @@ import (
 
 func snapshotInputFromEnvelope(envelope request.Envelope) store.ResolveReadSnapshotInput {
 	return store.ResolveReadSnapshotInput{
-		RepoPath:   envelope.Repo,
+		Namespace:  envelope.Namespace,
+		Repo:       envelope.Repo,
 		APIPath:    envelope.API,
 		RevisionID: envelope.RevisionID,
 		SHA:        envelope.SHA,

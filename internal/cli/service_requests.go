@@ -50,6 +50,7 @@ func (s *RuntimeService) EmitRepoRequests(ctx context.Context, options RequestOp
 		}
 		envelopes = append(envelopes, request.Envelope{
 			Kind:       request.KindSpec,
+			Namespace:  row.Namespace,
 			Repo:       row.Repo,
 			RevisionID: row.SnapshotRevision.ID,
 			SHA:        strings.TrimSpace(row.SnapshotRevision.SHA),
@@ -87,7 +88,7 @@ func (s *RuntimeService) EmitAPIRequests(
 		return nil, normalizeServiceError(err)
 	}
 
-	rows, err := s.loadAPIRows(source.Name, normalized.Repo, prepared.Scope)
+	rows, err := s.loadAPIRows(source.Name, normalized.RepoPath(), prepared.Scope)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +100,7 @@ func (s *RuntimeService) EmitAPIRequests(
 		}
 		envelopes = append(envelopes, request.Envelope{
 			Kind:       request.KindSpec,
+			Namespace:  normalized.Namespace,
 			Repo:       normalized.Repo,
 			API:        row.API,
 			RevisionID: chooseRevisionID(row.IngestEventID, prepared.Fingerprint.RevisionID, normalized.RevisionID),
@@ -147,6 +149,7 @@ func (s *RuntimeService) EmitOperationRequests(
 	for _, row := range rows {
 		envelope := request.Envelope{
 			Kind:       request.KindOperation,
+			Namespace:  normalized.Namespace,
 			Repo:       normalized.Repo,
 			API:        row.API,
 			RevisionID: chooseRevisionID(row.IngestEventID, prepared.Fingerprint.RevisionID, normalized.RevisionID),

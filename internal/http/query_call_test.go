@@ -24,7 +24,7 @@ func TestPostCall_NormalizesOperationIDAndMethodPathToSamePlan(t *testing.T) {
 		OperationID: "getPet",
 	}
 	snapshot := store.ResolvedReadSnapshot{
-		Repo:     store.Repo{PathWithNamespace: "acme/platform"},
+		Repo:     store.Repo{Namespace: "acme", Repo: "platform"},
 		Revision: store.Revision{ID: 42, Sha: "deadbeef"},
 	}
 
@@ -38,11 +38,12 @@ func TestPostCall_NormalizesOperationIDAndMethodPathToSamePlan(t *testing.T) {
 			},
 		})
 
-		plan := postCallPlan(t, server, `{"repo":"acme/platform","operation_id":"getPet","path_params":{"id":"42"},"dry_run":true}`)
+		plan := postCallPlan(t, server, `{"namespace":"acme","repo":"platform","operation_id":"getPet","path_params":{"id":"42"},"dry_run":true}`)
 		expected := executor.CallPlan{
 			Request: request.Envelope{
 				Kind:        request.KindCall,
-				Repo:        "acme/platform",
+				Namespace:   "acme",
+				Repo:        "platform",
 				API:         "apis/pets/openapi.yaml",
 				RevisionID:  42,
 				SHA:         "deadbeef",
@@ -74,7 +75,7 @@ func TestPostCall_NormalizesOperationIDAndMethodPathToSamePlan(t *testing.T) {
 			},
 		})
 
-		plan := postCallPlan(t, server, `{"repo":"acme/platform","method":"GET","path":"pets/{id}","path_params":{"id":"42"},"dry_run":true}`)
+		plan := postCallPlan(t, server, `{"namespace":"acme","repo":"platform","method":"GET","path":"pets/{id}","path_params":{"id":"42"},"dry_run":true}`)
 		if plan.Request.Kind != request.KindCall ||
 			plan.Request.OperationID != "getPet" ||
 			plan.Request.Method != "get" ||
@@ -96,7 +97,7 @@ func TestPostCall_AmbiguityIncludesCandidates(t *testing.T) {
 	server := newQueryTestServer(&fakeQueryReadStore{
 		resolveOperationByIDResult: store.ResolvedOperationCandidates{
 			Snapshot: store.ResolvedReadSnapshot{
-				Repo: store.Repo{PathWithNamespace: "acme/platform"},
+				Repo: store.Repo{Namespace: "acme", Repo: "platform"},
 			},
 			Candidates: []store.OperationSnapshot{
 				{
@@ -128,7 +129,7 @@ func TestPostCall_AmbiguityIncludesCandidates(t *testing.T) {
 	resp, err := server.App().Test(httptest.NewRequest(
 		http.MethodPost,
 		"/v1/call",
-		bytes.NewBufferString(`{"repo":"acme/platform","operation_id":"listPets"}`),
+		bytes.NewBufferString(`{"namespace":"acme","repo":"platform","operation_id":"listPets"}`),
 	), -1)
 	if err != nil {
 		t.Fatalf("http test request failed: %v", err)
@@ -145,8 +146,8 @@ func TestPostCall_RejectsInvalidEnvelope(t *testing.T) {
 	t.Parallel()
 
 	testCases := []string{
-		`{"repo":"acme/platform","operation_id":"listPets","method":"get","path":"/pets"}`,
-		`{"repo":"acme/platform","operation_id":"listPets","target":"prod"}`,
+		`{"namespace":"acme","repo":"platform","operation_id":"listPets","method":"get","path":"/pets"}`,
+		`{"namespace":"acme","repo":"platform","operation_id":"listPets","target":"prod"}`,
 	}
 
 	for _, body := range testCases {

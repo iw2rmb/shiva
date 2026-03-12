@@ -80,7 +80,7 @@ func TestCLIContractScenarios(t *testing.T) {
 			name:       "list repos uses catalog endpoint",
 			args:       []string{"ls", "repos", "-o", "json"},
 			wantCode:   0,
-			wantStdout: []string{`"repo":"acme/platform"`, `"active_api_count":1`},
+			wantStdout: []string{`"namespace":"acme","repo":"platform"`, `"active_api_count":1`},
 			wantMinCalls: map[string]int{
 				"GET /v1/repos": 1,
 			},
@@ -89,7 +89,7 @@ func TestCLIContractScenarios(t *testing.T) {
 			name:       "sync refreshes api and operation catalogs",
 			args:       []string{"sync", "acme/platform"},
 			wantCode:   0,
-			wantStdout: []string{`"repo":"acme/platform"`, `"scope":"default-branch-latest"`, `"operation_catalog_count":2`},
+			wantStdout: []string{`"namespace":"acme","repo":"platform"`, `"scope":"default-branch-latest"`, `"operation_catalog_count":2`},
 			wantMinCalls: map[string]int{
 				"GET /v1/repos":          1,
 				"GET /v1/catalog/status": 1,
@@ -101,9 +101,9 @@ func TestCLIContractScenarios(t *testing.T) {
 			name: "batch runs mixed request envelopes",
 			args: []string{"batch"},
 			stdin: strings.Join([]string{
-				`{"kind":"spec","repo":"acme/platform","api":"apis/pets/openapi.yaml","revision_id":42}`,
-				`{"kind":"operation","repo":"acme/platform","operation_id":"getPet","revision_id":42}`,
-				`{"kind":"call","repo":"acme/platform","operation_id":"getPet"}`,
+				`{"kind":"spec","namespace":"acme","repo":"platform","api":"apis/pets/openapi.yaml","revision_id":42}`,
+				`{"kind":"operation","namespace":"acme","repo":"platform","operation_id":"getPet","revision_id":42}`,
+				`{"kind":"call","namespace":"acme","repo":"platform","operation_id":"getPet"}`,
 				"",
 			}, "\n"),
 			wantCode:   0,
@@ -251,7 +251,8 @@ func newCLIContractServer(t *testing.T) *cliContractServer {
 			writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/repos":
 			writeJSON(w, http.StatusOK, []map[string]any{{
-				"repo":             "acme/platform",
+				"namespace":        "acme",
+				"repo":             "platform",
 				"default_branch":   "main",
 				"active_api_count": 1,
 				"snapshot_revision": map[string]any{
@@ -264,12 +265,13 @@ func newCLIContractServer(t *testing.T) *cliContractServer {
 				},
 			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/catalog/status":
-			if got := r.URL.Query().Get("repo"); got != "acme/platform" {
+			if r.URL.Query().Get("namespace") != "acme" || r.URL.Query().Get("repo") != "platform" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unexpected repo query"})
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"repo": "acme/platform",
+				"namespace": "acme",
+				"repo":      "platform",
 				"snapshot_revision": map[string]any{
 					"id":  42,
 					"sha": "deadbeef",

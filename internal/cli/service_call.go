@@ -191,12 +191,12 @@ func (s *RuntimeService) loadOperationInventoryRows(
 	selector request.Envelope,
 	scope catalog.Scope,
 ) ([]clioutput.OperationRow, error) {
-	record, found, err := s.catalogStore.LoadOperations(profileName, selector.Repo, selector.API, scope)
+	record, found, err := s.catalogStore.LoadOperations(profileName, selector.RepoPath(), selector.API, scope)
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
 	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("operation catalog for repo %q is not cached", selector.Repo)}
+		return nil, &NotFoundError{Message: fmt.Sprintf("operation catalog for repo %q is not cached", selector.RepoPath())}
 	}
 
 	var rows []clioutput.OperationRow

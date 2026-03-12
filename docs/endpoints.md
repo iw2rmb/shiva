@@ -38,9 +38,12 @@ Legacy path-segment endpoints were removed:
 - `/v1/routes/...`
 
 ### Shared Query Parameters
+- `namespace`
+  - required on `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, and `/v1/catalog/status`
+  - value is the GitLab namespace path prefix before the final slash
 - `repo`
   - required on `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, and `/v1/catalog/status`
-  - value is the raw GitLab `path_with_namespace`
+  - value is the GitLab project slug
 - `api`
   - optional on `/v1/spec`, `/v1/operation`, and `/v1/operations`
   - value is the raw `api_specs.root_path`
@@ -53,7 +56,7 @@ Legacy path-segment endpoints were removed:
 - invalid query combinations return `400`
 
 ### Snapshot Resolution
-- repo lookup uses `repos.path_with_namespace`
+- repo lookup uses `(repos.namespace, repos.repo)`
 - `revision_id` resolves the exact ingest-event row and rejects repo mismatches
 - `sha` resolves one repo-scoped short SHA prefix
 - no selector resolves the latest processed OpenAPI snapshot on the repo default branch
@@ -65,6 +68,7 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/spec`
 - supported query parameters:
+  - `namespace`
   - `repo`
   - optional `api`
   - optional `revision_id` or `sha`
@@ -76,6 +80,7 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/operation`
 - supported query parameters:
+  - `namespace`
   - `repo`
   - optional `api`
   - optional `revision_id` or `sha`
@@ -93,6 +98,7 @@ Legacy path-segment endpoints were removed:
 - request body is one JSON object using the shared CLI request-envelope shape
 - accepted request fields:
   - `kind`
+  - `namespace`
   - `repo`
   - optional `api`
   - optional `revision_id` or `sha`
@@ -107,7 +113,7 @@ Legacy path-segment endpoints were removed:
   - optional `body`
   - optional `dry_run`
 - input validation matches the query read surface:
-  - `repo` is required
+  - `namespace` and `repo` are required
   - `kind`, when present, must be `call`
   - `target`, when present, must be `shiva`
   - `operation_id` is mutually exclusive with `method` and `path`
@@ -116,7 +122,7 @@ Legacy path-segment endpoints were removed:
 - the handler resolves the target operation through the same snapshot and operation-selection rules used by `GET /v1/operation`
 - response body is a normalized call plan:
   - `request`
-    - explicit `repo`, resolved `api`, resolved `revision_id`, resolved `sha`, resolved `method`, resolved `path`, chosen `target`, optional resolved `operation_id`, and request-input fields
+    - explicit `namespace`, explicit `repo`, resolved `api`, resolved `revision_id`, resolved `sha`, resolved `method`, resolved `path`, chosen `target`, optional resolved `operation_id`, and request-input fields
   - `dispatch`
     - `mode`
     - `dry_run`
@@ -127,6 +133,7 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/apis`
 - supported query parameters:
+  - `namespace`
   - `repo`
   - optional `revision_id` or `sha`
 - response body is an array of API snapshot rows
@@ -145,6 +152,7 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/operations`
 - supported query parameters:
+  - `namespace`
   - `repo`
   - optional `api`
   - optional `revision_id` or `sha`
@@ -168,6 +176,7 @@ Legacy path-segment endpoints were removed:
 - takes no repo/snapshot selector parameters
 - response body is an array of repo catalog rows
 - rows include:
+  - `namespace`
   - `repo`
   - `gitlab_project_id`
   - `default_branch`
@@ -178,6 +187,7 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/catalog/status`
 - supported query parameters:
+  - `namespace`
   - `repo`
 - returns the current default-branch freshness row for that repo
 - payload shape matches one `/v1/repos` row

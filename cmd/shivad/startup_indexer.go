@@ -10,6 +10,7 @@ import (
 
 	"github.com/iw2rmb/shiva/internal/config"
 	"github.com/iw2rmb/shiva/internal/gitlab"
+	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store"
 )
 
@@ -177,16 +178,22 @@ func enqueueStartupIndexing(
 				return fmt.Errorf("marshal startup indexing payload for project %d (%s): %w", projectID, pathWithNamespace, err)
 			}
 
+			repoIdentity, err := repoid.ParsePath(pathWithNamespace)
+			if err != nil {
+				return fmt.Errorf("parse repo path for project %d (%s): %w", projectID, pathWithNamespace, err)
+			}
+
 			result, err := storeInstance.PersistGitLabWebhook(ctx, store.GitLabIngestInput{
-				GitLabProjectID:   projectID,
-				PathWithNamespace: pathWithNamespace,
-				DefaultBranch:     defaultBranch,
-				Sha:               sha,
-				Branch:            defaultBranch,
-				ParentSha:         "",
-				EventType:         startupIndexingEventType,
-				DeliveryID:        startupIndexingDeliveryID(projectID, sha),
-				PayloadJSON:       payloadJSON,
+				GitLabProjectID: projectID,
+				Namespace:       repoIdentity.Namespace,
+				Repo:            repoIdentity.Repo,
+				DefaultBranch:   defaultBranch,
+				Sha:             sha,
+				Branch:          defaultBranch,
+				ParentSha:       "",
+				EventType:       startupIndexingEventType,
+				DeliveryID:      startupIndexingDeliveryID(projectID, sha),
+				PayloadJSON:     payloadJSON,
 			})
 			if err != nil {
 				return fmt.Errorf("enqueue startup indexing event for project %d (%s): %w", projectID, pathWithNamespace, err)

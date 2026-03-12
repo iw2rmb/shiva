@@ -1214,7 +1214,8 @@ func (p revisionProcessor) emitOutboundNotifications(
 
 		if err := p.notifier.NotifyRevision(ctx, notify.RevisionNotification{
 			RepoID:            repo.ID,
-			RepoPath:          repo.PathWithNamespace,
+			Namespace:         repo.Namespace,
+			Repo:              repo.Repo,
 			APISpecID:         item.apiSpec.ID,
 			API:               item.apiSpec.RootPath,
 			APISpecRevisionID: item.toAPISpecRevisionID,

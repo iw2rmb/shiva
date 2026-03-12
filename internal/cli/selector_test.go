@@ -20,14 +20,16 @@ func TestParsePackedSelector(t *testing.T) {
 			name:  "repo only",
 			input: "allure/allure-deployment",
 			expected: PackedSelector{
-				RepoPath: "allure/allure-deployment",
+				Namespace: "allure",
+				Repo:      "allure-deployment",
 			},
 		},
 		{
 			name:  "repo and operation",
 			input: "allure/allure-deployment#findAll_42",
 			expected: PackedSelector{
-				RepoPath:    "allure/allure-deployment",
+				Namespace:   "allure",
+				Repo:        "allure-deployment",
 				OperationID: "findAll_42",
 			},
 		},
@@ -35,7 +37,8 @@ func TestParsePackedSelector(t *testing.T) {
 			name:  "repo target and operation",
 			input: "allure/allure-deployment@shiva#getUsers",
 			expected: PackedSelector{
-				RepoPath:    "allure/allure-deployment",
+				Namespace:   "allure",
+				Repo:        "allure-deployment",
 				Target:      "shiva",
 				OperationID: "getUsers",
 			},
@@ -103,8 +106,9 @@ func TestParseShorthandInvocation(t *testing.T) {
 			args: []string{"allure/allure-deployment"},
 			expected: ShorthandInvocation{
 				Envelope: request.Envelope{
-					Kind: request.KindSpec,
-					Repo: "allure/allure-deployment",
+					Kind:      request.KindSpec,
+					Namespace: "allure",
+					Repo:      "allure-deployment",
 				},
 			},
 		},
@@ -118,7 +122,8 @@ func TestParseShorthandInvocation(t *testing.T) {
 			expected: ShorthandInvocation{
 				Envelope: request.Envelope{
 					Kind:        request.KindOperation,
-					Repo:        "allure/allure-deployment",
+					Namespace:   "allure",
+					Repo:        "allure-deployment",
 					API:         "service-catalog/allure-api.yaml",
 					RevisionID:  146,
 					OperationID: "findAll_42",
@@ -130,10 +135,11 @@ func TestParseShorthandInvocation(t *testing.T) {
 			args: []string{"allure/allure-deployment", "PATCH", "/accessgroup/:id/user"},
 			expected: ShorthandInvocation{
 				Envelope: request.Envelope{
-					Kind:   request.KindOperation,
-					Repo:   "allure/allure-deployment",
-					Method: "patch",
-					Path:   "/accessgroup/{id}/user",
+					Kind:      request.KindOperation,
+					Namespace: "allure",
+					Repo:      "allure-deployment",
+					Method:    "patch",
+					Path:      "/accessgroup/{id}/user",
 				},
 			},
 		},
@@ -146,7 +152,8 @@ func TestParseShorthandInvocation(t *testing.T) {
 			expected: ShorthandInvocation{
 				Envelope: request.Envelope{
 					Kind:        request.KindCall,
-					Repo:        "allure/allure-deployment",
+					Namespace:   "allure",
+					Repo:        "allure-deployment",
 					Target:      "shiva",
 					OperationID: "getUsers",
 					DryRun:      true,
@@ -161,11 +168,12 @@ func TestParseShorthandInvocation(t *testing.T) {
 			},
 			expected: ShorthandInvocation{
 				Envelope: request.Envelope{
-					Kind:   request.KindCall,
-					Repo:   "allure/allure-deployment",
-					Target: "shiva",
-					Method: "get",
-					Path:   "/pets/{id}",
+					Kind:      request.KindCall,
+					Namespace: "allure",
+					Repo:      "allure-deployment",
+					Target:    "shiva",
+					Method:    "get",
+					Path:      "/pets/{id}",
 				},
 			},
 		},

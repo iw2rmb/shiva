@@ -22,7 +22,8 @@ This document describes the shipped `shiva` CLI surface, selector grammar, catal
 `completion`, `health`, `ls`, `sync`, and `batch` are all implemented.
 
 ## Selector Grammar
-- `repo-ref` uses the raw GitLab `path_with_namespace`, for example `allure/allure-deployment`.
+- `repo-ref` keeps the `<namespace>/<repo>` shorthand, for example `allure/allure-deployment`.
+- Structured request envelopes split that identity into `namespace` and `repo`.
 - Packed selectors support:
   - `<repo-ref>`
   - `<repo-ref>#<operationId>`
@@ -61,6 +62,7 @@ Rules:
 - `shiva health` uses `GET /healthz`.
 - The CLI no longer resolves `operationId` by downloading a full spec and scanning it client-side.
 - Packed and positional shorthand are normalized into the shared request-envelope model before execution.
+- The transport and cache layers key repos by the normalized slash form `<namespace>/<repo>`, while structured HTTP requests send separate `namespace` and `repo` fields.
 
 ## Output
 - `shiva <repo-ref>`
@@ -79,11 +81,12 @@ Rules:
 - `shiva ls repos`, `shiva ls apis`, `shiva ls ops`
   - supported `-o/--output`: `table`, `tsv`, `json`, `ndjson`
   - default output: `table` on TTY, `ndjson` otherwise
-  - `ls ops` rows include repo, API, method, path, operation id, summary, and deprecated state
+  - repo-oriented rows include both `namespace` and slug `repo`
+  - `ls ops` rows include namespace, repo, API, method, path, operation id, summary, and deprecated state
   - `--emit request` emits executable request envelopes as NDJSON instead of row output
   - `ls ops --emit request --via <target>` emits call envelopes instead of inspect envelopes
 - `shiva sync <repo-ref>`
-  - output: JSON summary with repo, cache scope, resolved snapshot revision when known, API count, and refreshed operation-catalog count
+  - output: JSON summary with namespace, repo, cache scope, resolved snapshot revision when known, API count, and refreshed operation-catalog count
 - `shiva batch`
   - reads request envelopes from stdin or `--from <file>`
   - default output: `ndjson`
@@ -95,9 +98,9 @@ Success writes to stdout. Errors write to stderr.
 ## Request Envelopes
 - `ls --emit request` and `batch` share the same JSON envelope model.
 - `batch` accepts:
-  - `{"kind":"spec", ...}`
-  - `{"kind":"operation", ...}`
-  - `{"kind":"call", ...}`
+  - `{"kind":"spec","namespace":"<ns>","repo":"<slug>", ...}`
+  - `{"kind":"operation","namespace":"<ns>","repo":"<slug>", ...}`
+  - `{"kind":"call","namespace":"<ns>","repo":"<slug>", ...}`
 - `batch --dry-run` applies only to call envelopes.
 - `batch` executes spec envelopes as JSON spec fetches, operation envelopes as JSON operation fetches, and call envelopes with JSON call output.
 

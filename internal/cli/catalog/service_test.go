@@ -17,13 +17,13 @@ func TestServicePrepareOperationFloatingRefreshesLazily(t *testing.T) {
 	}
 
 	client := &fakeInventoryClient{
-		reposBody:      []byte(`[{"repo":"acme/platform"}]`),
-		statusBody:     []byte(`{"repo":"acme/platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
+		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","operation_id":"listPets"}]`),
 	}
 	service := NewService(store)
-	selector := request.Envelope{Repo: "acme/platform"}
+	selector := request.Envelope{Namespace: "acme", Repo: "platform"}
 
 	first, err := service.PrepareOperation(context.Background(), client, "default", selector, RefreshOptions{})
 	if err != nil {
@@ -70,14 +70,14 @@ func TestServicePrepareOperationPinnedOfflineReusesImmutableCache(t *testing.T) 
 		{
 			name: "revision id",
 			selector: request.Envelope{
-				Repo:       "acme/platform",
+				Namespace: "acme", Repo: "platform",
 				RevisionID: 42,
 			},
 		},
 		{
 			name: "sha",
 			selector: request.Envelope{
-				Repo: "acme/platform",
+				Namespace: "acme", Repo: "platform",
 				SHA:  "deadbeef",
 			},
 		},
@@ -95,7 +95,7 @@ func TestServicePrepareOperationPinnedOfflineReusesImmutableCache(t *testing.T) 
 
 			service := NewService(store)
 			onlineClient := &fakeInventoryClient{
-				reposBody:      []byte(`[{"repo":"acme/platform"}]`),
+				reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
 				apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
 				operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","operation_id":"listPets"}]`),
 			}

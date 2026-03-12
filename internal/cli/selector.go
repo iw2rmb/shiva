@@ -4,12 +4,18 @@ import (
 	"strings"
 
 	"github.com/iw2rmb/shiva/internal/cli/request"
+	"github.com/iw2rmb/shiva/internal/repoid"
 )
 
 type PackedSelector struct {
-	RepoPath    string
+	Namespace   string
+	Repo        string
 	Target      string
 	OperationID string
+}
+
+func (s PackedSelector) RepoPath() string {
+	return repoid.Identity{Namespace: s.Namespace, Repo: s.Repo}.Path()
 }
 
 func (s PackedSelector) HasTarget() bool {
@@ -47,8 +53,14 @@ func ParsePackedSelector(raw string) (PackedSelector, error) {
 		return PackedSelector{}, &InvalidInputError{Message: "operation id must not be empty"}
 	}
 
+	identity, err := repoid.ParsePath(repoPath)
+	if err != nil {
+		return PackedSelector{}, &InvalidInputError{Message: err.Error()}
+	}
+
 	return PackedSelector{
-		RepoPath:    repoPath,
+		Namespace:   identity.Namespace,
+		Repo:        identity.Repo,
 		Target:      target,
 		OperationID: operationID,
 	}, nil
@@ -74,7 +86,8 @@ func ParseShorthandInvocation(args []string, flags RootFlags) (ShorthandInvocati
 	}
 
 	envelope := request.Envelope{
-		Repo:       packed.RepoPath,
+		Namespace:  packed.Namespace,
+		Repo:       packed.Repo,
 		API:        flags.API,
 		RevisionID: flags.RevisionID,
 		SHA:        flags.SHA,

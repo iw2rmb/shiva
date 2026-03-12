@@ -2,7 +2,8 @@
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.path_with_namespace,
+    repos.namespace,
+    repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
     COALESCE(active_api_counts.active_api_count, 0)::BIGINT AS active_api_count,
@@ -42,13 +43,14 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-ORDER BY repos.path_with_namespace ASC;
+ORDER BY repos.namespace ASC, repos.repo ASC;
 
--- name: GetRepoCatalogFreshnessByPath :one
+-- name: GetRepoCatalogFreshness :one
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.path_with_namespace,
+    repos.namespace,
+    repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
     COALESCE(active_api_counts.active_api_count, 0)::BIGINT AS active_api_count,
@@ -88,7 +90,8 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-WHERE repos.path_with_namespace = sqlc.arg(path_with_namespace);
+WHERE repos.namespace = sqlc.arg(namespace)
+  AND repos.repo = sqlc.arg(repo);
 
 -- name: ListAPISnapshotInventoryByRepoRevision :many
 WITH RECURSIVE snapshot_ancestors AS (
