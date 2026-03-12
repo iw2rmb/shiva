@@ -19,13 +19,10 @@ Shiva already has a differentiated foundation:
 - semantic diff computation
 - repo, API, and operation inventory endpoints
 - commit-addressable snapshot selection
+- repo-backed runtime validation and deterministic stub responses
 - CLI inspect, inventory, sync, and call-planning flows
 
-The main missing piece is also clear in the current docs:
-- `/gl/*` route parsing and operation resolution exist
-- request validation and spec-shaped stub responses are not implemented yet
-
-That means Shiva is closer to an API source-of-truth platform than to a finished mock server.
+That means Shiva already competes in runtime mocking, but from a different angle than generic mock servers.
 
 ## Market Shape
 The market splits into two adjacent categories.
@@ -59,7 +56,7 @@ Core wedge:
 - self-hosted by default
 - commit-addressable runtime and inspection
 - multi-repo catalog, not single-spec mocking
-- diff, query, inventory, and runtime in one system
+- diff, query, inventory, validation, and runtime stubs in one system
 
 ## Ideal Customer Profile
 Best-fit teams:
@@ -88,9 +85,9 @@ Those areas are already stronger for existing competitors and do not use Shiva's
 ## Competitor Matrix
 | Competitor | Strongest area | Where Shiva can win | Where Shiva is weak today |
 |---|---|---|---|
-| Prism | lightweight OpenAPI mocking and validation CLI | GitLab ingestion, snapshot-aware queries, catalog across repos, self-hosted control plane | Prism already ships working mocks and validation |
+| Prism | lightweight OpenAPI mocking and validation CLI | GitLab ingestion, snapshot-aware queries, catalog across repos, self-hosted control plane | Prism still has a simpler local-first developer story |
 | Microcks | rich mocking, contract testing, multi-protocol platform | simpler architecture, narrower OpenAPI-first story, easier adoption for internal platform teams | Microcks is much stronger on test automation, examples, and stateful mocks |
-| WireMock Cloud | enterprise simulation, Git sync, managed workflow | self-hosted deployment, GitLab-native workflow, lower platform weight | WireMock has stronger simulation features and enterprise polish |
+| WireMock Cloud | enterprise simulation, Git sync, managed workflow | self-hosted deployment, GitLab-native workflow, lower platform weight | WireMock has stronger simulation UX, Git productization, and enterprise polish |
 | Mockoon | local-first mock authoring UX | repo-native governance and inspect story | Mockoon is better for users who want manual mock editing and desktop workflows |
 | Bump.sh | hosted docs and API change management | self-hosted runtime, exact snapshot behavior, integrated inspect/call surface | Bump is stronger for hosted review and documentation workflows |
 | Optic | API diff and standards enforcement | runtime plus governance in one system, GitLab event-driven ingestion | Optic is stronger for mature review-time change controls today |
@@ -108,36 +105,38 @@ That wedge is materially different from:
 
 Those are features. Shiva's stronger story is repository-native API state management.
 
-## Minimum Product To Be Credible
-To compete beyond positioning, Shiva needs the runtime surface to become real.
+## Expansion Areas
+To compete beyond the current wedge, Shiva should add adjacent capabilities that reinforce the existing runtime and governance model.
 
-Critical gaps:
-- request validation on `/gl/*`
-- deterministic stub generation from examples, defaults, and schemas
-- explicit no-example behavior rules
-- response validation
-- scenario selection when multiple examples exist
-- error and failure-path modeling
-- revision and branch UX for humans, not only raw API selectors
+High-value additions:
+- scenario and call-series tracking tied to test runs, CI jobs, or named flows
+- spec linting and policy enforcement for mismatches, org rules, and breaking changes
+- external OpenAPI uploads for teams that cannot integrate GitLab access immediately
+- richer webhook events for lint failures, diff severity, and coverage changes
+- better human UX on top of revision and branch selection
 
-Without those pieces, Shiva is credible as API plumbing, but not yet as a direct alternative to Prism, Microcks, or WireMock.
+Potential traps:
+- generic uptime monitoring against `servers` URLs is a separate market and should stay narrowly scoped to contract reachability or drift checks
+- a TUI can help adoption, but it is not a primary differentiator
 
 ## Strategic Sequence
 Recommended order:
 
-1. Finish `/gl/*` request validation and deterministic stub responses.
-2. Add example and scenario controls so runtime behavior is usable in tests.
-3. Add merge request and review workflow integration around spec diffs.
-4. Add stronger catalog UX on top of the existing query endpoints and CLI.
-5. Add premium or enterprise capabilities only after the core runtime is solid.
+1. Add spec linting and policy enforcement on top of the existing diff pipeline.
+2. Add external OpenAPI onboarding so teams can adopt Shiva before GitLab integration.
+3. Add scenario and call-series tracking tied to runtime traffic and tests.
+4. Expand webhook events around diffs, lint results, and scenario coverage.
+5. Add stronger catalog UX on top of the existing query endpoints and CLI.
+6. Add a TUI only after the product model is stable.
 
-This order uses Shiva's existing strengths instead of chasing feature parity with mock-first tools.
+This order uses Shiva's current strengths instead of rebuilding capabilities that the runtime surface already has.
 
 ## Messaging
 Good message:
 - GitLab-native API source of truth
 - inspect and run APIs exactly as of commit `abc12345`
 - self-hosted API runtime and governance for internal platforms
+- deterministic spec-backed stubs from exact repository snapshots
 
 Weak message:
 - another OpenAPI mock server
@@ -149,6 +148,7 @@ Shiva should compete in the overlap of:
 - API governance
 - repository-native API cataloging
 - snapshot-aware runtime mocking
+- test and scenario intelligence
 
 It should not enter as a generic mock server.
 
