@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/iw2rmb/shiva/internal/cli/catalog"
@@ -132,6 +133,57 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 	}
 }
 
+func TestRootCommandUsageListsOutputModes(t *testing.T) {
+	t.Parallel()
+
+	command := NewRootCommand(func() (Service, error) {
+		return &fakeService{listReposBody: []byte(`[]`)}, nil
+	})
+
+	usage := command.UsageString()
+	if !strings.Contains(usage, "--output yaml|json|body|curl|table|tsv|ndjson") {
+		t.Fatalf("expected usage to list output modes, got %q", usage)
+	}
+}
+
+func TestCompletionScriptPrefersRepoSelectorsOverRootCommands(t *testing.T) {
+	t.Parallel()
+
+	zshScript := patchZshCompletionScript(`__shiva_debug()
+{
+    local file="$BASH_COMP_DEBUG_FILE"
+    if [[ -n ${file} ]]; then
+        echo "$*" >> "${file}"
+    fi
+}
+out=$(eval ${requestComp} 2>/dev/null)
+    __shiva_debug "completion output: ${out}"
+`)
+	if !strings.Contains(zshScript, "__shiva_filter_root_command_completions") {
+		t.Fatalf("expected zsh completion patch helper")
+	}
+	if !strings.Contains(zshScript, `out=$(__shiva_filter_root_command_completions "${out}")`) {
+		t.Fatalf("expected zsh completion to filter root commands")
+	}
+
+	bashScript := patchBashCompletionScript(`__shiva_debug()
+{
+    if [[ -n ${BASH_COMP_DEBUG_FILE-} ]]; then
+        echo "$*" >> "${BASH_COMP_DEBUG_FILE}"
+    fi
+}
+    out=$(eval "${requestComp}" 2>/dev/null)
+
+    # Extract the directive integer at the very end of the output following a colon (:)
+`)
+	if !strings.Contains(bashScript, "__shiva_filter_root_command_completions") {
+		t.Fatalf("expected bash completion patch helper")
+	}
+	if !strings.Contains(bashScript, `out=$(__shiva_filter_root_command_completions "${out}")`) {
+		t.Fatalf("expected bash completion to filter root commands")
+	}
+}
+
 func TestRootCommandCompletionDoesNotLoadService(t *testing.T) {
 	t.Parallel()
 
@@ -182,13 +234,13 @@ func TestRootCommandHealthUsesService(t *testing.T) {
 	}
 }
 
-func TestRootCommandListAndSyncSubcommands(t *testing.T) {
+func TestRootCommandListAndSyncCommands(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name               string
 		args               []string
-		expectedStdout     string
+		expectedContains   []string
 		expectedListRepos  int
 		expectedListAPIs   int
 		expectedListOps    int
@@ -198,40 +250,49 @@ func TestRootCommandListAndSyncSubcommands(t *testing.T) {
 		expectedListTarget request.Envelope
 	}{
 		{
-			name:              "ls repos defaults to ndjson on non tty",
-			args:              []string{"ls", "repos"},
-			expectedStdout:    "{\"namespace\":\"acme\",\"repo\":\"platform\"}\n",
+			name:              "ls without selector lists namespaces",
+			args:              []string{"ls"},
+			expectedContains:  []string{"total: 1", "acme", "1 repo"},
 			expectedListRepos: 1,
-			expectedFormat:    "ndjson",
+			expectedFormat:    "json",
 		},
 		{
-			name:             "ls apis accepts snapshot selector",
-			args:             []string{"ls", "apis", "--rev", "42", "-o", "json", "acme/platform"},
-			expectedStdout:   "[{\"namespace\":\"acme\",\"repo\":\"platform\",\"api\":\"apis/pets/openapi.yaml\"}]\n",
+			name:             "ls namespace prefix filters namespaces",
+			args:             []string{"ls", "ac"},
+			expectedContains: []string{"match: 1", "acme", "1 repo"},
+			expectedListRepos: 1,
+			expectedFormat:   "json",
+		},
+		{
+			name:             "ls namespace slash lists repos",
+			args:             []string{"ls", "acme/"},
+			expectedContains: []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), 2 ops, updated 10-03-2026 12:00:00"},
+			expectedListRepos: 1,
 			expectedListAPIs: 1,
 			expectedFormat:   "json",
 			expectListTarget: true,
 			expectedListTarget: request.Envelope{
-				Namespace: "acme", Repo: "platform",
-				RevisionID: 42,
+				Namespace: "acme",
+				Repo:      "platform",
 			},
 		},
 		{
-			name:             "ls ops forwards api selector",
-			args:             []string{"ls", "ops", "--api", "apis/pets/openapi.yaml", "-o", "tsv", "acme/platform"},
-			expectedStdout:   "namespace\trepo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n",
+			name:             "ls repo prints operations",
+			args:             []string{"ls", "acme/platform"},
+			expectedContains: []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), total 1 ops, updated 10-03-2026 12:00:00", "GET /pets", "#listPets"},
+			expectedListRepos: 1,
 			expectedListOps:  1,
-			expectedFormat:   "tsv",
+			expectedFormat:   "json",
 			expectListTarget: true,
 			expectedListTarget: request.Envelope{
-				Namespace: "acme", Repo: "platform",
-				API:  "apis/pets/openapi.yaml",
+				Namespace: "acme",
+				Repo:      "platform",
 			},
 		},
 		{
 			name:             "sync refreshes repo snapshot",
 			args:             []string{"sync", "--rev", "42", "acme/platform"},
-			expectedStdout:   "{\"namespace\":\"acme\",\"repo\":\"platform\",\"scope\":\"rev:42\"}\n",
+			expectedContains: []string{`"namespace":"acme","repo":"platform","scope":"rev:42"`},
 			expectedSync:     1,
 			expectListTarget: true,
 			expectedListTarget: request.Envelope{
@@ -247,9 +308,9 @@ func TestRootCommandListAndSyncSubcommands(t *testing.T) {
 			t.Parallel()
 
 			service := &fakeService{
-				listReposBody: []byte("{\"namespace\":\"acme\",\"repo\":\"platform\"}\n"),
-				listAPIsBody:  []byte("[{\"namespace\":\"acme\",\"repo\":\"platform\",\"api\":\"apis/pets/openapi.yaml\"}]"),
-				listOpsBody:   []byte("namespace\trepo\tapi\tmethod\tpath\toperation_id\tdeprecated\tsummary\n"),
+				listReposBody: []byte(`[{"namespace":"acme","repo":"platform","active_api_count":1,"head_revision":{"status":"processed","processed_at":"2026-03-10T12:00:00Z"}}]`),
+				listAPIsBody:  []byte(`[{"namespace":"acme","repo":"platform","api":"apis/pets/openapi.yaml","ingest_event_branch":"main","ingest_event_sha":"deadbeefcafebabe","operation_count":2}]`),
+				listOpsBody:   []byte(`[{"namespace":"acme","repo":"platform","method":"get","path":"/pets","operation_id":"listPets","ingest_event_branch":"main","ingest_event_sha":"deadbeefcafebabe"}]`),
 				syncBody:      []byte("{\"namespace\":\"acme\",\"repo\":\"platform\",\"scope\":\"rev:42\"}"),
 			}
 
@@ -264,8 +325,10 @@ func TestRootCommandListAndSyncSubcommands(t *testing.T) {
 			if err := command.ExecuteContext(context.Background()); err != nil {
 				t.Fatalf("execute command failed: %v", err)
 			}
-			if stdout.String() != testCase.expectedStdout {
-				t.Fatalf("expected stdout %q, got %q", testCase.expectedStdout, stdout.String())
+			for _, want := range testCase.expectedContains {
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("expected stdout to contain %q, got %q", want, stdout.String())
+				}
 			}
 			if service.listReposCalls != testCase.expectedListRepos {
 				t.Fatalf("expected list repos calls %d, got %d", testCase.expectedListRepos, service.listReposCalls)
@@ -297,8 +360,8 @@ func TestRootCommandListAndSyncRejectRefreshOfflineCombination(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "ls repos",
-			args: []string{"ls", "repos", "--refresh", "--offline"},
+			name: "ls",
+			args: []string{"ls", "--refresh", "--offline"},
 		},
 		{
 			name: "sync",
@@ -329,22 +392,22 @@ func TestRootCommandListAndSyncRejectRefreshOfflineCombination(t *testing.T) {
 	}
 }
 
-func TestRootCommandListNDJSONLeavesEmptyResultsEmpty(t *testing.T) {
+func TestRootCommandListShowsEmptyNamespaceInventory(t *testing.T) {
 	t.Parallel()
 
 	command := NewRootCommand(func() (Service, error) {
-		return &fakeService{}, nil
+		return &fakeService{listReposBody: []byte(`[]`)}, nil
 	})
 	stdout := &bytes.Buffer{}
 	command.SetOut(stdout)
 	command.SetErr(&bytes.Buffer{})
-	command.SetArgs([]string{"ls", "repos"})
+	command.SetArgs([]string{"ls"})
 
 	if err := command.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("execute command failed: %v", err)
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("expected empty ndjson output, got %q", stdout.String())
+	if stdout.String() != "total: 0\n" {
+		t.Fatalf("expected empty namespace inventory, got %q", stdout.String())
 	}
 }
 
@@ -382,7 +445,7 @@ targets:
 	}
 	scope := catalog.ScopeFromSelector(0, "")
 	fingerprint := catalog.SnapshotFingerprint{RevisionID: 42, SHA: "deadbeef"}
-	if err := store.SaveRepos("default", []byte(`[{"namespace":"acme","repo":"platform"}]`)); err != nil {
+	if err := store.SaveRepos("default", []byte(`[{"namespace":"acme","repo":"platform","head_revision":{"status":"processed","processed_at":"2026-03-10T12:00:00Z"}}]`)); err != nil {
 		t.Fatalf("save repos cache: %v", err)
 	}
 	if err := store.SaveStatus("default", "acme/platform", []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`), fingerprint); err != nil {
@@ -400,8 +463,13 @@ targets:
 	})
 
 	repos, directive := root.ValidArgsFunction(root, nil, "ac")
-	if directive != cobra.ShellCompDirectiveNoFileComp || !reflect.DeepEqual(repos, []string{"acme/platform"}) {
+	if directive != cobra.ShellCompDirectiveNoFileComp|cobra.ShellCompDirectiveNoSpace || !reflect.DeepEqual(repos, []string{"acme/\tnamespace, 1 repos"}) {
 		t.Fatalf("unexpected repo completion %#v directive %v", repos, directive)
+	}
+
+	repoLeaves, directive := root.ValidArgsFunction(root, nil, "acme/")
+	if directive != cobra.ShellCompDirectiveNoFileComp || !reflect.DeepEqual(repoLeaves, []string{"acme/platform\tupdated 2026-03-10"}) {
+		t.Fatalf("unexpected repo leaf completion %#v directive %v", repoLeaves, directive)
 	}
 
 	ops, directive := root.ValidArgsFunction(root, nil, "acme/platform#get")
@@ -446,7 +514,7 @@ targets:
 		t.Fatalf("find sync command: %v", err)
 	}
 	syncRepos, directive := syncCmd.ValidArgsFunction(syncCmd, nil, "ac")
-	if directive != cobra.ShellCompDirectiveNoFileComp || !reflect.DeepEqual(syncRepos, []string{"acme/platform"}) {
+	if directive != cobra.ShellCompDirectiveNoFileComp|cobra.ShellCompDirectiveNoSpace || !reflect.DeepEqual(syncRepos, []string{"acme/\tnamespace, 1 repos"}) {
 		t.Fatalf("unexpected sync repo completion %#v directive %v", syncRepos, directive)
 	}
 }

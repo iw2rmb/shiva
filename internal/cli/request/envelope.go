@@ -159,7 +159,7 @@ func NormalizeResolvedCallEnvelope(input Envelope, defaultTarget string) (Envelo
 
 	identity, err := repoid.Normalize(input.Namespace, input.Repo)
 	if err != nil {
-		return Envelope{}, invalid(err.Error())
+		return Envelope{}, invalid("%s", err)
 	}
 	api := strings.TrimSpace(input.API)
 	if api == "" {
@@ -218,7 +218,7 @@ func NormalizeSnapshotSelector(
 ) (string, string, string, int64, string, error) {
 	identity, err := repoid.Normalize(namespace, repo)
 	if err != nil {
-		return "", "", "", 0, "", invalid(err.Error())
+		return "", "", "", 0, "", invalid("%s", err)
 	}
 
 	api = strings.TrimSpace(api)

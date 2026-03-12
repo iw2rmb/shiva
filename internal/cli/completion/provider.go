@@ -155,8 +155,13 @@ func (p *Provider) CompleteAPIFlag(cmd *cobra.Command, args []string, toComplete
 }
 
 func (p *Provider) completeRepoRefs(ctx context.Context, cmd *cobra.Command, toComplete string) ([]string, cobra.ShellCompDirective) {
-	repos, _ := p.listRepos(ctx, p.profileName(cmd), p.targetName(cmd))
-	return filterPrefix(repos, toComplete), cobra.ShellCompDirectiveNoFileComp
+	rows, _ := p.listRepoRows(ctx, p.profileName(cmd), p.targetName(cmd))
+	values, noSpace := completeRepoPrefix(rows, toComplete)
+	directive := cobra.ShellCompDirectiveNoFileComp
+	if noSpace {
+		directive |= cobra.ShellCompDirectiveNoSpace
+	}
+	return values, directive
 }
 
 func (p *Provider) completePackedTarget(ctx context.Context, cmd *cobra.Command, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -211,6 +216,18 @@ func (p *Provider) completePackedOperation(ctx context.Context, cmd *cobra.Comma
 }
 
 func (p *Provider) listRepos(ctx context.Context, profileName string, targetName string) ([]string, error) {
+	rows, err := p.listRepoRows(ctx, profileName, targetName)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(rows))
+	for _, row := range rows {
+		values = append(values, repoid.Identity{Namespace: row.Namespace, Repo: row.Repo}.Path())
+	}
+	return uniqueSorted(values), nil
+}
+
+func (p *Provider) listRepoRows(ctx context.Context, profileName string, targetName string) ([]clioutput.RepoRow, error) {
 	st, source, err := p.loadSource(profileName, targetName)
 	if err != nil {
 		return nil, err
@@ -221,15 +238,15 @@ func (p *Provider) listRepos(ctx context.Context, profileName string, targetName
 		return nil, err
 	}
 
-	values := decodeRepoRefs(record.Payload)
+	rows := decodeRepoRows(record.Payload)
 	if !found || catalog.ReposRecordStale(record, p.now()) {
 		refreshed, refreshErr := p.refreshRepos(ctx, st, source)
 		if refreshErr == nil {
-			values = refreshed
+			rows = refreshed
 		}
 	}
 
-	return uniqueSorted(values), nil
+	return sortRepoRows(rows), nil
 }
 
 func (p *Provider) listAPIs(ctx context.Context, selector Selector, profileName string, targetName string) ([]string, error) {
@@ -293,7 +310,7 @@ func (p *Provider) snapshotSliceStale(store *catalog.Store, profileName string, 
 	return status.Fingerprint != record.Fingerprint
 }
 
-func (p *Provider) refreshRepos(ctx context.Context, st state, source profile.Source) ([]string, error) {
+func (p *Provider) refreshRepos(ctx context.Context, st state, source profile.Source) ([]clioutput.RepoRow, error) {
 	client, err := p.newClient(source)
 	if err != nil {
 		return nil, err
@@ -314,7 +331,7 @@ func (p *Provider) refreshRepos(ctx context.Context, st state, source profile.So
 	if !found {
 		return nil, nil
 	}
-	return decodeRepoRefs(record.Payload), nil
+	return sortRepoRows(decodeRepoRows(record.Payload)), nil
 }
 
 func (p *Provider) refreshAPIs(ctx context.Context, st state, source profile.Source, selector Selector) ([]string, error) {
@@ -602,16 +619,202 @@ func uniqueSorted(values []string) []string {
 	return unique
 }
 
-func decodeRepoRefs(payload []byte) []string {
-	var rows []clioutput.RepoRow
-	if err := json.Unmarshal(payload, &rows); err != nil {
+func describedSorted(values map[string]string) []string {
+	if len(values) == 0 {
 		return nil
 	}
+
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		description := strings.TrimSpace(values[key])
+		if description == "" {
+			out = append(out, key)
+			continue
+		}
+		out = append(out, key+"\t"+description)
+	}
+	return out
+}
+
+func decodeRepoRefs(payload []byte) []string {
+	rows := decodeRepoRows(payload)
 	values := make([]string, 0, len(rows))
 	for _, row := range rows {
 		values = append(values, repoid.Identity{Namespace: row.Namespace, Repo: row.Repo}.Path())
 	}
 	return values
+}
+
+func decodeRepoRows(payload []byte) []clioutput.RepoRow {
+	var rows []clioutput.RepoRow
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		return nil
+	}
+	return rows
+}
+
+func completeRepoPrefix(rows []clioutput.RepoRow, prefix string) ([]string, bool) {
+	prefix = strings.TrimSpace(prefix)
+
+	parentSegments := make([]string, 0)
+	currentPrefix := ""
+	if prefix != "" {
+		if strings.HasSuffix(prefix, "/") {
+			parentSegments = splitPathSegments(strings.TrimSuffix(prefix, "/"))
+		} else {
+			parts := splitPathSegments(prefix)
+			if len(parts) > 1 {
+				parentSegments = append(parentSegments, parts[:len(parts)-1]...)
+			}
+			if len(parts) > 0 {
+				currentPrefix = parts[len(parts)-1]
+			}
+		}
+	}
+
+	type namespaceSummary struct {
+		count      int
+		allPending bool
+	}
+
+	suggestions := make(map[string]string)
+	namespaceStats := make(map[string]namespaceSummary)
+	hasNamespace := false
+	for _, row := range rows {
+		value := repoid.Identity{Namespace: row.Namespace, Repo: row.Repo}.Path()
+		parts := splitPathSegments(value)
+		if len(parts) < 2 {
+			continue
+		}
+		if len(parts) <= len(parentSegments) {
+			continue
+		}
+		if !hasPathPrefix(parts, parentSegments) {
+			continue
+		}
+
+		nextSegment := parts[len(parentSegments)]
+		if currentPrefix != "" && !strings.HasPrefix(nextSegment, currentPrefix) {
+			continue
+		}
+
+		suggestionParts := append([]string{}, parentSegments...)
+		suggestionParts = append(suggestionParts, nextSegment)
+		suggestion := strings.Join(suggestionParts, "/")
+		if len(parts) > len(parentSegments)+1 {
+			hasNamespace = true
+			summary := namespaceStats[suggestion]
+			summary.count++
+			if summary.count == 1 {
+				summary.allPending = repoIsPending(row)
+			} else {
+				summary.allPending = summary.allPending && repoIsPending(row)
+			}
+			namespaceStats[suggestion] = summary
+			continue
+		}
+		suggestions[suggestion] = repoCompletionDescription(row)
+	}
+
+	for namespace, summary := range namespaceStats {
+		description := fmt.Sprintf("namespace, %d repos", summary.count)
+		if summary.allPending {
+			description = fmt.Sprintf("%s, all pending", description)
+		}
+		suggestions[namespace+"/"] = description
+	}
+
+	return describedSorted(suggestions), hasNamespace
+}
+
+func sortRepoRows(rows []clioutput.RepoRow) []clioutput.RepoRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	sorted := append([]clioutput.RepoRow(nil), rows...)
+	sort.Slice(sorted, func(i, j int) bool {
+		left := repoid.Identity{Namespace: sorted[i].Namespace, Repo: sorted[i].Repo}.Path()
+		right := repoid.Identity{Namespace: sorted[j].Namespace, Repo: sorted[j].Repo}.Path()
+		return left < right
+	})
+	return sorted
+}
+
+func repoIsPending(row clioutput.RepoRow) bool {
+	if row.HeadRevision == nil {
+		return false
+	}
+	switch strings.TrimSpace(strings.ToLower(row.HeadRevision.Status)) {
+	case "pending", "processing":
+		return true
+	default:
+		return false
+	}
+}
+
+func repoCompletionDescription(row clioutput.RepoRow) string {
+	if row.HeadRevision != nil {
+		switch strings.TrimSpace(strings.ToLower(row.HeadRevision.Status)) {
+		case "pending":
+			return "pending"
+		case "processing":
+			return "processing"
+		}
+	}
+	if updatedAt, ok := repoUpdatedAt(row); ok {
+		return "updated " + updatedAt.Format("2006-01-02")
+	}
+	return "repo " + strings.TrimSpace(row.Repo)
+}
+
+func repoUpdatedAt(row clioutput.RepoRow) (time.Time, bool) {
+	candidates := []*time.Time{}
+	if row.HeadRevision != nil {
+		candidates = append(candidates, row.HeadRevision.ProcessedAt, row.HeadRevision.ReceivedAt)
+	}
+	if row.SnapshotRevision != nil {
+		candidates = append(candidates, row.SnapshotRevision.ProcessedAt, row.SnapshotRevision.ReceivedAt)
+	}
+
+	var latest time.Time
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.IsZero() {
+			continue
+		}
+		if latest.IsZero() || candidate.After(latest) {
+			latest = *candidate
+		}
+	}
+	if latest.IsZero() {
+		return time.Time{}, false
+	}
+	return latest.UTC(), true
+}
+
+func splitPathSegments(value string) []string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
+}
+
+func hasPathPrefix(parts []string, prefix []string) bool {
+	if len(prefix) > len(parts) {
+		return false
+	}
+	for index := range prefix {
+		if parts[index] != prefix[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeAPIs(payload []byte) []string {

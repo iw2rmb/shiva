@@ -2,11 +2,13 @@ package completion
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/iw2rmb/shiva/internal/cli/catalog"
 	"github.com/iw2rmb/shiva/internal/cli/config"
+	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/profile"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
@@ -107,6 +109,90 @@ func TestProviderListReposFallsBackToCachedValuesOnTimeout(t *testing.T) {
 	}
 	if len(values) != 1 || values[0] != "cached/repo" {
 		t.Fatalf("expected cached repos fallback, got %#v", values)
+	}
+}
+
+func TestCompleteRepoPrefixReturnsNamespaceHierarchy(t *testing.T) {
+	t.Parallel()
+
+	updatedAt := time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC)
+	values := []clioutput.RepoRow{
+		{
+			Namespace: "accounts",
+			Repo:      "forms",
+			HeadRevision: &clioutput.RevisionState{
+				Status:      "processed",
+				ProcessedAt: &updatedAt,
+			},
+		},
+		{
+			Namespace: "accounts",
+			Repo:      "offers",
+			HeadRevision: &clioutput.RevisionState{
+				Status: "pending",
+			},
+		},
+		{
+			Namespace: "ai-platform",
+			Repo:      "airflow-ui",
+			HeadRevision: &clioutput.RevisionState{
+				Status: "pending",
+			},
+		},
+		{
+			Namespace: "voicekit",
+			Repo:      "public-api",
+			HeadRevision: &clioutput.RevisionState{
+				Status: "pending",
+			},
+		},
+	}
+
+	testCases := []struct {
+		name        string
+		prefix      string
+		want        []string
+		wantNoSpace bool
+	}{
+		{
+			name:        "empty prefix returns top-level namespaces",
+			prefix:      "",
+			want:        []string{"accounts/\tnamespace, 2 repos", "ai-platform/\tnamespace, 1 repos, all pending", "voicekit/\tnamespace, 1 repos, all pending"},
+			wantNoSpace: true,
+		},
+		{
+			name:        "partial namespace returns namespace matches",
+			prefix:      "acc",
+			want:        []string{"accounts/\tnamespace, 2 repos"},
+			wantNoSpace: true,
+		},
+		{
+			name:        "namespace slash returns repos within namespace",
+			prefix:      "accounts/",
+			want:        []string{"accounts/forms\tupdated 2026-03-10", "accounts/offers\tpending"},
+			wantNoSpace: false,
+		},
+		{
+			name:        "partial repo returns matching repo leaves",
+			prefix:      "accounts/of",
+			want:        []string{"accounts/offers\tpending"},
+			wantNoSpace: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, gotNoSpace := completeRepoPrefix(values, testCase.prefix)
+			if !reflect.DeepEqual(got, testCase.want) {
+				t.Fatalf("completeRepoPrefix(%q) = %#v, want %#v", testCase.prefix, got, testCase.want)
+			}
+			if gotNoSpace != testCase.wantNoSpace {
+				t.Fatalf("completeRepoPrefix(%q) noSpace = %t, want %t", testCase.prefix, gotNoSpace, testCase.wantNoSpace)
+			}
+		})
 	}
 }
 

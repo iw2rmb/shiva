@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -78,7 +79,8 @@ func addSharedFlags(command *cobra.Command, flags *RootFlags) {
 	command.PersistentFlags().BoolVar(&flags.Refresh, "refresh", false, "force refresh before execution")
 	command.PersistentFlags().BoolVar(&flags.Offline, "offline", false, "forbid network refreshes")
 	command.PersistentFlags().BoolVar(&flags.DryRun, "dry-run", false, "print the normalized plan without dispatch")
-	command.PersistentFlags().StringVarP(&flags.Output, "output", "o", "", "output mode")
+	outputValue := newStringFlagValue(&flags.Output, "yaml|json|body|curl|table|tsv|ndjson")
+	command.PersistentFlags().VarP(outputValue, "output", "o", "output mode")
 	command.PersistentFlags().StringArrayVar(&flags.Path, "path", nil, "request path parameter key=value")
 	command.PersistentFlags().StringArrayVar(&flags.Query, "query", nil, "request query parameter key=value")
 	command.PersistentFlags().StringArrayVar(&flags.Header, "header", nil, "request header Name=value")
@@ -301,9 +303,11 @@ func generateCompletion(ctx context.Context, rootCmd *cobra.Command, writer io.W
 
 	switch shell {
 	case "bash":
-		return rootCmd.GenBashCompletionV2(writer, true)
+		return generatePatchedCompletion(writer, func(writer io.Writer) error {
+			return rootCmd.GenBashCompletionV2(writer, true)
+		}, patchBashCompletionScript)
 	case "zsh":
-		return rootCmd.GenZshCompletion(writer)
+		return generatePatchedCompletion(writer, rootCmd.GenZshCompletion, patchZshCompletionScript)
 	case "fish":
 		return rootCmd.GenFishCompletion(writer, true)
 	case "powershell":
@@ -313,4 +317,159 @@ func generateCompletion(ctx context.Context, rootCmd *cobra.Command, writer io.W
 			Message: fmt.Sprintf("unsupported shell %q", shell),
 		}
 	}
+}
+
+func generatePatchedCompletion(
+	writer io.Writer,
+	generate func(writer io.Writer) error,
+	patch func(string) string,
+) error {
+	buffer := &bytes.Buffer{}
+	if err := generate(buffer); err != nil {
+		return err
+	}
+	_, err := io.WriteString(writer, patch(buffer.String()))
+	return err
+}
+
+func patchZshCompletionScript(script string) string {
+	const injectionPoint = `out=$(eval ${requestComp} 2>/dev/null)
+    __shiva_debug "completion output: ${out}"
+`
+	const injected = `out=$(eval ${requestComp} 2>/dev/null)
+    __shiva_debug "completion output: ${out}"
+    if [ ${#words[@]} -le 2 ]; then
+        out=$(__shiva_filter_root_command_completions "${out}")
+    fi
+`
+	script = strings.Replace(script, injectionPoint, injected, 1)
+	return strings.Replace(script, `__shiva_debug()
+{
+    local file="$BASH_COMP_DEBUG_FILE"
+    if [[ -n ${file} ]]; then
+        echo "$*" >> "${file}"
+    fi
+}
+`, `__shiva_debug()
+{
+    local file="$BASH_COMP_DEBUG_FILE"
+    if [[ -n ${file} ]]; then
+        echo "$*" >> "${file}"
+    fi
+}
+
+__shiva_filter_root_command_completions()
+{
+    local out="$1"
+    local line value
+    local tab="$(printf '\t')"
+    local hasRepo=0
+    local filtered=""
+
+    while IFS='\n' read -r line; do
+        [[ -z "${line}" ]] && continue
+        [[ "${line}" == :* ]] && continue
+        [[ "${line}" == "_activeHelp_ "* ]] && continue
+        value=${line%%$tab*}
+        if [[ "${value}" == */* ]]; then
+            hasRepo=1
+            break
+        fi
+    done < <(printf "%s\n" "${out}")
+
+    if [[ ${hasRepo} -eq 0 ]]; then
+        printf "%s" "${out}"
+        return
+    fi
+
+    while IFS='\n' read -r line; do
+        [[ -z "${line}" ]] && continue
+        if [[ "${line}" == :* ]] || [[ "${line}" == "_activeHelp_ "* ]]; then
+            filtered+="${line}"$'\n'
+            continue
+        fi
+
+        value=${line%%$tab*}
+        case "${value}" in
+            batch|completion|health|help|ls|sync)
+                continue
+                ;;
+        esac
+        filtered+="${line}"$'\n'
+    done < <(printf "%s\n" "${out}")
+
+    printf "%s" "${filtered%$'\n'}"
+}
+`, 1)
+}
+
+func patchBashCompletionScript(script string) string {
+	const injectionPoint = `    out=$(eval "${requestComp}" 2>/dev/null)
+
+    # Extract the directive integer at the very end of the output following a colon (:)
+`
+	const injected = `    out=$(eval "${requestComp}" 2>/dev/null)
+    if [[ ${cword} -le 1 ]]; then
+        out=$(__shiva_filter_root_command_completions "${out}")
+    fi
+
+    # Extract the directive integer at the very end of the output following a colon (:)
+`
+	script = strings.Replace(script, injectionPoint, injected, 1)
+	return strings.Replace(script, `__shiva_debug()
+{
+    if [[ -n ${BASH_COMP_DEBUG_FILE-} ]]; then
+        echo "$*" >> "${BASH_COMP_DEBUG_FILE}"
+    fi
+}
+`, `__shiva_debug()
+{
+    if [[ -n ${BASH_COMP_DEBUG_FILE-} ]]; then
+        echo "$*" >> "${BASH_COMP_DEBUG_FILE}"
+    fi
+}
+
+__shiva_filter_root_command_completions()
+{
+    local out="$1"
+    local line value
+    local tab=$'\t'
+    local hasRepo=0
+    local filtered=""
+
+    while IFS='' read -r line; do
+        [[ -z "${line}" ]] && continue
+        [[ "${line}" == :* ]] && continue
+        [[ "${line}" == "_activeHelp_ "* ]] && continue
+        value=${line%%$tab*}
+        if [[ "${value}" == */* ]]; then
+            hasRepo=1
+            break
+        fi
+    done <<<"${out}"
+
+    if [[ ${hasRepo} -eq 0 ]]; then
+        printf "%s" "${out}"
+        return
+    fi
+
+    while IFS='' read -r line; do
+        [[ -z "${line}" ]] && continue
+        if [[ "${line}" == :* ]] || [[ "${line}" == "_activeHelp_ "* ]]; then
+            filtered+="${line}"$'\n'
+            continue
+        fi
+
+        value=${line%%$tab*}
+        case "${value}" in
+            batch|completion|health|help|ls|sync)
+                continue
+                ;;
+        esac
+        filtered+="${line}"$'\n'
+    done <<<"${out}"
+
+    printf "%s" "${filtered%$'\n'}"
+}
+`, 1)
 }

@@ -13,9 +13,11 @@ This document describes the shipped `shiva` CLI surface, selector grammar, catal
 - Explicit subcommands:
   - `shiva completion bash|zsh|fish|powershell`
   - `shiva health`
-  - `shiva ls repos`
-  - `shiva ls apis <repo-ref>`
-  - `shiva ls ops <repo-ref>`
+  - `shiva ls`
+  - `shiva ls <namespace-prefix>`
+  - `shiva ls <namespace>/`
+  - `shiva ls <namespace>/<repo-prefix>`
+  - `shiva ls <namespace>/<repo>`
   - `shiva sync <repo-ref>`
   - `shiva batch`
 
@@ -40,6 +42,7 @@ This document describes the shipped `shiva` CLI surface, selector grammar, catal
 - `--rev` and `--sha` are mutually exclusive.
 - `--dry-run` is valid only in call mode.
 - `--refresh` and `--offline` are mutually exclusive.
+- `ls` accepts only selector input plus `--profile`, `--refresh`, and `--offline`.
 
 ## Call Input Flags
 - `--path key=value`
@@ -78,13 +81,24 @@ Rules:
   - `--dry-run` switches call output to the execution plan
   - dry-run output modes: `json`, `curl`
   - `curl` dry-run output is supported only for direct targets
-- `shiva ls repos`, `shiva ls apis`, `shiva ls ops`
-  - supported `-o/--output`: `table`, `tsv`, `json`, `ndjson`
-  - default output: `table` on TTY, `ndjson` otherwise
-  - repo-oriented rows include both `namespace` and slug `repo`
-  - `ls ops` rows include namespace, repo, API, method, path, operation id, summary, and deprecated state
-  - `--emit request` emits executable request envelopes as NDJSON instead of row output
-  - `ls ops --emit request --via <target>` emits call envelopes instead of inspect envelopes
+- `shiva ls`
+  - output is always plain text
+  - `shiva ls`
+    - prints all namespaces as `<namespace>\t<repo-count> repos{, all pending}`
+    - header: `total: <count>`
+  - `shiva ls <namespace-prefix>`
+    - prints matching namespaces
+    - header: `match: <count>`
+  - `shiva ls <namespace>/`
+    - prints repos for that exact namespace
+    - header: `namespace <namespace>, total <count> repos`
+  - `shiva ls <namespace>/<repo-prefix>`
+    - prints matching repos inside that namespace
+    - header: `namespace <namespace>, match <count> repos`
+  - `shiva ls <namespace>/<repo>`
+    - prints one repo summary followed by repo-wide operations
+    - repo summaries use `pending`, `processing`, or `<branch> (<sha8>), <ops>, updated DD-MM-YYYY HH:mm:ss`; when writing to a terminal, `0 ops` is dimmed
+    - repo-wide operations are sorted by path, print `#<operation-id>` in an aligned second column, and display path params as `:name`; when writing to a terminal, params are bold and methods are colorized by verb
 - `shiva sync <repo-ref>`
   - output: JSON summary with namespace, repo, cache scope, resolved snapshot revision when known, API count, and refreshed operation-catalog count
 - `shiva batch`
@@ -96,7 +110,6 @@ Rules:
 Success writes to stdout. Errors write to stderr.
 
 ## Request Envelopes
-- `ls --emit request` and `batch` share the same JSON envelope model.
 - `batch` accepts:
   - `{"kind":"spec","namespace":"<ns>","repo":"<slug>", ...}`
   - `{"kind":"operation","namespace":"<ns>","repo":"<slug>", ...}`
@@ -149,8 +162,13 @@ Success writes to stdout. Errors write to stderr.
 
 ## Current Limits
 - Dynamic repo/API/operation/profile/target and HTTP-method completions are shipped through the generated Cobra completion script.
+- At the top-level prompt, generated bash/zsh completion prefers repo selectors over root subcommand names when repo candidates are available.
+- `shiva ls <TAB>` uses the same repo-selector completion path; the old `ls repos|apis|ops` subcommands no longer exist.
+- Repo selector completion walks namespace segments first, then completes repo leaves inside the selected namespace.
+- Repo selector completion annotates namespace entries with repo counts and adds `all pending` when every repo under that namespace is still unprocessed.
+- Final repo entries annotate `pending`/`processing` or `updated YYYY-MM-DD`; `ls` itself prints the fuller repo summary including branch, sha, ops, and timestamp.
 - Completion reads from the local catalog cache first and may do a short best-effort refresh for stale slices before falling back to cached values.
-- `ls repos --emit request` emits only repos with exactly one active API snapshot, because repo-only spec fetch remains ambiguous for multi-API repos.
+- Namespace repo listings may trigger one repo-scoped API inventory lookup per non-pending repo in the selected namespace so they can show branch and operation-count metadata.
 
 ## Ambiguity Reporting
 - Multi-API spec ambiguity is surfaced as CLI invalid-input output with candidate API rows from the query transport.

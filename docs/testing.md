@@ -48,7 +48,7 @@ Current baseline should be validated by running `go test ./...`.
 - Query endpoint validation, snapshot resolution, ambiguity reporting, and catalog payload mapping.
 - Shared call-envelope normalization, Shiva call-plan generation, direct-target planning, and dispatch behavior.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
-- CLI request-input parsing, `ls --emit request`, and `batch` NDJSON execution.
+- CLI request-input parsing, selector-driven `ls` rendering, and `batch` NDJSON execution.
 - Endpoint contract tests for:
   - shared `repo`/`api`/`revision_id`/`sha` query validation,
   - `/v1/spec` format and `ETag` behavior,

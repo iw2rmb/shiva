@@ -66,32 +66,23 @@ func TestRootCommandAppliesCallInputFlags(t *testing.T) {
 	}
 }
 
-func TestRootCommandListEmitRequestUsesEmitServiceMethods(t *testing.T) {
+func TestRootCommandListRejectsRemovedEmitFlag(t *testing.T) {
 	t.Parallel()
-
-	service := &fakeService{
-		emitOpsBody: []byte("{\"kind\":\"call\"}\n"),
-	}
 
 	stdout := &bytes.Buffer{}
 	command := NewRootCommand(func() (Service, error) {
-		return service, nil
+		return &fakeService{}, nil
 	})
 	command.SetOut(stdout)
 	command.SetErr(&bytes.Buffer{})
-	command.SetArgs([]string{"ls", "ops", "--emit", "request", "--via", "prod", "acme/platform"})
+	command.SetArgs([]string{"ls", "--emit", "request"})
 
-	if err := command.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("execute command failed: %v", err)
+	err := command.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatalf("expected ls to reject removed --emit flag")
 	}
-	if stdout.String() != "{\"kind\":\"call\"}\n" {
-		t.Fatalf("unexpected stdout %q", stdout.String())
-	}
-	if service.emitOpsCalls != 1 || service.listOpsCalls != 0 {
-		t.Fatalf("expected emit ops call only, got emit=%d list=%d", service.emitOpsCalls, service.listOpsCalls)
-	}
-	if service.lastListRequest.Namespace != "acme" || service.lastListRequest.Repo != "platform" {
-		t.Fatalf("expected repo selector to be forwarded, got %+v", service.lastListRequest)
+	if err.Error() != "unknown flag: --emit" {
+		t.Fatalf("unexpected error %q", err.Error())
 	}
 }
 

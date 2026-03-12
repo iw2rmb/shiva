@@ -77,12 +77,13 @@ func TestCLIContractScenarios(t *testing.T) {
 			},
 		},
 		{
-			name:       "list repos uses catalog endpoint",
-			args:       []string{"ls", "repos", "-o", "json"},
+			name:       "list repo shows operations from selector-driven ls",
+			args:       []string{"ls", "acme/platform"},
 			wantCode:   0,
-			wantStdout: []string{`"namespace":"acme","repo":"platform"`, `"active_api_count":1`},
+			wantStdout: []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), total 1 ops", "GET /pets/:id", "#getPet"},
 			wantMinCalls: map[string]int{
-				"GET /v1/repos": 1,
+				"GET /v1/repos":      1,
+				"GET /v1/operations": 1,
 			},
 		},
 		{
