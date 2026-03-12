@@ -112,6 +112,10 @@ func (s *Server) registerRoutes() {
 	}))
 	webhookGroup.Post("/gitlab", s.handleGitLabWebhook)
 
+	for _, method := range runtimeSupportedMethods {
+		s.app.Add(method, runtimeRoutePrefix+"/*", s.handleRuntimeRoute)
+	}
+
 	v1 := s.app.Group("/v1")
 	v1.Get("/spec", s.handleGetSpec)
 	v1.Get("/operation", s.handleGetOperation)

@@ -1,7 +1,7 @@
 # Endpoints
 
 ## Scope
-This document describes how canonical OpenAPI specs are indexed and how Shiva serves the shipped query-driven inspect, inventory, and call-planning endpoints.
+This document describes how canonical OpenAPI specs are indexed, how Shiva serves the shipped query-driven inspect, inventory, and call-planning endpoints on `/v1/*`, and the locked contract for the reserved repo-backed runtime surface on `/gl/*`.
 
 ## Build-Time Endpoint Extraction
 Canonical build:
@@ -22,7 +22,41 @@ Endpoints are sorted by `(method, path)` and persisted to `endpoint_index` with 
 
 Persistence is API-revision scoped: `PersistCanonicalSpec` upserts `spec_artifacts` and replaces the full `endpoint_index` for an API revision.
 
-## Query and Call Endpoints
+## Runtime Transport (`/gl/*`)
+Current state:
+- the `/gl/*` contract is locked
+- runtime handlers are not registered yet
+- the shipped HTTP surface remains `/v1/*`
+
+### Route Grammar
+- `<method> /gl/<repo-path>/<openapi-path>`
+- `<method> /gl/<repo-path>/@<selector>/<openapi-path>`
+- supported runtime methods are the OpenAPI method set already indexed at build time:
+  - `GET`, `PUT`, `POST`, `DELETE`, `OPTIONS`, `HEAD`, `PATCH`, `TRACE`
+- `<selector>` is optional
+- v1 selector values are limited to:
+  - `latest`
+  - an 8-character lowercase hexadecimal Git SHA prefix
+- selector values outside that grammar return `400`
+
+### Repo and Snapshot Resolution
+- route parsing starts after the `/gl/` prefix
+- Shiva tries repo-path candidates longest-first until one existing `(namespace, repo)` pair matches stored repo metadata
+- after repo resolution:
+  - the next segment is treated as optional `@selector`
+  - the remaining suffix is treated as the OpenAPI path
+- the OpenAPI path is canonicalized to include a leading `/`
+- no selector and `@latest` resolve the latest processed snapshot on the repo default branch
+- `@<sha8>` resolves one repo-scoped short SHA prefix
+- there is no fallback from selector errors to another snapshot target
+
+### Validation Library Choice
+- runtime request and response validation is fixed to `github.com/getkin/kin-openapi/openapi3` plus `github.com/getkin/kin-openapi/openapi3filter`
+- Shiva resolves runtime routes dynamically from stored repo snapshots at request time
+- static middleware generated for one compiled spec, including `oapi-codegen` Fiber adapters, is not a fit for `/gl/*`
+- the runtime surface returns deterministic spec-shaped stub responses and does not proxy upstream traffic
+
+## Query and Call-Planning Endpoints (`/v1/*`)
 
 ### Registered Surface
 - `GET /v1/spec`

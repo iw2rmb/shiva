@@ -70,6 +70,31 @@ func TestServer_QueryReadSurfaceIsRegistered(t *testing.T) {
 	}
 }
 
+func TestServer_RuntimeReadSurfaceIsRegisteredForSupportedMethods(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{HTTPAddr: ":8080"}
+	s := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), &store.Store{})
+
+	for _, method := range runtimeSupportedMethods {
+		method := method
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(method, "/gl/acme/platform/pets", nil)
+			resp, err := s.App().Test(req, -1)
+			if err != nil {
+				t.Fatalf("http test request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode == http.StatusNotFound {
+				t.Fatalf("expected registered route for %s %s, got 404", method, "/gl/acme/platform/pets")
+			}
+		})
+	}
+}
+
 func TestServer_LegacyReadSurfaceRemoved(t *testing.T) {
 	t.Parallel()
 

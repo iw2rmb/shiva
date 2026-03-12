@@ -199,7 +199,7 @@ func TestQueryEndpoints_GetOperation_UsesOperationIDAndMethodPathSelectors(t *te
 			{
 				ResolveReadSnapshotInput: store.ResolveReadSnapshotInput{
 					Namespace: "acme", Repo: "platform",
-					SHA:      "deadbeef",
+					SHA: "deadbeef",
 				},
 				OperationID: "listPets",
 			},
@@ -373,7 +373,7 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 	if !reflect.DeepEqual(readStore.resolveReadSnapshotInputs, []store.ResolveReadSnapshotInput{
 		{
 			Namespace: "acme", Repo: "platform",
-			SHA:      "deadbeef",
+			SHA: "deadbeef",
 		},
 	}) {
 		t.Fatalf("unexpected snapshot query input: %+v", readStore.resolveReadSnapshotInputs)
@@ -459,10 +459,10 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 		repoInventoryResult: []store.RepoCatalogEntry{
 			{
 				Repo: store.Repo{
-					ID:                77,
-					GitLabProjectID:   1001,
-					Namespace: "acme", Repo: "platform",
-					DefaultBranch:     "main",
+					ID:              77,
+					GitLabProjectID: 1001,
+					Namespace:       "acme", Repo: "platform",
+					DefaultBranch: "main",
 				},
 				OpenAPIForceRescan: true,
 				ActiveAPICount:     2,
@@ -485,10 +485,10 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 		},
 		catalogStatusResult: store.RepoCatalogFreshness{
 			Repo: store.Repo{
-				ID:                77,
-				GitLabProjectID:   1001,
-				Namespace: "acme", Repo: "platform",
-				DefaultBranch:     "main",
+				ID:              77,
+				GitLabProjectID: 1001,
+				Namespace:       "acme", Repo: "platform",
+				DefaultBranch: "main",
 			},
 			OpenAPIForceRescan: true,
 			ActiveAPICount:     2,
@@ -601,6 +601,10 @@ func newQueryTestServer(readStore queryReadStore) *Server {
 }
 
 type fakeQueryReadStore struct {
+	repoLookupInputs       []string
+	repoLookupResultByPath map[string]store.Repo
+	repoLookupErr          error
+
 	resolveReadSnapshotInputs []store.ResolveReadSnapshotInput
 	resolveReadSnapshotResult store.ResolvedReadSnapshot
 	resolveReadSnapshotErr    error
@@ -642,6 +646,21 @@ type fakeQueryReadStore struct {
 	catalogStatusInputs []string
 	catalogStatusResult store.RepoCatalogFreshness
 	catalogStatusErr    error
+}
+
+func (f *fakeQueryReadStore) GetRepoByNamespaceAndRepo(
+	_ context.Context,
+	namespace string,
+	repo string,
+) (store.Repo, error) {
+	f.repoLookupInputs = append(f.repoLookupInputs, namespace+"/"+repo)
+	if f.repoLookupErr != nil {
+		return store.Repo{}, f.repoLookupErr
+	}
+	if result, ok := f.repoLookupResultByPath[namespace+"/"+repo]; ok {
+		return result, nil
+	}
+	return store.Repo{}, store.ErrRepoNotFound
 }
 
 type apiInventoryInput struct {

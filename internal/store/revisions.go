@@ -63,6 +63,40 @@ func (s *Store) GetRepoByID(ctx context.Context, repoID int64) (Repo, error) {
 	}, nil
 }
 
+func (s *Store) GetRepoByNamespaceAndRepo(ctx context.Context, namespace string, repo string) (Repo, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return Repo{}, ErrStoreNotConfigured
+	}
+
+	namespace = strings.TrimSpace(namespace)
+	repo = strings.TrimSpace(repo)
+	if namespace == "" {
+		return Repo{}, errors.New("namespace must not be empty")
+	}
+	if repo == "" {
+		return Repo{}, errors.New("repo must not be empty")
+	}
+
+	row, err := sqlc.New(s.pool).GetRepoByNamespaceAndRepo(ctx, sqlc.GetRepoByNamespaceAndRepoParams{
+		Namespace: namespace,
+		Repo:      repo,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Repo{}, fmt.Errorf("%w: path=%s/%s", ErrRepoNotFound, namespace, repo)
+		}
+		return Repo{}, fmt.Errorf("get repo by path %q: %w", namespace+"/"+repo, err)
+	}
+
+	return Repo{
+		ID:              row.ID,
+		GitLabProjectID: row.GitlabProjectID,
+		Namespace:       row.Namespace,
+		Repo:            row.Repo,
+		DefaultBranch:   row.DefaultBranch,
+	}, nil
+}
+
 func (s *Store) GetRevisionByID(ctx context.Context, revisionID int64) (Revision, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return Revision{}, ErrStoreNotConfigured

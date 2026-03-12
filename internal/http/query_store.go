@@ -7,6 +7,7 @@ import (
 )
 
 type queryReadStore interface {
+	GetRepoByNamespaceAndRepo(ctx context.Context, namespace string, repo string) (store.Repo, error)
 	ResolveReadSnapshot(ctx context.Context, input store.ResolveReadSnapshotInput) (store.ResolvedReadSnapshot, error)
 	ResolveSpecSnapshots(ctx context.Context, input store.ResolveReadSnapshotInput) (store.ResolvedSpecSnapshots, error)
 	ResolveOperationCandidatesByOperationID(
