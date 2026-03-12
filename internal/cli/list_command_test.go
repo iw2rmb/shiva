@@ -2,6 +2,7 @@ package cli
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
@@ -82,6 +83,25 @@ func TestRepoListSummaryDimsRepoNameForZeroOps(t *testing.T) {
 	wantSummary := newListStyles(true).renderDimmed("4209a977, 0 ops")
 	if summary != wantSummary {
 		t.Fatalf("expected %q, got %q", wantSummary, summary)
+	}
+}
+
+func TestRenderNamespaceEntriesStylesAllPendingRowsForTTY(t *testing.T) {
+	t.Parallel()
+
+	styles := newListStyles(true)
+	got := string(renderNamespaceEntries([]namespaceEntry{
+		{Namespace: "abel-qa", RepoCount: 2, AllPending: true},
+		{Namespace: "acme", RepoCount: 1, AllPending: false},
+	}, false, true))
+	if !strings.HasPrefix(got, "total: 2\n") {
+		t.Fatalf("expected total header, got %q", got)
+	}
+	if !strings.Contains(got, styles.renderMuted("abel-qa")+"  "+styles.renderMuted("2 repos, all pending")) {
+		t.Fatalf("expected pending namespace row to be muted, got %q", got)
+	}
+	if !strings.Contains(got, "acme") || !strings.Contains(got, "1 repo") {
+		t.Fatalf("expected non-pending namespace row to remain plain, got %q", got)
 	}
 }
 

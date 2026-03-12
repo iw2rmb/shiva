@@ -125,9 +125,9 @@ func executeListCommand(
 
 	switch selection.Kind {
 	case listSelectionNamespacesAll:
-		return renderNamespaceEntries(namespaceEntriesFromRows(repoRows), false), nil
+		return renderNamespaceEntries(namespaceEntriesFromRows(repoRows), false, colorize), nil
 	case listSelectionNamespacesMatch:
-		return renderNamespaceEntries(filterNamespaceEntries(namespaceEntriesFromRows(repoRows), selection.Prefix), true), nil
+		return renderNamespaceEntries(filterNamespaceEntries(namespaceEntriesFromRows(repoRows), selection.Prefix), true, colorize), nil
 	case listSelectionNamespaceRepos:
 		return renderNamespaceRepos(ctx, service, options, selection.Namespace, "", repoRows, colorize), nil
 	case listSelectionRepoMatch:
@@ -253,7 +253,7 @@ func repoRowByPath(rows []clioutput.RepoRow, path string) *clioutput.RepoRow {
 	return nil
 }
 
-func renderNamespaceEntries(entries []namespaceEntry, matched bool) []byte {
+func renderNamespaceEntries(entries []namespaceEntry, matched bool, colorize bool) []byte {
 	buffer := &bytes.Buffer{}
 	if matched {
 		fmt.Fprintf(buffer, "match: %d\n", len(entries))
@@ -262,12 +262,19 @@ func renderNamespaceEntries(entries []namespaceEntry, matched bool) []byte {
 	}
 
 	writer := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
+	styles := newListStyles(colorize)
 	for _, entry := range entries {
 		description := fmt.Sprintf("%d %s", entry.RepoCount, pluralize(entry.RepoCount, "repo", "repos"))
 		if entry.AllPending {
 			description += ", all pending"
 		}
-		fmt.Fprintf(writer, "%s\t%s\n", entry.Namespace, description)
+		nameLabel := entry.Namespace
+		descriptionLabel := description
+		if entry.AllPending {
+			nameLabel = styles.renderMuted(nameLabel)
+			descriptionLabel = styles.renderMuted(descriptionLabel)
+		}
+		fmt.Fprintf(writer, "%s\t%s\n", nameLabel, descriptionLabel)
 	}
 	_ = writer.Flush()
 	return buffer.Bytes()

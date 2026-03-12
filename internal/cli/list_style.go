@@ -5,6 +5,7 @@ import "charm.land/lipgloss/v2"
 type listStyles struct {
 	enabled       bool
 	dimmed        lipgloss.Style
+	muted         lipgloss.Style
 	pathParam     lipgloss.Style
 	defaultMethod lipgloss.Style
 	getMethod     lipgloss.Style
@@ -19,6 +20,7 @@ func newListStyles(enabled bool) listStyles {
 	return listStyles{
 		enabled:       enabled,
 		dimmed:        lipgloss.NewStyle().Faint(true),
+		muted:         lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("7")),
 		pathParam:     lipgloss.NewStyle().Bold(true),
 		defaultMethod: lipgloss.NewStyle().Bold(true),
 		getMethod:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")),
@@ -74,6 +76,13 @@ func (s listStyles) renderSummary(value string) string {
 		return value
 	}
 	return s.summary.Render(value)
+}
+
+func (s listStyles) renderMuted(value string) string {
+	if !s.enabled {
+		return value
+	}
+	return s.muted.Render(value)
 }
 
 func (s listStyles) renderRepoName(value string, dimmed bool) string {
