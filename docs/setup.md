@@ -4,7 +4,7 @@
 This document describes runtime setup, configuration, and startup behavior of the current Shiva codebase.
 
 ## Prerequisites
-- Go `1.22+`.
+- Go `1.25+`.
 - PostgreSQL.
 - GitLab access token only if your GitLab APIs require auth.
 
@@ -106,9 +106,8 @@ If `profiles.yaml` is absent, the CLI synthesizes one `default` profile from `SH
 Current CLI cache behavior:
 - floating selectors refresh repo/API/operation catalog slices lazily
 - pinned `--sha` and `--rev` selectors reuse immutable cache entries
-- `--refresh` forces network refresh
 - `--offline` serves only cached catalog and explicit response data
-- repeated `--refresh` work against the same repo/API/scope is coalesced within one CLI invocation
+- `shiva sync <repo-ref>` is the explicit repo refresh command
 
 ## Health and Metrics
 - `GET /healthz`

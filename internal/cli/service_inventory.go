@@ -40,7 +40,7 @@ func (s *RuntimeService) ListRepos(
 		return nil, err
 	}
 
-	if err := s.catalogService.PrepareRepos(ctx, client, source.Name, s.refreshOptions("repos", source.Name, request.Envelope{}, options)); err != nil {
+	if err := s.catalogService.PrepareRepos(ctx, client, source.Name, catalogOptions(options)); err != nil {
 		return nil, normalizeServiceError(err)
 	}
 
@@ -85,7 +85,7 @@ func (s *RuntimeService) ListAPIs(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, s.refreshOptions("apis", source.Name, normalized, options))
+	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, catalogOptions(options))
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
@@ -136,7 +136,7 @@ func (s *RuntimeService) ListOperations(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, s.refreshOptions("ops", source.Name, normalized, options))
+	prepared, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, catalogOptions(options))
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
@@ -192,8 +192,7 @@ func (s *RuntimeService) Sync(
 		return nil, err
 	}
 
-	refreshOptions := s.refreshOptions("apis", source.Name, normalized, options)
-	refreshOptions.Refresh = true
+	refreshOptions := catalog.RefreshOptions{Refresh: true}
 
 	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, refreshOptions)
 	if err != nil {

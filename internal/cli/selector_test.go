@@ -186,15 +186,6 @@ func TestParseShorthandInvocation(t *testing.T) {
 			expectedErr: "packed @target must match --via",
 		},
 		{
-			name: "refresh offline conflict",
-			args: []string{"allure/allure-deployment"},
-			flags: RootFlags{
-				Refresh: true,
-				Offline: true,
-			},
-			expectedErr: "--refresh and --offline are mutually exclusive",
-		},
-		{
 			name:        "call mode requires operation for single arg selector",
 			args:        []string{"allure/allure-deployment@prod"},
 			expectedErr: "call mode requires either #<operation-id> or <method> <path>",

@@ -26,7 +26,7 @@ func (s *RuntimeService) EmitRepoRequests(ctx context.Context, options RequestOp
 		return nil, err
 	}
 
-	if err := s.catalogService.PrepareRepos(ctx, client, source.Name, s.refreshOptions("repos", source.Name, request.Envelope{}, options)); err != nil {
+	if err := s.catalogService.PrepareRepos(ctx, client, source.Name, catalogOptions(options)); err != nil {
 		return nil, normalizeServiceError(err)
 	}
 
@@ -83,7 +83,7 @@ func (s *RuntimeService) EmitAPIRequests(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, s.refreshOptions("apis", source.Name, normalized, options))
+	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, catalogOptions(options))
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
@@ -135,7 +135,7 @@ func (s *RuntimeService) EmitOperationRequests(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, s.refreshOptions("ops", source.Name, normalized, options))
+	prepared, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, catalogOptions(options))
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}

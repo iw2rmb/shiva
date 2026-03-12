@@ -52,9 +52,6 @@ func newListCommand(serviceFactory func() (Service, error), flags *RootFlags, co
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completionProvider.CompleteRepoArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateRefreshOfflineFlags(*flags); err != nil {
-				return err
-			}
 			if err := validateListFlags(*flags); err != nil {
 				return err
 			}
@@ -88,16 +85,8 @@ func newListCommand(serviceFactory func() (Service, error), flags *RootFlags, co
 func requestOptionsFromFlags(flags RootFlags) RequestOptions {
 	return RequestOptions{
 		Profile: flags.Profile,
-		Refresh: flags.Refresh,
 		Offline: flags.Offline,
 	}
-}
-
-func validateRefreshOfflineFlags(flags RootFlags) error {
-	if flags.Refresh && flags.Offline {
-		return &InvalidInputError{Message: "--refresh and --offline are mutually exclusive"}
-	}
-	return nil
 }
 
 func validateListFlags(flags RootFlags) error {
@@ -828,9 +817,6 @@ func newSyncCommand(serviceFactory func() (Service, error), flags *RootFlags) *c
 		SilenceErrors: true,
 		Args:          cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateRefreshOfflineFlags(*flags); err != nil {
-				return err
-			}
 			selector, err := parseRepoSnapshotSelector(args[0], *flags, false, false)
 			if err != nil {
 				return err

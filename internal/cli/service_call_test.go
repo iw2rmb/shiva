@@ -44,7 +44,6 @@ func TestRuntimeServiceExecuteCallDirectDryRunUsesCatalogResolution(t *testing.T
 		},
 		catalogService: catalog.NewService(store),
 		catalogStore:   store,
-		refreshedKeys:  make(map[string]struct{}),
 		newClient: func(source profile.Source) (transportClient, error) {
 			_ = source
 			return client, nil
@@ -120,7 +119,6 @@ func TestRuntimeServiceExecuteCallDirectDispatchesToTarget(t *testing.T) {
 		},
 		catalogService: catalog.NewService(store),
 		catalogStore:   store,
-		refreshedKeys:  make(map[string]struct{}),
 		newClient: func(source profile.Source) (transportClient, error) {
 			_ = source
 			return client, nil
@@ -139,62 +137,5 @@ func TestRuntimeServiceExecuteCallDirectDispatchesToTarget(t *testing.T) {
 	}
 	if string(body) != `{"ok":true}` {
 		t.Fatalf("unexpected response body %q", string(body))
-	}
-}
-
-func TestRuntimeServiceRefreshCoalescesOperationAndCallInventoryRefreshes(t *testing.T) {
-	t.Parallel()
-
-	store, err := catalog.NewStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("create catalog store: %v", err)
-	}
-
-	client := &recordingTransportClient{
-		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
-		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
-		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
-		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
-		operationBody:  []byte(`{"operationId":"listPets"}`),
-	}
-
-	service := &RuntimeService{
-		document: config.Document{
-			ActiveProfile: "default",
-			Profiles: map[string]profile.Source{
-				"default": {Name: "default", BaseURL: "http://default.example", Timeout: 5 * time.Second},
-			},
-			Targets: map[string]target.Entry{
-				target.BuiltinShivaName: target.BuiltinShiva(),
-				"prod":                  {Name: "prod", Mode: target.ModeDirect, BaseURL: "https://api.example", Timeout: 5 * time.Second},
-			},
-		},
-		catalogService: catalog.NewService(store),
-		catalogStore:   store,
-		refreshedKeys:  make(map[string]struct{}),
-		newClient: func(source profile.Source) (transportClient, error) {
-			_ = source
-			return client, nil
-		},
-	}
-
-	if _, err := service.GetOperation(context.Background(), request.Envelope{
-		Namespace: "acme", Repo: "platform",
-		OperationID: "listPets",
-	}, RequestOptions{Refresh: true}); err != nil {
-		t.Fatalf("get operation failed: %v", err)
-	}
-
-	if _, err := service.ExecuteCall(context.Background(), request.Envelope{
-		Namespace: "acme", Repo: "platform",
-		Target:      "prod",
-		OperationID: "listPets",
-		DryRun:      true,
-	}, RequestOptions{Refresh: true}, CallFormatJSON); err != nil {
-		t.Fatalf("execute call failed: %v", err)
-	}
-
-	if client.operationsCalls != 1 {
-		t.Fatalf("expected one shared operation inventory refresh, got %d", client.operationsCalls)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/iw2rmb/shiva/internal/cli/catalog"
 	"github.com/iw2rmb/shiva/internal/cli/config"
@@ -20,7 +19,6 @@ import (
 
 type RequestOptions struct {
 	Profile string
-	Refresh bool
 	Offline bool
 }
 
@@ -53,8 +51,6 @@ type RuntimeService struct {
 	catalogService *catalog.Service
 	catalogStore   *catalog.Store
 	newClient      func(source profile.Source) (transportClient, error)
-	refreshMu      sync.Mutex
-	refreshedKeys  map[string]struct{}
 }
 
 func NewService(document config.Document, catalogStore *catalog.Store) *RuntimeService {
@@ -62,7 +58,6 @@ func NewService(document config.Document, catalogStore *catalog.Store) *RuntimeS
 		document:       document,
 		catalogService: catalog.NewService(catalogStore),
 		catalogStore:   catalogStore,
-		refreshedKeys:  make(map[string]struct{}),
 		newClient: func(source profile.Source) (transportClient, error) {
 			client, err := httpclient.New(httpclient.Config{
 				BaseURL:        source.BaseURL,
@@ -116,12 +111,10 @@ func (s *RuntimeService) GetSpec(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareSpec(ctx, client, source.Name, normalized, s.refreshOptions("apis", source.Name, normalized, options))
+	prepared, err := s.catalogService.PrepareSpec(ctx, client, source.Name, normalized, catalogOptions(options))
 	if err != nil {
-		if !options.Refresh {
-			if cached, found, cacheErr := s.loadCachedSpecRecord(source.Name, normalized, scope, format); cacheErr == nil && found {
-				return cached.Payload, nil
-			}
+		if cached, found, cacheErr := s.loadCachedSpecRecord(source.Name, normalized, scope, format); cacheErr == nil && found {
+			return cached.Payload, nil
 		}
 		return nil, normalizeServiceError(err)
 	}
@@ -129,10 +122,8 @@ func (s *RuntimeService) GetSpec(
 	pinnedSelector := pinSelectorToPreparedSnapshot(normalized, prepared)
 	body, err := client.GetSpec(ctx, pinnedSelector, format)
 	if err != nil {
-		if !options.Refresh {
-			if cached, found, cacheErr := s.loadCachedSpecRecord(source.Name, normalized, prepared.Scope, format); cacheErr == nil && found && cacheRecordMatches(cached, prepared.Fingerprint) {
-				return cached.Payload, nil
-			}
+		if cached, found, cacheErr := s.loadCachedSpecRecord(source.Name, normalized, prepared.Scope, format); cacheErr == nil && found && cacheRecordMatches(cached, prepared.Fingerprint) {
+			return cached.Payload, nil
 		}
 		return nil, normalizeServiceError(err)
 	}
@@ -194,12 +185,10 @@ func (s *RuntimeService) GetOperation(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareOperation(ctx, client, source.Name, normalized, s.refreshOptions("ops", source.Name, normalized, options))
+	prepared, err := s.catalogService.PrepareOperation(ctx, client, source.Name, normalized, catalogOptions(options))
 	if err != nil {
-		if !options.Refresh {
-			if cached, found, cacheErr := s.loadCachedOperationRecord(source.Name, normalized, scope, selectorKey); cacheErr == nil && found {
-				return cached.Payload, nil
-			}
+		if cached, found, cacheErr := s.loadCachedOperationRecord(source.Name, normalized, scope, selectorKey); cacheErr == nil && found {
+			return cached.Payload, nil
 		}
 		return nil, normalizeServiceError(err)
 	}
@@ -207,10 +196,8 @@ func (s *RuntimeService) GetOperation(
 	pinnedSelector := pinSelectorToPreparedSnapshot(normalized, prepared)
 	body, err := client.GetOperation(ctx, pinnedSelector)
 	if err != nil {
-		if !options.Refresh {
-			if cached, found, cacheErr := s.loadCachedOperationRecord(source.Name, normalized, prepared.Scope, selectorKey); cacheErr == nil && found && cacheRecordMatches(cached, prepared.Fingerprint) {
-				return cached.Payload, nil
-			}
+		if cached, found, cacheErr := s.loadCachedOperationRecord(source.Name, normalized, prepared.Scope, selectorKey); cacheErr == nil && found && cacheRecordMatches(cached, prepared.Fingerprint) {
+			return cached.Payload, nil
 		}
 		return nil, normalizeServiceError(err)
 	}

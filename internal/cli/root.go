@@ -76,7 +76,6 @@ func addSharedFlags(command *cobra.Command, flags *RootFlags) {
 	command.PersistentFlags().Int64Var(&flags.RevisionID, "rev", 0, "revision id")
 	command.PersistentFlags().StringVar(&flags.Profile, "profile", "", "source profile name")
 	command.PersistentFlags().StringVar(&flags.Target, "via", "", "execution target")
-	command.PersistentFlags().BoolVar(&flags.Refresh, "refresh", false, "force refresh before execution")
 	command.PersistentFlags().BoolVar(&flags.Offline, "offline", false, "forbid network refreshes")
 	command.PersistentFlags().BoolVar(&flags.DryRun, "dry-run", false, "print the normalized plan without dispatch")
 	outputValue := newStringFlagValue(&flags.Output, "format")
@@ -101,7 +100,6 @@ func mustRegisterCompletionFunc(
 func executeInvocation(ctx context.Context, service Service, invocation ShorthandInvocation, flags RootFlags) ([]byte, error) {
 	options := RequestOptions{
 		Profile: flags.Profile,
-		Refresh: flags.Refresh,
 		Offline: flags.Offline,
 	}
 
@@ -230,8 +228,6 @@ func validateHealthFlags(flags RootFlags) error {
 		return &InvalidInputError{Message: "health does not accept --sha or --rev"}
 	case flags.Target != "":
 		return &InvalidInputError{Message: "health does not accept --via"}
-	case flags.Refresh:
-		return &InvalidInputError{Message: "health does not accept --refresh"}
 	case flags.Offline:
 		return &InvalidInputError{Message: "health does not accept --offline"}
 	case flags.DryRun:

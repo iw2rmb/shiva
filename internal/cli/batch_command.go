@@ -48,9 +48,6 @@ func newBatchCommand(serviceFactory func() (Service, error), flags *RootFlags) *
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateRefreshOfflineFlags(*flags); err != nil {
-				return err
-			}
 			if err := validateBatchFlags(*flags); err != nil {
 				return err
 			}

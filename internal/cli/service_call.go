@@ -45,7 +45,7 @@ func (s *RuntimeService) ExecuteCall(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareCall(ctx, client, source.Name, normalized, s.refreshOptions("ops", source.Name, normalized, options))
+	prepared, err := s.catalogService.PrepareCall(ctx, client, source.Name, normalized, catalogOptions(options))
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}

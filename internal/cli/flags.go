@@ -6,7 +6,6 @@ type RootFlags struct {
 	RevisionID int64
 	Profile    string
 	Target     string
-	Refresh    bool
 	Offline    bool
 	DryRun     bool
 	Output     string

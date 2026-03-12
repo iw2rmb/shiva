@@ -36,7 +36,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedSpec:   1,
 			expectedFormat: SpecFormatYAML,
 			expectedRequest: request.Envelope{
-				Kind: request.KindSpec,
+				Kind:      request.KindSpec,
 				Namespace: "allure", Repo: "allure-deployment",
 			},
 		},
@@ -46,7 +46,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedStdout: "{\"operationId\":\"findAll_42\"}\n",
 			expectedOp:     1,
 			expectedRequest: request.Envelope{
-				Kind:        request.KindOperation,
+				Kind:      request.KindOperation,
 				Namespace: "allure", Repo: "allure-deployment",
 				OperationID: "findAll_42",
 			},
@@ -57,7 +57,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedStdout: "operationId: patchPet\n",
 			expectedOp:     1,
 			expectedRequest: request.Envelope{
-				Kind:   request.KindOperation,
+				Kind:      request.KindOperation,
 				Namespace: "allure", Repo: "allure-deployment",
 				Method: "patch",
 				Path:   "/pets/{id}",
@@ -70,7 +70,7 @@ func TestRootCommandDispatchesShorthandForms(t *testing.T) {
 			expectedCall:    1,
 			expectedCallFmt: CallFormatJSON,
 			expectedRequest: request.Envelope{
-				Kind:        request.KindCall,
+				Kind:      request.KindCall,
 				Namespace: "allure", Repo: "allure-deployment",
 				Target:      "shiva",
 				OperationID: "getUsers",
@@ -260,33 +260,33 @@ func TestRootCommandListAndSyncCommands(t *testing.T) {
 			expectedFormat:    "json",
 		},
 		{
-			name:             "ls namespace prefix filters namespaces",
-			args:             []string{"ls", "ac"},
-			expectedContains: []string{"match: 1", "acme", "1 repo"},
+			name:              "ls namespace prefix filters namespaces",
+			args:              []string{"ls", "ac"},
+			expectedContains:  []string{"match: 1", "acme", "1 repo"},
 			expectedListRepos: 1,
-			expectedFormat:   "json",
+			expectedFormat:    "json",
 		},
 		{
-			name:             "ls namespace slash lists repos",
-			args:             []string{"ls", "acme/"},
-			expectedContains: []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), 2 ops, updated 10-03-2026 12:00:00"},
+			name:              "ls namespace slash lists repos",
+			args:              []string{"ls", "acme/"},
+			expectedContains:  []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), 2 ops, updated 10-03-2026 12:00:00"},
 			expectedListRepos: 1,
-			expectedListAPIs: 1,
-			expectedFormat:   "json",
-			expectListTarget: true,
+			expectedListAPIs:  1,
+			expectedFormat:    "json",
+			expectListTarget:  true,
 			expectedListTarget: request.Envelope{
 				Namespace: "acme",
 				Repo:      "platform",
 			},
 		},
 		{
-			name:             "ls repo prints operations",
-			args:             []string{"ls", "acme/platform"},
-			expectedContains: []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), total 1 ops, updated 10-03-2026 12:00:00", "GET /pets", "#listPets"},
+			name:              "ls repo prints operations",
+			args:              []string{"ls", "acme/platform"},
+			expectedContains:  []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), total 1 ops, updated 10-03-2026 12:00:00", "GET /pets", "#listPets"},
 			expectedListRepos: 1,
-			expectedListOps:  1,
-			expectedFormat:   "json",
-			expectListTarget: true,
+			expectedListOps:   1,
+			expectedFormat:    "json",
+			expectListTarget:  true,
 			expectedListTarget: request.Envelope{
 				Namespace: "acme",
 				Repo:      "platform",
@@ -350,46 +350,6 @@ func TestRootCommandListAndSyncCommands(t *testing.T) {
 			}
 			if testCase.expectListTarget && !reflect.DeepEqual(service.lastListRequest, testCase.expectedListTarget) {
 				t.Fatalf("expected list request %+v, got %+v", testCase.expectedListTarget, service.lastListRequest)
-			}
-		})
-	}
-}
-
-func TestRootCommandListAndSyncRejectRefreshOfflineCombination(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name string
-		args []string
-	}{
-		{
-			name: "ls",
-			args: []string{"ls", "--refresh", "--offline"},
-		},
-		{
-			name: "sync",
-			args: []string{"sync", "--refresh", "--offline", "acme/platform"},
-		},
-	}
-
-	for _, testCase := range testCases {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			command := NewRootCommand(func() (Service, error) {
-				return &fakeService{}, nil
-			})
-			command.SetOut(&bytes.Buffer{})
-			command.SetErr(&bytes.Buffer{})
-			command.SetArgs(testCase.args)
-
-			err := command.ExecuteContext(context.Background())
-			if err == nil {
-				t.Fatalf("expected invalid input error")
-			}
-			if err.Error() != "--refresh and --offline are mutually exclusive" {
-				t.Fatalf("unexpected error %q", err.Error())
 			}
 		})
 	}

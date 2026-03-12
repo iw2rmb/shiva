@@ -41,8 +41,7 @@ This document describes the shipped `shiva` CLI surface, selector grammar, catal
 - `--api <root-path>`, `--sha <sha8>`, and `--rev <revision-id>` apply to spec, operation, and call shorthand.
 - `--rev` and `--sha` are mutually exclusive.
 - `--dry-run` is valid only in call mode.
-- `--refresh` and `--offline` are mutually exclusive.
-- `ls` accepts only selector input plus `--profile`, `--refresh`, and `--offline`.
+- `ls` accepts only selector input plus `--profile` and `--offline`.
 
 ## Call Input Flags
 - `--path key=value`
@@ -148,9 +147,8 @@ Success writes to stdout. Errors write to stderr.
   - explicit spec and operation responses for offline reuse
 - Floating selectors without `--sha` or `--rev` refresh lazily from `/v1/catalog/status` before refreshing catalog slices.
 - Pinned `--sha` and `--rev` selectors reuse immutable cache entries.
-- `--refresh` forces network refresh.
 - `--offline` forbids network refreshes and serves only cached catalog and explicit response data.
-- Repeated `--refresh` work against the same repo/API/scope is coalesced within one CLI invocation, including `batch`.
+- `shiva sync <repo-ref>` is the only explicit refresh command; it forces a repo-wide API and operation catalog refresh and returns a JSON summary.
 
 ## Exit Codes
 - `0`: success

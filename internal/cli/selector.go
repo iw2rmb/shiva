@@ -71,10 +71,6 @@ func ParseShorthandInvocation(args []string, flags RootFlags) (ShorthandInvocati
 		return ShorthandInvocation{}, &InvalidInputError{Message: "expected a selector or subcommand"}
 	}
 
-	if flags.Refresh && flags.Offline {
-		return ShorthandInvocation{}, &InvalidInputError{Message: "--refresh and --offline are mutually exclusive"}
-	}
-
 	packed, err := ParsePackedSelector(args[0])
 	if err != nil {
 		return ShorthandInvocation{}, err
