@@ -294,12 +294,13 @@ func renderNamespaceRepos(
 	fmt.Fprintf(buffer, "namespace %s, %s\n", namespace, headerLabel)
 
 	writer := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
+	styles := newListStyles(colorize)
 	for _, row := range matchedRows {
-		description, err := repoListSummary(ctx, service, options, row, false, colorize)
+		description, dimmed, err := repoListSummary(ctx, service, options, row, false, colorize)
 		if err != nil {
-			description = repoFallbackSummary(row, false, colorize)
+			description, dimmed = repoFallbackSummary(row, false, colorize)
 		}
-		fmt.Fprintf(writer, "%s\t%s\n", row.Repo, description)
+		fmt.Fprintf(writer, "%s\t%s\n", styles.renderRepoName(row.Repo, dimmed), description)
 	}
 	_ = writer.Flush()
 	return buffer.Bytes()
@@ -321,7 +322,7 @@ func renderRepoOperations(
 		return nil, &NotFoundError{Message: fmt.Sprintf("repo %q was not found", identity.Path())}
 	}
 
-	description, operationRows, err := repoOperationSummary(ctx, service, options, *row, colorize)
+	description, operationRows, dimmed, err := repoOperationSummary(ctx, service, options, *row, colorize)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +330,8 @@ func renderRepoOperations(
 	buffer := &bytes.Buffer{}
 	fmt.Fprintf(buffer, "namespace %s, total %d repos\n", namespace, len(namespaceRows))
 	writer := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(writer, "%s\t%s\n", row.Repo, description)
+	styles := newListStyles(colorize)
+	fmt.Fprintf(writer, "%s\t%s\n", styles.renderRepoName(row.Repo, dimmed), description)
 	_ = writer.Flush()
 
 	for _, line := range formatOperationLines(operationRows, colorize) {
@@ -366,21 +368,21 @@ func repoListSummary(
 	row clioutput.RepoRow,
 	exact bool,
 	colorize bool,
-) (string, error) {
+) (string, bool, error) {
 	if repoRowIsPending(row) {
-		return repoPendingLabel(row, colorize), nil
+		return repoPendingLabel(row, colorize), false, nil
 	}
 	if row.ActiveAPICount < 1 {
-		return formatRepoSummary("", shortSHA(repoHeadSHA(row)), 0, repoUpdatedLabel(row), exact, colorize), nil
+		return formatRepoSummary("", shortSHA(repoHeadSHA(row)), 0, repoUpdatedLabel(row), exact, colorize), true, nil
 	}
 
 	apiRows, err := loadRepoAPIRows(ctx, service, options, row)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	branch, sha, totalOps := repoAPISummary(apiRows)
-	return formatRepoSummary(branch, shortSHA(sha), totalOps, repoUpdatedLabel(row), exact, colorize), nil
+	return formatRepoSummary(branch, shortSHA(sha), totalOps, repoUpdatedLabel(row), exact, colorize), totalOps == 0, nil
 }
 
 func repoOperationSummary(
@@ -389,14 +391,14 @@ func repoOperationSummary(
 	options RequestOptions,
 	row clioutput.RepoRow,
 	colorize bool,
-) (string, []clioutput.OperationRow, error) {
+) (string, []clioutput.OperationRow, bool, error) {
 	if repoRowIsPending(row) {
-		return repoPendingLabel(row, colorize), nil, nil
+		return repoPendingLabel(row, colorize), nil, false, nil
 	}
 
 	operationRows, err := loadRepoOperationRows(ctx, service, options, row)
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 
 	branch, sha := repoOperationMetadata(operationRows)
@@ -407,7 +409,7 @@ func repoOperationSummary(
 		}
 	}
 
-	return formatRepoSummary(branch, shortSHA(sha), len(operationRows), repoUpdatedLabel(row), true, colorize), operationRows, nil
+	return formatRepoSummary(branch, shortSHA(sha), len(operationRows), repoUpdatedLabel(row), true, colorize), operationRows, len(operationRows) == 0, nil
 }
 
 func loadRepoAPIRows(
@@ -663,11 +665,11 @@ func formatBranchSHA(branch string, sha string) string {
 	}
 }
 
-func repoFallbackSummary(row clioutput.RepoRow, exact bool, colorize bool) string {
+func repoFallbackSummary(row clioutput.RepoRow, exact bool, colorize bool) (string, bool) {
 	if repoRowIsPending(row) {
-		return repoPendingLabel(row, colorize)
+		return repoPendingLabel(row, colorize), false
 	}
-	return formatRepoSummary("", shortSHA(repoHeadSHA(row)), 0, repoUpdatedLabel(row), exact, colorize)
+	return formatRepoSummary("", shortSHA(repoHeadSHA(row)), 0, repoUpdatedLabel(row), exact, colorize), true
 }
 
 func repoPendingLabel(row clioutput.RepoRow, colorize bool) string {

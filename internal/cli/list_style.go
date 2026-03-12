@@ -76,6 +76,13 @@ func (s listStyles) renderSummary(value string) string {
 	return s.summary.Render(value)
 }
 
+func (s listStyles) renderRepoName(value string, dimmed bool) string {
+	if !dimmed {
+		return value
+	}
+	return s.renderDimmed(value)
+}
+
 func renderedWidth(value string) int {
 	return lipgloss.Width(value)
 }

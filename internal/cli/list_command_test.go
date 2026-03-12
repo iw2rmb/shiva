@@ -56,6 +56,35 @@ func TestRepoPendingLabelLeavesNonTTYOutputPlain(t *testing.T) {
 	}
 }
 
+func TestRepoListSummaryDimsRepoNameForZeroOps(t *testing.T) {
+	t.Parallel()
+
+	summary, dimmed, err := repoListSummary(
+		t.Context(),
+		nil,
+		RequestOptions{},
+		clioutput.RepoRow{
+			Repo: "infosys-marketplace-linguistic",
+			HeadRevision: &clioutput.RevisionState{
+				SHA:    "4209a977",
+				Status: "processed",
+			},
+		},
+		false,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !dimmed {
+		t.Fatalf("expected repo name to be dimmed for zero-op summary")
+	}
+	wantSummary := newListStyles(true).renderDimmed("4209a977, 0 ops")
+	if summary != wantSummary {
+		t.Fatalf("expected %q, got %q", wantSummary, summary)
+	}
+}
+
 func TestFormatOperationLinesSortsByPathAndFormatsLookupStyle(t *testing.T) {
 	t.Parallel()
 
