@@ -12,6 +12,8 @@ import (
 
 	"github.com/iw2rmb/shiva/internal/config"
 	"github.com/iw2rmb/shiva/internal/gitlab"
+	"github.com/iw2rmb/shiva/internal/openapi"
+	"github.com/iw2rmb/shiva/internal/openapi/lint"
 	"github.com/iw2rmb/shiva/internal/store"
 )
 
@@ -188,6 +190,70 @@ func TestGitLabCIValidateHandler_NoSpecChangesReturnsEmptyShivaResponse(t *testi
 	}
 }
 
+func TestGitLabCIValidateHandler_ImpactedSpecReturnsSourceLocalizedIssueRows(t *testing.T) {
+	t.Parallel()
+
+	server, sourceRunner := newImpactedGitLabCIValidationServiceTestServer(
+		lint.SourceExecutionResult{
+			Issues: []lint.SourceIssue{
+				{
+					RuleID:   "paths-kebab-case",
+					Severity: "error",
+					Message:  "path segment should be kebab case",
+					JSONPath: "$.paths['/Bad_Path']",
+					FilePath: "apis/pets/paths.yaml",
+					RangePos: [4]int32{7, 3, 7, 12},
+				},
+			},
+		},
+	)
+
+	resp := doGitLabCIValidationRequest(
+		t,
+		server,
+		`{"gitlab_project_id":42,"namespace":"acme","repo":"platform","sha":"deadbeef","branch":"main","parent_sha":"cafebabe"}`,
+	)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, string(payload))
+	}
+
+	var body gitlabCIValidationShivaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body.Status != "ok" {
+		t.Fatalf("expected status ok, got %q", body.Status)
+	}
+	if body.Format != GitLabCIValidationFormatShiva {
+		t.Fatalf("expected format %q, got %q", GitLabCIValidationFormatShiva, body.Format)
+	}
+	if len(body.Specs) != 1 {
+		t.Fatalf("expected one spec group, got %d", len(body.Specs))
+	}
+	if body.Specs[0].RootPath != "apis/pets/openapi.yaml" {
+		t.Fatalf("unexpected root path %q", body.Specs[0].RootPath)
+	}
+	if len(body.Specs[0].Issues) != 1 {
+		t.Fatalf("expected one issue row, got %d", len(body.Specs[0].Issues))
+	}
+	if body.Specs[0].Issues[0].FilePath != "apis/pets/paths.yaml" {
+		t.Fatalf("expected source-localized file path, got %q", body.Specs[0].Issues[0].FilePath)
+	}
+	if body.Specs[0].Issues[0].JSONPath != "$.paths['/Bad_Path']" {
+		t.Fatalf("unexpected json path %q", body.Specs[0].Issues[0].JSONPath)
+	}
+	if body.Specs[0].Issues[0].RangePos != [4]int32{7, 3, 7, 12} {
+		t.Fatalf("unexpected range %+v", body.Specs[0].Issues[0].RangePos)
+	}
+	if len(sourceRunner.calls) != 1 || sourceRunner.calls[0] != "apis/pets/openapi.yaml" {
+		t.Fatalf("unexpected source runner calls %+v", sourceRunner.calls)
+	}
+}
+
 func TestGitLabCIValidateHandler_WritesShivaResponse(t *testing.T) {
 	t.Parallel()
 
@@ -357,6 +423,45 @@ func newGitLabCIValidationTestServer(validator gitlabCIValidator) *Server {
 	server := New(config.Config{HTTPAddr: ":8080"}, slog.New(slog.NewTextHandler(io.Discard, nil)), &store.Store{})
 	server.gitlabCIValidator = validator
 	return server
+}
+
+func newImpactedGitLabCIValidationServiceTestServer(
+	sourceResult lint.SourceExecutionResult,
+) (*Server, *fakeGitLabCISourceRunner) {
+	sourceRunner := &fakeGitLabCISourceRunner{
+		resultByRootPath: map[string]lint.SourceExecutionResult{
+			"apis/pets/openapi.yaml": sourceResult,
+		},
+	}
+	validator := NewGitLabCIValidationService(
+		&fakeGitLabCIValidationStore{
+			repo: store.Repo{ID: 7, GitLabProjectID: 42, Namespace: "acme", Repo: "platform"},
+			activeSpecs: []store.ActiveAPISpecWithLatestDependencies{
+				{
+					APISpec: store.APISpec{ID: 11, RepoID: 7, RootPath: "apis/pets/openapi.yaml"},
+					DependencyFilePaths: []string{
+						"shared/common.yaml",
+					},
+				},
+			},
+		},
+		&fakeGitLabCIValidationGitLabClient{
+			changedPaths: []gitlab.ChangedPath{{NewPath: "shared/common.yaml"}},
+		},
+		&fakeGitLabCIValidationResolver{
+			rootByPath: map[string]openapi.RootResolution{
+				"apis/pets/openapi.yaml": {
+					RootPath: "apis/pets/openapi.yaml",
+					Documents: map[string][]byte{
+						"apis/pets/openapi.yaml": []byte("openapi: 3.1.0\n"),
+					},
+				},
+			},
+		},
+		sourceRunner,
+		nil,
+	)
+	return newGitLabCIValidationTestServer(validator), sourceRunner
 }
 
 func doGitLabCIValidationRequest(t *testing.T, server *Server, body string) *http.Response {
