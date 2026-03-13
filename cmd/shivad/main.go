@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
 	"strings"
 	"syscall"
 	"time"
@@ -110,7 +109,19 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	server := httpserver.New(cfg, logger, storeInstance, httpserver.WithTelemetry(telemetry))
+	server := httpserver.New(
+		cfg,
+		logger,
+		storeInstance,
+		httpserver.WithTelemetry(telemetry),
+		httpserver.WithGitLabCIValidator(httpserver.NewGitLabCIValidationService(
+			storeInstance,
+			gitLabClient,
+			openAPIResolver,
+			lint.DefaultSourceRunner(),
+			logger,
+		)),
+	)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- server.Start()
@@ -777,50 +788,30 @@ func (p revisionProcessor) resolveImpactedAPIs(
 		return nil, fmt.Errorf("list active api specs with dependencies for repo %d: %w", repoID, err)
 	}
 
-	changedPathSet := make(map[string]struct{}, len(changedPaths)*2)
-	deletedRoots := make(map[string]struct{}, len(changedPaths))
-	for _, changedPath := range changedPaths {
-		for _, impactPath := range incrementalImpactPaths(changedPath) {
-			changedPathSet[impactPath] = struct{}{}
-		}
-		deletedPath := incrementalDeletedPath(changedPath)
-		if deletedPath != "" {
-			deletedRoots[deletedPath] = struct{}{}
-		}
-	}
-
-	impacted := make([]impactedAPISpec, 0, len(activeSpecs))
+	rootSets := make([]gitlab.OpenAPIRootDependencySet, 0, len(activeSpecs))
+	specByRoot := make(map[string]store.ActiveAPISpecWithLatestDependencies, len(activeSpecs))
 	for _, spec := range activeSpecs {
-		rootPath := normalizeIncrementalRepoPath(spec.RootPath)
+		rootPath := gitlab.NormalizeRepoPath(spec.RootPath)
 		if rootPath == "" {
 			continue
 		}
+		rootSets = append(rootSets, gitlab.OpenAPIRootDependencySet{
+			RootPath:        rootPath,
+			DependencyPaths: spec.DependencyFilePaths,
+		})
+		specByRoot[rootPath] = spec
+	}
 
-		isImpacted := false
-		if _, exists := changedPathSet[rootPath]; exists {
-			isImpacted = true
-		}
-		if !isImpacted {
-			for _, dependencyPath := range spec.DependencyFilePaths {
-				normalizedDependencyPath := normalizeIncrementalRepoPath(dependencyPath)
-				if normalizedDependencyPath == "" {
-					continue
-				}
-				if _, exists := changedPathSet[normalizedDependencyPath]; exists {
-					isImpacted = true
-					break
-				}
-			}
-		}
-
-		if !isImpacted {
+	impactedRoots := gitlab.ImpactedOpenAPIRoots(rootSets, changedPaths)
+	impacted := make([]impactedAPISpec, 0, len(impactedRoots))
+	for _, impactedRoot := range impactedRoots {
+		spec, exists := specByRoot[impactedRoot.RootPath]
+		if !exists {
 			continue
 		}
-
-		_, rootDeleted := deletedRoots[rootPath]
 		impacted = append(impacted, impactedAPISpec{
 			spec:        spec,
-			rootDeleted: rootDeleted,
+			rootDeleted: impactedRoot.RootDeleted,
 		})
 	}
 
@@ -863,7 +854,7 @@ func (p revisionProcessor) processFallbackDiscovery(
 	changedPaths []gitlab.ChangedPath,
 	previousAPISpecRevisionByRoot map[string]int64,
 ) ([]changedAPISpecRevision, error) {
-	candidatePaths := fallbackDiscoveryCandidatePaths(changedPaths)
+	candidatePaths := gitlab.FallbackDiscoveryCandidatePaths(changedPaths)
 	if len(candidatePaths) == 0 {
 		return nil, nil
 	}
@@ -955,80 +946,6 @@ func (p revisionProcessor) handleIncrementalAPIFailure(
 	}
 
 	return failedRevision, false, nil
-}
-
-func incrementalImpactPaths(changedPath gitlab.ChangedPath) []string {
-	paths := make([]string, 0, 2)
-	addPath := func(raw string) {
-		normalized := normalizeIncrementalRepoPath(raw)
-		if normalized == "" {
-			return
-		}
-		for _, existing := range paths {
-			if existing == normalized {
-				return
-			}
-		}
-		paths = append(paths, normalized)
-	}
-
-	// For rename/update we track both old and new paths so dependency/root
-	// intersections are evaluated against either side of the change.
-	addPath(changedPath.NewPath)
-	addPath(changedPath.OldPath)
-	return paths
-}
-
-func incrementalDeletedPath(changedPath gitlab.ChangedPath) string {
-	if !changedPath.DeletedFile {
-		return ""
-	}
-
-	pathCandidate := strings.TrimSpace(changedPath.OldPath)
-	if pathCandidate == "" {
-		pathCandidate = strings.TrimSpace(changedPath.NewPath)
-	}
-	return normalizeIncrementalRepoPath(pathCandidate)
-}
-
-func fallbackDiscoveryCandidatePaths(changedPaths []gitlab.ChangedPath) []string {
-	candidates := make([]string, 0, len(changedPaths))
-	seen := make(map[string]struct{}, len(changedPaths))
-
-	for _, changedPath := range changedPaths {
-		if !changedPath.NewFile && !changedPath.RenamedFile {
-			continue
-		}
-
-		pathCandidate := normalizeIncrementalRepoPath(changedPath.NewPath)
-		if pathCandidate == "" {
-			pathCandidate = normalizeIncrementalRepoPath(changedPath.OldPath)
-		}
-		if pathCandidate == "" {
-			continue
-		}
-
-		if _, exists := seen[pathCandidate]; exists {
-			continue
-		}
-		seen[pathCandidate] = struct{}{}
-		candidates = append(candidates, pathCandidate)
-	}
-
-	return candidates
-}
-
-func normalizeIncrementalRepoPath(raw string) string {
-	trimmed := strings.TrimSpace(strings.TrimPrefix(raw, "/"))
-	if trimmed == "" {
-		return ""
-	}
-
-	cleaned := path.Clean(trimmed)
-	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-		return ""
-	}
-	return cleaned
 }
 
 func (p revisionProcessor) runBuildStage(

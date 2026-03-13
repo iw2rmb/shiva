@@ -7,7 +7,9 @@ This document describes how canonical OpenAPI specs are indexed, how Shiva serve
 Current state:
 - `POST /internal/gitlab/ci/validate` is registered.
 - the route validates GitLab repo and SHA identity input and supports `shiva` and `gitlab_code_quality` output formats.
-- the route is contract-complete but validator wiring is still pending; without an injected validator implementation it returns `503`.
+- the route revalidates source-layout OpenAPI roots from GitLab content and returns repo-relative issue locations without persisting transient temp-file paths.
+- when `parent_sha` is provided, the route reuses incremental compare impact rules against stored active-root dependency snapshots and falls back to changed-path discovery for new or renamed roots.
+- when `parent_sha` is omitted, the route falls back to repository-wide root discovery at `sha`.
 
 ### Request Contract
 - request body is one JSON object
@@ -50,6 +52,8 @@ Current state:
   - `location.lines.begin`
   - optional `location.lines.end`
 - GitLab Code Quality fingerprints are deterministic from `(namespace/repo, root_path, rule_id, json_path, range, message)`
+- compare runs with no impacted or discovered OpenAPI roots return `status=ok` with an empty `specs` array
+- impacted roots are reconstructed in a temp workspace that preserves repo-relative paths, then `vacuum` origin paths are mapped back to repo-relative `file_path` values before the response is written
 
 ## Build-Time Endpoint Extraction
 Canonical build:

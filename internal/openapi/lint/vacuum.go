@@ -50,10 +50,9 @@ func DefaultCanonicalRunner() *CanonicalRunner {
 
 func NewCanonicalRunner() *CanonicalRunner {
 	silentLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	defaultRuleSets := rulesets.BuildDefaultRuleSetsWithLogger(silentLogger)
 
 	return &CanonicalRunner{
-		ruleset:           defaultRuleSets.GenerateOpenAPIDefaultRuleSet(),
+		ruleset:           newDefaultOpenAPIRuleSet(silentLogger),
 		logger:            silentLogger,
 		timeout:           defaultRuleTimeout,
 		nodeLookupTimeout: defaultNodeLookupTimeout,

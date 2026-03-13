@@ -50,6 +50,8 @@ Current baseline should be validated by running `go test ./...`.
 - Semantic diff computation.
 - Query endpoint validation, snapshot resolution, ambiguity reporting, and catalog payload mapping.
 - GitLab CI validation route registration, request-contract validation, Shiva JSON formatting, and GitLab Code Quality response formatting.
+- GitLab CI validation service no-op compare behavior, impacted-root revalidation, fallback discovery, and repository discovery when `parent_sha` is absent.
+- Source-layout vacuum execution and temp-workspace path remapping back to repo-relative file paths.
 - Runtime route parsing, repo/snapshot resolution, ambiguity handling, request validation, and spec-shaped stub response generation on `/gl/*`.
 - Shared call-envelope normalization, Shiva call-plan generation, direct-target planning, and dispatch behavior.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
@@ -63,6 +65,10 @@ Current baseline should be validated by running `go test ./...`.
   - `/v1/call` request-envelope validation, ambiguity reporting, and resolved planning payloads,
   - `/v1/apis`, `/v1/operations`, `/v1/repos`, and `/v1/catalog/status` response shapes,
   - removal of legacy `/v1/specs` and `/v1/routes` read surfaces.
+- Internal CI validation service tests in `internal/http/gitlab_ci_validator_service_test.go`:
+  no-spec compare responses, impacted-root validation, fallback discovery, and repository discovery without `parent_sha`.
+- Source-layout vacuum tests in `internal/openapi/lint/source_test.go`:
+  repo-relative file remapping from temp workspaces and input validation.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shivad/webhook_to_notify_integration_test.go`.
 - Startup queue seeding in `cmd/shivad/startup_indexer_test.go`:

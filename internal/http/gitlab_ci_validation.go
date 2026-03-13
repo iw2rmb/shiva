@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/iw2rmb/shiva/internal/gitlab"
 	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store"
 )
@@ -165,6 +166,18 @@ func (s *Server) handleGitLabCIValidate(c *fiber.Ctx) error {
 		case errors.Is(err, store.ErrStoreNotConfigured):
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
 				"error": "database is not configured",
+			})
+		case errors.Is(err, store.ErrRepoNotFound):
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "repo is not indexed",
+			})
+		case errors.Is(err, gitlab.ErrNotFound):
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "gitlab resource not found",
+			})
+		case errors.Is(err, ErrGitLabCIRepoProjectMismatch):
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "gitlab_project_id does not match the indexed repo",
 			})
 		default:
 			if s.logger != nil {

@@ -15,14 +15,14 @@ Legend: [ ] todo, [x] done.
 2. [x] Define request parsing and validation for `gitlab_project_id`, `namespace`, `repo`, `sha`, `branch`, optional `parent_sha`, and optional `format`.
 3. [x] Define response writers for Shiva JSON and GitLab Code Quality-compatible payloads.
 
-- [ ] 3.2 Reconstruct source-layout specs and run transient vacuum validation
+- [x] 3.2 Reconstruct source-layout specs and run transient vacuum validation
   - Repository: `shiva`
   - Component: `internal/openapi/lint`, `internal/openapi`, `internal/gitlab`
   - Verification: impacted specs are revalidated from source layout, no-spec changes return an empty result, temp paths map back to repo-relative file paths
   - Reasoning: xhigh
-1. Reuse current compare and root-discovery logic to detect whether the target SHA impacts any OpenAPI roots.
-2. Reconstruct the root and dependency files in a temp workspace preserving repo-relative paths and run vacuum against the source root path.
-3. Map transient file locations back to repo-relative paths and keep that mapping out of persistent storage.
+1. [x] Reuse current compare and root-discovery logic to detect whether the target SHA impacts any OpenAPI roots.
+2. [x] Reconstruct the root and dependency files in a temp workspace preserving repo-relative paths and run vacuum against the source root path.
+3. [x] Map transient file locations back to repo-relative paths and keep that mapping out of persistent storage.
 
 - [ ] 3.3 Verify HTTP behavior end to end
   - Repository: `shiva`
