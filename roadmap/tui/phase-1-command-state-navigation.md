@@ -17,7 +17,7 @@ Legend: [ ] todo, [x] done.
 4. Reject unsupported flags for `tui` in the same style as `ls` and `health`.
 5. Add command-level tests in `internal/cli` for valid entry forms and invalid flag combinations.
 
-- [ ] 1.2 Define typed TUI state and async message contracts
+- [x] 1.2 Define typed TUI state and async message contracts
   - Repository: `shiva`
   - Component: `internal/tui`
   - Verification: model construction compiles, request tokens are carried in typed messages, stale completion messages can be ignored in tests
