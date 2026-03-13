@@ -6,7 +6,7 @@ Documentation: `design/vacuum.md`
 
 Legend: [ ] todo, [x] done.
 
-- [ ] 1.1 Add vacuum schema objects and seeded rules
+- [x] 1.1 Add vacuum schema objects and seeded rules
   - Repository: `shiva`
   - Component: `sql/schema`
   - Verification: fresh database bootstrap creates `vacuum_rules`, `vacuum_issues`, and seeded rule rows

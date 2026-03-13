@@ -15,7 +15,9 @@ This document describes current schema layout and SQL code generation workflow.
 - `subscriptions`: outbound webhook subscribers and retry policy.
 - `ingest_events`: inbound queue records and canonical repo revision rows (`sha`, `branch`, retry state, terminal processing result).
 - `api_specs`: durable API root identity per repo (`root_path`, `status`, optional `display_name`).
-- `api_spec_revisions`: per-API per-revision build record (`root_path_at_revision`, `build_status`, `error`) used for both bootstrap and incremental workflows.
+- `api_spec_revisions`: per-API per-revision build record (`root_path_at_revision`, `build_status`, `error`, `vacuum_status`, `vacuum_error`, `vacuum_validated_at`) used for both bootstrap and incremental workflows.
+- `vacuum_rules`: seeded `vacuum v0.25.0` built-in `all` rule catalog with normalized `rule_json` payloads (without `recommended` or `formats`).
+- `vacuum_issues`: persisted lint findings keyed by `api_spec_revision_id` and `rule_id`, with fixed four-number `range_pos`.
 - `api_spec_dependencies`: per API-spec revision dependency file set (`api_spec_revision_id`, `file_path`).
 - `spec_artifacts`: canonical JSON/YAML artifact per `api_spec_revision_id`.
 - `endpoint_index`: `(api_spec_revision_id, method, path)` operation index.
@@ -28,6 +30,8 @@ This document describes current schema layout and SQL code generation workflow.
 - `ingest_events.openapi_changed`: nullable build result on the canonical repo revision row; set on terminal success and cleared on terminal failure.
 - `api_specs.status`: `active | deleted`
 - `api_spec_revisions.build_status`: processor writes `processing | processed | failed` during per-root build execution in both bootstrap and incremental loops.
+- `api_spec_revisions.vacuum_status`: `pending | processing | processed | failed`
+- `api_spec_revisions.vacuum_validated_at`: lint completion timestamp; null until a revision has been validated.
 - `delivery_attempts.status`: `pending | retry_scheduled | succeeded | failed`
 - `repos.openapi_force_rescan`: `true` when next bootstrap decision should force full repository scan.
 - `startup_index_state.last_project_id`: highest GitLab project ID fully handled by startup indexing; startup resumes with GitLab `id_after=<last_project_id>`.
@@ -39,6 +43,8 @@ This document describes current schema layout and SQL code generation workflow.
 - `MarkAPISpecDeleted(api_spec_id)`: sets `api_specs.status='deleted'` for root deactivation flows.
 - `api_spec_dependencies` are revision-scoped and only latest-processed rows feed incremental impact intersection.
 - `api_spec_revisions.ingest_event_id` and `delivery_attempts.ingest_event_id` both reference the canonical `ingest_events.id`.
+- `vacuum_rules` are seeded by the initial migration and referenced by `vacuum_issues.rule_id`.
+- `vacuum_issues` are revision-scoped, replaceable as a full set per `api_spec_revision_id`, and enforce `cardinality(range_pos) = 4`.
 - `spec_artifacts` and `endpoint_index` write contracts are strictly `api_spec_revision_id`-scoped.
 - `spec_changes` write contracts are `api_spec_id`-scoped and read with `(api_spec_id, to_api_spec_revision_id)`.
 - `delivery_attempts` read/write contracts include `api_spec_id` in the dedupe/lookup identity.
