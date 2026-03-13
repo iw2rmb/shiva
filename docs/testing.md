@@ -37,6 +37,7 @@ Current baseline should be validated by running `go test ./...`.
 - XDG-backed CLI config loading, source-profile selection, target source-profile overrides, catalog refresh policy, and offline cache reuse.
 - GitLab API client behavior.
 - Startup schema migration bootstrap and checksum validation.
+- Vacuum schema bootstrap seeding and store-level issue replacement / revision vacuum state transitions.
 - Startup indexing orchestration and checkpoint resume behavior.
 - Inbound webhook validation + ingest persistence behavior.
 - Worker retry and permanent-failure handling.

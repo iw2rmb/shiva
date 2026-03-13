@@ -24,7 +24,7 @@ Legend: [ ] todo, [x] done.
 2. Add `internal/store` methods and types for the new rule and issue shapes, including four-number `range_pos` validation.
 3. Regenerate `internal/store/sqlc` and keep the new store API narrow to vacuum-specific behavior.
 
-- [ ] 1.3 Cover the schema and store behavior with tests
+- [x] 1.3 Cover the schema and store behavior with tests
   - Repository: `shiva`
   - Component: `internal/store`
   - Verification: store tests cover seeded-rule presence, issue replacement, zero-issue replacement, and vacuum state transitions

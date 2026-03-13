@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,6 +49,14 @@ func TestApplyCurrentSchema_AppliesMissingSchema(t *testing.T) {
 	}
 	if !db.tx.committed {
 		t.Fatal("expected migration transaction to commit")
+	}
+
+	if !slices.ContainsFunc(db.tx.execCalls, func(call fakeMigrationExecCall) bool {
+		return strings.Contains(call.sql, "INSERT INTO vacuum_rules") &&
+			strings.Contains(call.sql, "'duplicate-paths'") &&
+			strings.Contains(call.sql, "'typed-enum'")
+	}) {
+		t.Fatal("expected schema bootstrap to seed vacuum_rules rows")
 	}
 }
 

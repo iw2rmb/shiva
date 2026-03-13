@@ -197,28 +197,23 @@ func (s *Store) UpdateAPISpecRevisionVacuumState(
 		return APISpecRevision{}, err
 	}
 
-	row, err := sqlc.New(s.pool).UpdateAPISpecRevisionVacuumState(ctx, sqlc.UpdateAPISpecRevisionVacuumStateParams{
-		ApiSpecRevisionID: normalized.APISpecRevisionID,
-		VacuumStatus:      normalized.VacuumStatus,
-		VacuumError:       normalized.VacuumError,
-		VacuumValidatedAt: nullableTimestamp(normalized.VacuumValidatedAt),
-	})
+	row, err := updateAPISpecRevisionVacuumState(ctx, sqlc.New(s.pool), normalized)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return APISpecRevision{}, fmt.Errorf("api spec revision not found: id=%d", normalized.APISpecRevisionID)
-		}
-		return APISpecRevision{}, fmt.Errorf(
-			"update vacuum state for api_spec_revision_id=%d: %w",
-			normalized.APISpecRevisionID,
-			err,
-		)
+		return APISpecRevision{}, err
 	}
 
-	return mapAPISpecRevision(row), nil
+	return row, nil
 }
 
 type vacuumIssueCreateQueries interface {
 	CreateVacuumIssue(ctx context.Context, arg sqlc.CreateVacuumIssueParams) (sqlc.VacuumIssue, error)
+}
+
+type vacuumStateUpdateQueries interface {
+	UpdateAPISpecRevisionVacuumState(
+		ctx context.Context,
+		arg sqlc.UpdateAPISpecRevisionVacuumStateParams,
+	) (sqlc.ApiSpecRevision, error)
 }
 
 func createVacuumIssue(
@@ -243,6 +238,31 @@ func createVacuumIssue(
 	}
 
 	return row, nil
+}
+
+func updateAPISpecRevisionVacuumState(
+	ctx context.Context,
+	queries vacuumStateUpdateQueries,
+	input normalizedUpdateAPISpecRevisionVacuumStateInput,
+) (APISpecRevision, error) {
+	row, err := queries.UpdateAPISpecRevisionVacuumState(ctx, sqlc.UpdateAPISpecRevisionVacuumStateParams{
+		ApiSpecRevisionID: input.APISpecRevisionID,
+		VacuumStatus:      input.VacuumStatus,
+		VacuumError:       input.VacuumError,
+		VacuumValidatedAt: nullableTimestamp(input.VacuumValidatedAt),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return APISpecRevision{}, fmt.Errorf("api spec revision not found: id=%d", input.APISpecRevisionID)
+		}
+		return APISpecRevision{}, fmt.Errorf(
+			"update vacuum state for api_spec_revision_id=%d: %w",
+			input.APISpecRevisionID,
+			err,
+		)
+	}
+
+	return mapAPISpecRevision(row), nil
 }
 
 type vacuumIssueDeleteQueries interface {
