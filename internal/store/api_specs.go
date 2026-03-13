@@ -8,6 +8,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
@@ -31,6 +32,9 @@ type APISpecRevision struct {
 	RootPathAtRevision string
 	BuildStatus        string
 	Error              string
+	VacuumStatus       string
+	VacuumError        string
+	VacuumValidatedAt  *time.Time
 }
 
 type APISpecRevisionMetadata struct {
@@ -600,5 +604,8 @@ func mapAPISpecRevision(row sqlc.ApiSpecRevision) APISpecRevision {
 		RootPathAtRevision: row.RootPathAtRevision,
 		BuildStatus:        row.BuildStatus,
 		Error:              row.Error,
+		VacuumStatus:       row.VacuumStatus,
+		VacuumError:        row.VacuumError,
+		VacuumValidatedAt:  timestamptzPtr(row.VacuumValidatedAt),
 	}
 }

@@ -49,6 +49,13 @@ This document describes current schema layout and SQL code generation workflow.
 - `spec_changes` write contracts are `api_spec_id`-scoped and read with `(api_spec_id, to_api_spec_revision_id)`.
 - `delivery_attempts` read/write contracts include `api_spec_id` in the dedupe/lookup identity.
 
+## Vacuum Store Primitives
+- `ListVacuumRules()`: returns seeded `vacuum_rules` rows in `rule_id` order with the normalized `rule_json` payload.
+- `CreateVacuumIssue(api_spec_revision_id, issue)` and `ListVacuumIssuesByAPISpecRevisionID(api_spec_revision_id)`: create and read persisted revision-scoped lint findings.
+- `DeleteVacuumIssuesByAPISpecRevisionID(api_spec_revision_id)` and `ReplaceVacuumIssues(api_spec_revision_id, issues)`: clear or replace the full persisted issue set for one revision.
+- `UpdateAPISpecRevisionVacuumState(...)`: updates `api_spec_revisions.vacuum_status`, `vacuum_error`, and `vacuum_validated_at`, and returns the persisted row.
+- Vacuum issue writes validate `range_pos` as exactly four integers before hitting SQL.
+
 ### Read Compatibility Behavior
 - `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained only as compatibility helpers for store-level callers and tests.
 - They resolve the latest processed API-scoped row for the requested canonical `ingest_events.id` across all APIs in that ingest event, then return that row only when a matching method/path exists.

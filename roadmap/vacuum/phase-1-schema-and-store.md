@@ -15,7 +15,7 @@ Legend: [ ] todo, [x] done.
 2. Edit `sql/schema/000001_initial.sql` directly and add `vacuum_status`, `vacuum_error`, and `vacuum_validated_at` to `api_spec_revisions` in the original `CREATE TABLE`, without `ALTER`.
 3. Seed the full built-in `vacuum all` rule catalog in `sql/schema/000001_initial.sql` with `recommended` and `formats` removed from the stored payload.
 
-- [ ] 1.2 Add store queries and types for rules, issues, and revision lint state
+- [x] 1.2 Add store queries and types for rules, issues, and revision lint state
   - Repository: `shiva`
   - Component: `sql/query`, `internal/store`, `internal/store/sqlc`
   - Verification: store primitives create, replace, list, and delete issue rows and update revision vacuum state

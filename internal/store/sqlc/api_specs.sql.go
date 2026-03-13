@@ -46,7 +46,18 @@ SET root_path_at_revision = EXCLUDED.root_path_at_revision,
     build_status = EXCLUDED.build_status,
     error = EXCLUDED.error,
     updated_at = NOW()
-RETURNING id, api_spec_id, ingest_event_id, root_path_at_revision, build_status, error, created_at, updated_at
+RETURNING
+    id,
+    api_spec_id,
+    ingest_event_id,
+    root_path_at_revision,
+    build_status,
+    error,
+    vacuum_status,
+    vacuum_error,
+    vacuum_validated_at,
+    created_at,
+    updated_at
 `
 
 type CreateAPISpecRevisionParams struct {
@@ -71,6 +82,9 @@ func (q *Queries) CreateAPISpecRevision(ctx context.Context, arg CreateAPISpecRe
 		&i.RootPathAtRevision,
 		&i.BuildStatus,
 		&i.Error,
+		&i.VacuumStatus,
+		&i.VacuumError,
+		&i.VacuumValidatedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

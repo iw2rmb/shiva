@@ -41,7 +41,18 @@ SET root_path_at_revision = EXCLUDED.root_path_at_revision,
     build_status = EXCLUDED.build_status,
     error = EXCLUDED.error,
     updated_at = NOW()
-RETURNING id, api_spec_id, ingest_event_id, root_path_at_revision, build_status, error, created_at, updated_at;
+RETURNING
+    id,
+    api_spec_id,
+    ingest_event_id,
+    root_path_at_revision,
+    build_status,
+    error,
+    vacuum_status,
+    vacuum_error,
+    vacuum_validated_at,
+    created_at,
+    updated_at;
 
 -- name: ReplaceAPISpecDependencies :exec
 WITH replaced AS (

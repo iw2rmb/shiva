@@ -30,6 +30,9 @@ type ApiSpecRevision struct {
 	RootPathAtRevision string             `json:"root_path_at_revision"`
 	BuildStatus        string             `json:"build_status"`
 	Error              string             `json:"error"`
+	VacuumStatus       string             `json:"vacuum_status"`
+	VacuumError        string             `json:"vacuum_error"`
+	VacuumValidatedAt  pgtype.Timestamptz `json:"vacuum_validated_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
@@ -132,4 +135,26 @@ type Subscription struct {
 	BackoffMaxSeconds     int32              `json:"backoff_max_seconds"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type VacuumIssue struct {
+	ID                int64              `json:"id"`
+	ApiSpecRevisionID int64              `json:"api_spec_revision_id"`
+	RuleID            string             `json:"rule_id"`
+	Message           string             `json:"message"`
+	JsonPath          string             `json:"json_path"`
+	RangePos          []int32            `json:"range_pos"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type VacuumRule struct {
+	RuleID       string `json:"rule_id"`
+	Severity     string `json:"severity"`
+	Type         string `json:"type"`
+	CategoryID   string `json:"category_id"`
+	CategoryName string `json:"category_name"`
+	Description  string `json:"description"`
+	HowToFix     string `json:"how_to_fix"`
+	GivenPath    string `json:"given_path"`
+	RuleJson     []byte `json:"rule_json"`
 }

@@ -251,21 +251,25 @@ func splitSQLStatements(script string) []string {
 		switch r {
 		case '\'', '"':
 			builder.WriteRune(r)
-			if r == '\'' && !inDouble {
-				if inSingle {
-					if i+1 < len(runes) && runes[i+1] == '\'' {
-						builder.WriteRune('\'')
-						i++
+			if r == '\'' {
+				if !inDouble {
+					if inSingle {
+						if i+1 < len(runes) && runes[i+1] == '\'' {
+							builder.WriteRune('\'')
+							i++
+						} else {
+							inSingle = false
+						}
 					} else {
-						inSingle = false
+						inSingle = true
 					}
-				} else {
-					inSingle = true
 				}
 				continue
 			}
-			if r == '"' && !inSingle {
-				inDouble = !inDouble
+			if r == '"' {
+				if !inSingle {
+					inDouble = !inDouble
+				}
 				continue
 			}
 		case '-':

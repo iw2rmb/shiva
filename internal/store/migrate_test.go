@@ -137,6 +137,7 @@ BEGIN
 END;
 $fn$ LANGUAGE plpgsql;
 INSERT INTO test_a VALUES ('value;still-string');
+INSERT INTO test_a VALUES ('{"key":"value;still-json"}');
 `
 
 	statements := splitSQLStatements(script)
@@ -144,6 +145,7 @@ INSERT INTO test_a VALUES ('value;still-string');
 		"CREATE TABLE test_a (id INT)",
 		"-- semicolon in comment ;\nCREATE FUNCTION test_fn() RETURNS void AS $fn$\nBEGIN\n    PERFORM 1;\nEND;\n$fn$ LANGUAGE plpgsql",
 		"INSERT INTO test_a VALUES ('value;still-string')",
+		`INSERT INTO test_a VALUES ('{"key":"value;still-json"}')`,
 	}
 	if !reflect.DeepEqual(statements, expected) {
 		t.Fatalf("unexpected statements: %#v", statements)
