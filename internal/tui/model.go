@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
 type rootModel struct {
@@ -21,18 +23,20 @@ type rootModel struct {
 	height       int
 }
 
-func newRootModel(service BrowserService, route InitialRoute, options RequestOptions) rootModel {
-	model := rootModel{
+func newRootModel(service BrowserService, route InitialRoute, options RequestOptions) *rootModel {
+	model := &rootModel{
 		service:      service,
 		initialRoute: route,
 		activeRoute:  route.Kind,
 		options:      options,
 		namespaces: NamespaceRouteState{
 			Selected: -1,
+			List:     newNamespaceList(),
 		},
 		repoList: RepoRouteState{
 			Namespace: route.Namespace,
 			Selected:  -1,
+			List:      newRepoList(),
 		},
 		explorer: RepoExplorerRouteState{
 			Namespace: route.Namespace,
@@ -43,20 +47,22 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 			},
 		},
 	}
+	model.resizeLists()
 	return model
 }
 
-func (model rootModel) Init() tea.Cmd {
-	return nil
+func (model *rootModel) Init() tea.Cmd {
+	token := model.beginRepoCatalogLoad()
+	return loadRepoCatalogCmd(context.Background(), model.service, model.options, token)
 }
 
-func (model rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case tea.KeyMsg:
-		switch typed.String() {
-		case "ctrl+c", "q":
+		if model.shouldQuit(typed.String()) {
 			return model, tea.Quit
 		}
+		return model.updateKey(typed)
 	case tea.WindowSizeMsg:
 		return model, func() tea.Msg {
 			return resizeMsg{Width: typed.Width, Height: typed.Height}
@@ -64,12 +70,15 @@ func (model rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case resizeMsg:
 		model.width = typed.Width
 		model.height = typed.Height
+		model.resizeLists()
 	case repoCatalogLoadedMsg:
 		if !model.accepts(loadDomainRepoCatalog, typed.Token) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainRepoCatalog, typed.Token, nil)
 		model.repos = append([]RepoEntry(nil), typed.Rows...)
+		model.refreshCatalogViews()
+		return model, model.initialRouteCmd()
 	case operationListLoadedMsg:
 		if !model.accepts(loadDomainOperationList, typed.Token) {
 			return model, nil
@@ -95,12 +104,224 @@ func (model rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, nil
 		}
 		model.finishLoad(typed.Domain, typed.Token, typed.Err)
+		if typed.Domain == loadDomainRepoCatalog {
+			model.refreshCatalogViews()
+		}
 	}
 
 	return model, nil
 }
 
-func (model rootModel) View() string {
+func (model *rootModel) shouldQuit(key string) bool {
+	switch key {
+	case "ctrl+c", "q":
+		return true
+	default:
+		return false
+	}
+}
+
+func (model *rootModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch model.activeRoute {
+	case RouteNamespaces:
+		return model.updateNamespacesKey(msg)
+	case RouteRepos:
+		return model.updateReposKey(msg)
+	default:
+		return model, nil
+	}
+}
+
+func (model *rootModel) updateNamespacesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		if !model.canEnterRepoList() {
+			return model, nil
+		}
+		selection := model.namespaces.Entries[model.namespaces.Selected]
+		model.repoList.Namespace = selection.Namespace
+		model.activeRoute = RouteRepos
+		model.refreshRepoList()
+		return model, nil
+	default:
+		var cmd tea.Cmd
+		model.namespaces.List, cmd = model.namespaces.List.Update(msg)
+		model.syncNamespaceSelection()
+		return model, cmd
+	}
+}
+
+func (model *rootModel) updateReposKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		model.activeRoute = RouteNamespaces
+		model.syncNamespaceSelection()
+		return model, nil
+	case "enter":
+		return model, nil
+	default:
+		var cmd tea.Cmd
+		model.repoList.List, cmd = model.repoList.List.Update(msg)
+		model.syncRepoSelection()
+		return model, cmd
+	}
+}
+
+func (model *rootModel) canEnterRepoList() bool {
+	return model.namespaces.Selected >= 0 && model.namespaces.Selected < len(model.namespaces.Entries)
+}
+
+func (model *rootModel) refreshCatalogViews() {
+	model.refreshNamespaceList()
+	model.refreshRepoList()
+}
+
+func (model *rootModel) refreshNamespaceList() {
+	model.namespaces.Entries = namespaceEntriesFromRepos(model.repos)
+	model.namespaces.List.SetItems(namespaceItems(model.namespaces.Entries))
+	if len(model.namespaces.Entries) == 0 {
+		model.namespaces.Selected = -1
+		model.namespaces.List.ResetSelected()
+		return
+	}
+	if model.namespaces.Selected < 0 || model.namespaces.Selected >= len(model.namespaces.Entries) {
+		model.namespaces.Selected = 0
+	}
+	model.namespaces.List.Select(model.namespaces.Selected)
+}
+
+func (model *rootModel) refreshRepoList() {
+	model.repoList.Entries = repoEntriesByNamespace(model.repos, model.repoList.Namespace)
+	model.repoList.List.Title = "Repositories"
+	if model.repoList.Namespace != "" {
+		model.repoList.List.Title = "Repositories: " + model.repoList.Namespace
+	}
+	model.repoList.List.SetItems(repoItems(model.repoList.Entries))
+	if len(model.repoList.Entries) == 0 {
+		model.repoList.Selected = -1
+		model.repoList.List.ResetSelected()
+		return
+	}
+	if model.repoList.Selected < 0 || model.repoList.Selected >= len(model.repoList.Entries) {
+		model.repoList.Selected = 0
+	}
+	model.repoList.List.Select(model.repoList.Selected)
+}
+
+func (model *rootModel) syncNamespaceSelection() {
+	index := model.namespaces.List.Index()
+	if len(model.namespaces.Entries) == 0 || index < 0 || index >= len(model.namespaces.Entries) {
+		model.namespaces.Selected = -1
+		return
+	}
+	model.namespaces.Selected = index
+}
+
+func (model *rootModel) syncRepoSelection() {
+	index := model.repoList.List.Index()
+	if len(model.repoList.Entries) == 0 || index < 0 || index >= len(model.repoList.Entries) {
+		model.repoList.Selected = -1
+		return
+	}
+	model.repoList.Selected = index
+}
+
+func (model *rootModel) resizeLists() {
+	width, height := listSize(model.width, model.height)
+	model.namespaces.List.SetSize(width, height)
+	model.repoList.List.SetSize(width, height)
+}
+
+func (model *rootModel) initialRouteCmd() tea.Cmd {
+	switch model.initialRoute.Kind {
+	case RouteRepos:
+		model.activeRoute = RouteRepos
+		model.repoList.Namespace = model.initialRoute.Namespace
+		model.refreshRepoList()
+	case RouteRepoExplorer:
+		model.repoList.Namespace = model.initialRoute.Namespace
+		model.refreshRepoList()
+		token := model.beginOperationListLoad()
+		return loadOperationListCmd(context.Background(), model.service, request.Envelope{
+			Namespace: model.initialRoute.Namespace,
+			Repo:      model.initialRoute.Repo,
+		}, model.options, token)
+	}
+	return nil
+}
+
+func (model *rootModel) View() string {
+	switch model.activeRoute {
+	case RouteNamespaces:
+		return model.viewNamespaces()
+	case RouteRepos:
+		return model.viewRepos()
+	default:
+		return model.viewPlaceholder()
+	}
+}
+
+func (model *rootModel) viewNamespaces() string {
+	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
+		return "Shiva TUI\n\nLoading repositories..."
+	}
+	if model.async.RepoCatalog.LastError != nil {
+		return strings.Join([]string{
+			"Shiva TUI",
+			"",
+			"Namespaces",
+			"",
+			"Failed to load repositories.",
+			model.async.RepoCatalog.LastError.Error(),
+		}, "\n")
+	}
+	if len(model.namespaces.Entries) == 0 {
+		return "Shiva TUI\n\nNamespaces\n\nNo namespaces found."
+	}
+	return strings.Join([]string{
+		"Shiva TUI",
+		"",
+		model.namespaces.List.View(),
+		"",
+		"enter: open namespace  q: quit",
+	}, "\n")
+}
+
+func (model *rootModel) viewRepos() string {
+	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
+		return "Shiva TUI\n\nLoading repositories..."
+	}
+	if model.async.RepoCatalog.LastError != nil {
+		return strings.Join([]string{
+			"Shiva TUI",
+			"",
+			"Repositories",
+			"",
+			"Failed to load repositories.",
+			model.async.RepoCatalog.LastError.Error(),
+		}, "\n")
+	}
+	if len(model.repoList.Entries) == 0 {
+		return strings.Join([]string{
+			"Shiva TUI",
+			"",
+			"Repositories: " + model.repoList.Namespace,
+			"",
+			"No repositories found in namespace.",
+			"",
+			"esc: back  q: quit",
+		}, "\n")
+	}
+	return strings.Join([]string{
+		"Shiva TUI",
+		"",
+		model.repoList.List.View(),
+		"",
+		"enter: open repo  esc: back  q: quit",
+	}, "\n")
+}
+
+func (model *rootModel) viewPlaceholder() string {
 	lines := []string{
 		"Shiva TUI",
 		"",

@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 
+	"github.com/charmbracelet/bubbles/list"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 )
 
@@ -63,12 +64,14 @@ type DetailState struct {
 type NamespaceRouteState struct {
 	Entries  []NamespaceEntry
 	Selected int
+	List     list.Model
 }
 
 type RepoRouteState struct {
 	Namespace string
 	Entries   []RepoEntry
 	Selected  int
+	List      list.Model
 }
 
 type RepoExplorerRouteState struct {

@@ -119,7 +119,15 @@ Rules:
     - no selector starts in namespace mode
     - `<namespace>/` starts in that namespace's repo view
     - `<namespace>/<repo>` starts in that repo's explorer view
-  - current implementation is a route-aware placeholder surface that quits with `q` or `ctrl+c`
+  - startup loads the repo catalog once, derives namespace summaries in memory, and renders namespace and repo browsing with keyboard navigation
+  - namespace mode:
+    - `up` and `down` move the selection
+    - `enter` opens the selected namespace's repo view
+  - repo mode:
+    - `up` and `down` move the selection
+    - `esc` returns to namespace mode
+  - empty catalogs and startup catalog-load failures render explicit deterministic states
+  - `q` and `ctrl+c` quit from any route
 
 Success writes to stdout. Errors write to stderr.
 

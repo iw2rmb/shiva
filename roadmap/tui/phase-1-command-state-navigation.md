@@ -28,7 +28,7 @@ Legend: [ ] todo, [x] done.
 4. Add monotonic request tokens per async load domain and store the latest active token in the model.
 5. Add focused model tests that prove stale async results do not overwrite newer selection state.
 
-- [ ] 1.3 Implement namespace and repo list screens
+- [x] 1.3 Implement namespace and repo list screens
   - Repository: `shiva`
   - Component: `internal/tui`
   - Verification: startup loads namespaces, `enter` opens repos, `esc` returns to namespaces, empty and load-failure states render deterministically

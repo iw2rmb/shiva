@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,6 +36,38 @@ func TestNewRootModelSeedsRouteSpecificState(t *testing.T) {
 	}
 	if model.explorer.Detail.ActiveTab != DetailTabEndpoints {
 		t.Fatalf("expected default detail tab %q, got %q", DetailTabEndpoints, model.explorer.Detail.ActiveTab)
+	}
+	if model.namespaces.List.Title != "Namespaces" {
+		t.Fatalf("expected namespace list to initialize, got %q", model.namespaces.List.Title)
+	}
+	if model.repoList.List.Title != "Repositories" {
+		t.Fatalf("expected repo list to initialize, got %q", model.repoList.List.Title)
+	}
+}
+
+func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{
+		listReposBody: []byte(`[{"namespace":"acme","repo":"platform"}]`),
+	}
+
+	model := newRootModel(service, InitialRoute{Kind: RouteNamespaces}, RequestOptions{Offline: true})
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatalf("expected init load command")
+	}
+	if !model.async.RepoCatalog.Loading {
+		t.Fatalf("expected init to mark repo catalog loading")
+	}
+
+	msg := cmd()
+	loaded, ok := msg.(repoCatalogLoadedMsg)
+	if !ok {
+		t.Fatalf("expected repoCatalogLoadedMsg, got %T", msg)
+	}
+	if loaded.Token != model.async.RepoCatalog.ActiveToken {
+		t.Fatalf("expected token %d, got %d", model.async.RepoCatalog.ActiveToken, loaded.Token)
 	}
 }
 
@@ -77,7 +110,7 @@ func TestRootModelIgnoresStaleRepoCatalogMessages(t *testing.T) {
 			Repo:      "old",
 		}},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if len(model.repos) != 0 {
 		t.Fatalf("expected stale repo catalog to be ignored, got %+v", model.repos)
@@ -93,7 +126,7 @@ func TestRootModelIgnoresStaleRepoCatalogMessages(t *testing.T) {
 			Repo:      "platform",
 		}},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if want := []RepoEntry{{Namespace: "acme", Repo: "platform"}}; !reflect.DeepEqual(model.repos, want) {
 		t.Fatalf("expected latest repo catalog to apply, got %+v", model.repos)
@@ -121,7 +154,7 @@ func TestRootModelIgnoresStaleOperationListMessages(t *testing.T) {
 			Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", OperationID: "staleOp"},
 		}},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if len(model.explorer.Endpoints) != 0 {
 		t.Fatalf("expected stale operation list to be ignored, got %+v", model.explorer.Endpoints)
@@ -133,10 +166,144 @@ func TestRootModelIgnoresStaleOperationListMessages(t *testing.T) {
 			Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", OperationID: "newOp"},
 		}},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if len(model.explorer.Endpoints) != 1 || model.explorer.Endpoints[0].Identity.OperationID != "newOp" {
 		t.Fatalf("expected latest operation list to apply, got %+v", model.explorer.Endpoints)
+	}
+}
+
+func TestRootModelBuildsNamespaceEntriesFromCatalog(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(repoCatalogLoadedMsg{
+		Token: token,
+		Rows: []RepoEntry{
+			{Namespace: "beta", Repo: "payments"},
+			{Namespace: "acme", Repo: "gateway"},
+			{Namespace: "acme", Repo: "platform"},
+		},
+	})
+	model = updated.(*rootModel)
+
+	if model.namespaces.Selected != 0 {
+		t.Fatalf("expected first namespace selected, got %d", model.namespaces.Selected)
+	}
+	want := []NamespaceEntry{
+		{Namespace: "acme", RepoCount: 2},
+		{Namespace: "beta", RepoCount: 1},
+	}
+	if !reflect.DeepEqual(model.namespaces.Entries, want) {
+		t.Fatalf("unexpected namespaces %+v", model.namespaces.Entries)
+	}
+}
+
+func TestRootModelEnterOpensSelectedNamespaceRepos(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(repoCatalogLoadedMsg{
+		Token: token,
+		Rows: []RepoEntry{
+			{Namespace: "acme", Repo: "gateway"},
+			{Namespace: "acme", Repo: "platform"},
+			{Namespace: "beta", Repo: "payments"},
+		},
+	})
+	model = updated.(*rootModel)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(*rootModel)
+	if model.namespaces.Selected != 1 {
+		t.Fatalf("expected selection to move to beta, got %d", model.namespaces.Selected)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(*rootModel)
+
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected route %q, got %q", RouteRepos, model.activeRoute)
+	}
+	if model.repoList.Namespace != "beta" {
+		t.Fatalf("expected beta namespace, got %q", model.repoList.Namespace)
+	}
+	want := []RepoEntry{{Namespace: "beta", Repo: "payments"}}
+	if !reflect.DeepEqual(model.repoList.Entries, want) {
+		t.Fatalf("unexpected repo entries %+v", model.repoList.Entries)
+	}
+	if model.repoList.Selected != 0 {
+		t.Fatalf("expected first repo selected, got %d", model.repoList.Selected)
+	}
+}
+
+func TestRootModelEscReturnsFromReposToNamespaces(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(repoCatalogLoadedMsg{
+		Token: token,
+		Rows: []RepoEntry{
+			{Namespace: "acme", Repo: "gateway"},
+			{Namespace: "acme", Repo: "platform"},
+		},
+	})
+	model = updated.(*rootModel)
+
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected initial route to switch to repos, got %q", model.activeRoute)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(*rootModel)
+
+	if model.activeRoute != RouteNamespaces {
+		t.Fatalf("expected route %q, got %q", RouteNamespaces, model.activeRoute)
+	}
+	if model.namespaces.Selected != 0 {
+		t.Fatalf("expected namespace selection to be preserved, got %d", model.namespaces.Selected)
+	}
+}
+
+func TestRootModelRendersEmptyCatalogState(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(repoCatalogLoadedMsg{Token: token})
+	model = updated.(*rootModel)
+
+	if got := model.View(); !strings.Contains(got, "No namespaces found.") {
+		t.Fatalf("expected empty namespace state, got %q", got)
+	}
+}
+
+func TestRootModelRendersStartupLoadFailure(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(loadFailedMsg{
+		Domain: loadDomainRepoCatalog,
+		Token:  token,
+		Err:    errors.New("catalog unavailable"),
+	})
+	model = updated.(*rootModel)
+
+	view := model.View()
+	if !strings.Contains(view, "Failed to load repositories.") {
+		t.Fatalf("expected failure heading, got %q", view)
+	}
+	if !strings.Contains(view, "catalog unavailable") {
+		t.Fatalf("expected failure cause, got %q", view)
 	}
 }
 
@@ -164,7 +331,7 @@ func TestRootModelIgnoresStaleOperationDetailMessages(t *testing.T) {
 			Body:     json.RawMessage(`{"operationId":"oldOp"}`),
 		},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if model.explorer.Detail.Operation != nil {
 		t.Fatalf("expected stale operation detail to be ignored, got %+v", model.explorer.Detail.Operation)
@@ -181,7 +348,7 @@ func TestRootModelIgnoresStaleOperationDetailMessages(t *testing.T) {
 			Body:     json.RawMessage(`{"operationId":"newOp"}`),
 		},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if model.explorer.Detail.Operation == nil || model.explorer.Detail.Operation.Endpoint.OperationID != "newOp" {
 		t.Fatalf("expected latest operation detail to apply, got %+v", model.explorer.Detail.Operation)
@@ -213,7 +380,7 @@ func TestRootModelIgnoresStaleSpecDetailMessages(t *testing.T) {
 			Body:      json.RawMessage(`{"openapi":"3.1.0"}`),
 		},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if model.explorer.Detail.Spec != nil {
 		t.Fatalf("expected stale spec detail to be ignored, got %+v", model.explorer.Detail.Spec)
@@ -228,7 +395,7 @@ func TestRootModelIgnoresStaleSpecDetailMessages(t *testing.T) {
 			Body:      json.RawMessage(`{"openapi":"3.1.0"}`),
 		},
 	})
-	model = updated.(rootModel)
+	model = updated.(*rootModel)
 
 	if model.explorer.Detail.Spec == nil || model.explorer.Detail.Spec.API != "new.yaml" {
 		t.Fatalf("expected latest spec detail to apply, got %+v", model.explorer.Detail.Spec)
@@ -298,8 +465,8 @@ func TestRootModelConvertsWindowSizeIntoTypedResizeMessage(t *testing.T) {
 		t.Fatalf("unexpected resize message %+v", resize)
 	}
 
-	updated, _ := next.(rootModel).Update(resize)
-	model = updated.(rootModel)
+	updated, _ := next.(*rootModel).Update(resize)
+	model = updated.(*rootModel)
 	if model.width != 120 || model.height != 40 {
 		t.Fatalf("expected model size to update, got %dx%d", model.width, model.height)
 	}
