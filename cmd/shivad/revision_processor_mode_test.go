@@ -316,6 +316,20 @@ func (s *modeSelectionRevisionStore) PersistCanonicalSpec(_ context.Context, _ s
 	return errors.New("unexpected PersistCanonicalSpec call")
 }
 
+func (s *modeSelectionRevisionStore) UpdateAPISpecRevisionVacuumState(
+	_ context.Context,
+	_ store.UpdateAPISpecRevisionVacuumStateInput,
+) (store.APISpecRevision, error) {
+	return store.APISpecRevision{}, errors.New("unexpected UpdateAPISpecRevisionVacuumState call")
+}
+
+func (s *modeSelectionRevisionStore) PersistAPISpecRevisionVacuumResult(
+	_ context.Context,
+	_ store.PersistAPISpecRevisionVacuumResultInput,
+) (store.APISpecRevision, error) {
+	return store.APISpecRevision{}, errors.New("unexpected PersistAPISpecRevisionVacuumResult call")
+}
+
 func (s *modeSelectionRevisionStore) ListEndpointIndexByAPISpecRevision(
 	_ context.Context,
 	_ int64,

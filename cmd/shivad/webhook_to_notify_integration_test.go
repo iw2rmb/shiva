@@ -794,10 +794,10 @@ type integrationRevisionStore struct {
 func newIntegrationRevisionStore() *integrationRevisionStore {
 	s := &integrationRevisionStore{
 		repo: store.Repo{
-			ID:                44,
-			GitLabProjectID:   42,
-			Namespace: "acme", Repo: "platform-api",
-			DefaultBranch:     "main",
+			ID:              44,
+			GitLabProjectID: 42,
+			Namespace:       "acme", Repo: "platform-api",
+			DefaultBranch: "main",
 		},
 		bootstrapState: store.RepoBootstrapState{
 			ActiveAPICount: 1,
@@ -1139,6 +1139,42 @@ func (s *integrationRevisionStore) PersistCanonicalSpec(_ context.Context, input
 	copy(rows, input.Endpoints)
 	s.endpoints[input.APISpecRevisionID] = rows
 	return nil
+}
+
+func (s *integrationRevisionStore) UpdateAPISpecRevisionVacuumState(
+	_ context.Context,
+	input store.UpdateAPISpecRevisionVacuumStateInput,
+) (store.APISpecRevision, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	revision, exists := s.apiSpecRevs[input.APISpecRevisionID]
+	if !exists {
+		return store.APISpecRevision{}, fmt.Errorf("api spec revision %d not found", input.APISpecRevisionID)
+	}
+	revision.VacuumStatus = input.VacuumStatus
+	revision.VacuumError = input.VacuumError
+	revision.VacuumValidatedAt = input.VacuumValidatedAt
+	s.apiSpecRevs[input.APISpecRevisionID] = revision
+	return revision, nil
+}
+
+func (s *integrationRevisionStore) PersistAPISpecRevisionVacuumResult(
+	_ context.Context,
+	input store.PersistAPISpecRevisionVacuumResultInput,
+) (store.APISpecRevision, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	revision, exists := s.apiSpecRevs[input.APISpecRevisionID]
+	if !exists {
+		return store.APISpecRevision{}, fmt.Errorf("api spec revision %d not found", input.APISpecRevisionID)
+	}
+	revision.VacuumStatus = input.VacuumStatus
+	revision.VacuumError = input.VacuumError
+	revision.VacuumValidatedAt = input.VacuumValidatedAt
+	s.apiSpecRevs[input.APISpecRevisionID] = revision
+	return revision, nil
 }
 
 func (s *integrationRevisionStore) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(

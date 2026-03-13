@@ -44,7 +44,12 @@ Webhook / worker pipeline:
 7. For each rebuilt API:
    - build canonical JSON+YAML,
    - extract endpoints,
-   - persist `spec_artifacts` and `endpoint_index` for that API spec revision.
+   - persist `spec_artifacts` and `endpoint_index` for that API spec revision,
+   - set `api_spec_revisions.vacuum_status='processing'`,
+   - run the pinned built-in `vacuum v0.25.0` OpenAPI `all` ruleset against the canonical YAML artifact,
+   - replace the full `vacuum_issues` set for that API spec revision and set final lint state:
+     - `vacuum_status='processed'`, `vacuum_error=''`, `vacuum_validated_at=<now>` on success, including zero-issue runs,
+     - `vacuum_status='failed'`, `vacuum_error=<normalized failure>`, `vacuum_validated_at=NULL` when `vacuum` cannot validate the canonical document.
 8. For each changed API (rebuilt or deactivated root):
    - compute and persist semantic diff (`spec_changes`) for that API.
    - return `openapi_changed=true` for worker finalization of the canonical `ingest_events` row.

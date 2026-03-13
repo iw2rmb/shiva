@@ -64,6 +64,14 @@ type UpdateAPISpecRevisionVacuumStateInput struct {
 	VacuumValidatedAt *time.Time
 }
 
+type PersistAPISpecRevisionVacuumResultInput struct {
+	APISpecRevisionID int64
+	Issues            []VacuumIssueMutation
+	VacuumStatus      string
+	VacuumError       string
+	VacuumValidatedAt *time.Time
+}
+
 type normalizedVacuumIssueMutation struct {
 	RuleID   string
 	Message  string
@@ -83,6 +91,14 @@ type normalizedReplaceVacuumIssuesInput struct {
 
 type normalizedUpdateAPISpecRevisionVacuumStateInput struct {
 	APISpecRevisionID int64
+	VacuumStatus      string
+	VacuumError       string
+	VacuumValidatedAt *time.Time
+}
+
+type normalizedPersistAPISpecRevisionVacuumResultInput struct {
+	APISpecRevisionID int64
+	Issues            []normalizedVacuumIssueMutation
 	VacuumStatus      string
 	VacuumError       string
 	VacuumValidatedAt *time.Time
@@ -205,6 +221,36 @@ func (s *Store) UpdateAPISpecRevisionVacuumState(
 	return row, nil
 }
 
+func (s *Store) PersistAPISpecRevisionVacuumResult(
+	ctx context.Context,
+	input PersistAPISpecRevisionVacuumResultInput,
+) (APISpecRevision, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return APISpecRevision{}, ErrStoreNotConfigured
+	}
+
+	normalized, err := normalizePersistAPISpecRevisionVacuumResultInput(input)
+	if err != nil {
+		return APISpecRevision{}, err
+	}
+
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return APISpecRevision{}, fmt.Errorf("begin vacuum result persistence transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	row, err := persistAPISpecRevisionVacuumResult(ctx, sqlc.New(tx), normalized)
+	if err != nil {
+		return APISpecRevision{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return APISpecRevision{}, fmt.Errorf("commit vacuum result persistence transaction: %w", err)
+	}
+	return row, nil
+}
+
 type vacuumIssueCreateQueries interface {
 	CreateVacuumIssue(ctx context.Context, arg sqlc.CreateVacuumIssueParams) (sqlc.VacuumIssue, error)
 }
@@ -285,6 +331,11 @@ type vacuumIssueReplaceQueries interface {
 	vacuumIssueDeleteQueries
 }
 
+type vacuumResultPersistenceQueries interface {
+	vacuumIssueReplaceQueries
+	vacuumStateUpdateQueries
+}
+
 func replaceVacuumIssues(
 	ctx context.Context,
 	queries vacuumIssueReplaceQueries,
@@ -304,6 +355,26 @@ func replaceVacuumIssues(
 	}
 
 	return nil
+}
+
+func persistAPISpecRevisionVacuumResult(
+	ctx context.Context,
+	queries vacuumResultPersistenceQueries,
+	input normalizedPersistAPISpecRevisionVacuumResultInput,
+) (APISpecRevision, error) {
+	if err := replaceVacuumIssues(ctx, queries, normalizedReplaceVacuumIssuesInput{
+		APISpecRevisionID: input.APISpecRevisionID,
+		Issues:            input.Issues,
+	}); err != nil {
+		return APISpecRevision{}, err
+	}
+
+	return updateAPISpecRevisionVacuumState(ctx, queries, normalizedUpdateAPISpecRevisionVacuumStateInput{
+		APISpecRevisionID: input.APISpecRevisionID,
+		VacuumStatus:      input.VacuumStatus,
+		VacuumError:       input.VacuumError,
+		VacuumValidatedAt: input.VacuumValidatedAt,
+	})
 }
 
 func normalizeCreateVacuumIssueInput(input CreateVacuumIssueInput) (normalizedCreateVacuumIssueInput, error) {
@@ -339,6 +410,71 @@ func normalizeReplaceVacuumIssuesInput(input ReplaceVacuumIssuesInput) (normaliz
 	return normalizedReplaceVacuumIssuesInput{
 		APISpecRevisionID: input.APISpecRevisionID,
 		Issues:            issues,
+	}, nil
+}
+
+func normalizePersistAPISpecRevisionVacuumResultInput(
+	input PersistAPISpecRevisionVacuumResultInput,
+) (normalizedPersistAPISpecRevisionVacuumResultInput, error) {
+	normalizedIssues, err := normalizeReplaceVacuumIssuesInput(ReplaceVacuumIssuesInput{
+		APISpecRevisionID: input.APISpecRevisionID,
+		Issues:            input.Issues,
+	})
+	if err != nil {
+		return normalizedPersistAPISpecRevisionVacuumResultInput{}, err
+	}
+
+	normalizedState, err := normalizeUpdateAPISpecRevisionVacuumStateInput(UpdateAPISpecRevisionVacuumStateInput{
+		APISpecRevisionID: input.APISpecRevisionID,
+		VacuumStatus:      input.VacuumStatus,
+		VacuumError:       input.VacuumError,
+		VacuumValidatedAt: input.VacuumValidatedAt,
+	})
+	if err != nil {
+		return normalizedPersistAPISpecRevisionVacuumResultInput{}, err
+	}
+
+	switch normalizedState.VacuumStatus {
+	case VacuumStatusProcessed:
+		if normalizedState.VacuumValidatedAt == nil {
+			return normalizedPersistAPISpecRevisionVacuumResultInput{}, errors.New(
+				"vacuum_validated_at must be set when vacuum_status is processed",
+			)
+		}
+		if normalizedState.VacuumError != "" {
+			return normalizedPersistAPISpecRevisionVacuumResultInput{}, errors.New(
+				"vacuum_error must be empty when vacuum_status is processed",
+			)
+		}
+	case VacuumStatusFailed:
+		if len(normalizedIssues.Issues) != 0 {
+			return normalizedPersistAPISpecRevisionVacuumResultInput{}, errors.New(
+				"issues must be empty when vacuum_status is failed",
+			)
+		}
+		if normalizedState.VacuumError == "" {
+			return normalizedPersistAPISpecRevisionVacuumResultInput{}, errors.New(
+				"vacuum_error must not be empty when vacuum_status is failed",
+			)
+		}
+		if normalizedState.VacuumValidatedAt != nil {
+			return normalizedPersistAPISpecRevisionVacuumResultInput{}, errors.New(
+				"vacuum_validated_at must be nil when vacuum_status is failed",
+			)
+		}
+	default:
+		return normalizedPersistAPISpecRevisionVacuumResultInput{}, fmt.Errorf(
+			"vacuum status %q is unsupported for final vacuum result persistence",
+			normalizedState.VacuumStatus,
+		)
+	}
+
+	return normalizedPersistAPISpecRevisionVacuumResultInput{
+		APISpecRevisionID: normalizedState.APISpecRevisionID,
+		Issues:            normalizedIssues.Issues,
+		VacuumStatus:      normalizedState.VacuumStatus,
+		VacuumError:       normalizedState.VacuumError,
+		VacuumValidatedAt: normalizedState.VacuumValidatedAt,
 	}, nil
 }
 

@@ -664,6 +664,30 @@ func (s *incrementalImpactRevisionStore) PersistCanonicalSpec(
 	return nil
 }
 
+func (*incrementalImpactRevisionStore) UpdateAPISpecRevisionVacuumState(
+	_ context.Context,
+	input store.UpdateAPISpecRevisionVacuumStateInput,
+) (store.APISpecRevision, error) {
+	return store.APISpecRevision{
+		ID:                input.APISpecRevisionID,
+		VacuumStatus:      input.VacuumStatus,
+		VacuumError:       input.VacuumError,
+		VacuumValidatedAt: input.VacuumValidatedAt,
+	}, nil
+}
+
+func (*incrementalImpactRevisionStore) PersistAPISpecRevisionVacuumResult(
+	_ context.Context,
+	input store.PersistAPISpecRevisionVacuumResultInput,
+) (store.APISpecRevision, error) {
+	return store.APISpecRevision{
+		ID:                input.APISpecRevisionID,
+		VacuumStatus:      input.VacuumStatus,
+		VacuumError:       input.VacuumError,
+		VacuumValidatedAt: input.VacuumValidatedAt,
+	}, nil
+}
+
 func (s *incrementalImpactRevisionStore) ListEndpointIndexByAPISpecRevision(
 	_ context.Context,
 	apiSpecRevisionID int64,

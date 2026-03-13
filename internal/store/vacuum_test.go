@@ -220,6 +220,160 @@ func TestUpdateAPISpecRevisionVacuumState_NotFound(t *testing.T) {
 	}
 }
 
+func TestPersistAPISpecRevisionVacuumResult_ProcessedReplacesIssuesAndUpdatesState(t *testing.T) {
+	t.Parallel()
+
+	validatedAt := time.Date(2026, time.March, 13, 16, 0, 0, 0, time.UTC)
+	queries := newFakeVacuumPersistenceQueries(51)
+
+	row, err := persistAPISpecRevisionVacuumResult(context.Background(), queries, normalizedPersistAPISpecRevisionVacuumResultInput{
+		APISpecRevisionID: 51,
+		Issues: []normalizedVacuumIssueMutation{
+			{
+				RuleID:   "info-description",
+				Message:  "missing description",
+				JSONPath: "$.info",
+				RangePos: []int32{1, 2, 3, 4},
+			},
+		},
+		VacuumStatus:      VacuumStatusProcessed,
+		VacuumValidatedAt: &validatedAt,
+	})
+	if err != nil {
+		t.Fatalf("persistAPISpecRevisionVacuumResult() unexpected error: %v", err)
+	}
+	if row.VacuumStatus != VacuumStatusProcessed {
+		t.Fatalf("expected processed status, got %q", row.VacuumStatus)
+	}
+	if row.VacuumValidatedAt == nil || !row.VacuumValidatedAt.Equal(validatedAt) {
+		t.Fatalf("expected validated_at %s, got %+v", validatedAt, row.VacuumValidatedAt)
+	}
+	if row.VacuumError != "" {
+		t.Fatalf("expected empty vacuum_error, got %q", row.VacuumError)
+	}
+
+	expectedCalls := []string{
+		"delete:51",
+		"create:51:info-description",
+		"state:51:processed",
+	}
+	if !reflect.DeepEqual(queries.calls, expectedCalls) {
+		t.Fatalf("unexpected call order: expected %v, got %v", expectedCalls, queries.calls)
+	}
+	if len(queries.issueQueries.byRevision[51]) != 1 {
+		t.Fatalf("expected one persisted issue, got %+v", queries.issueQueries.byRevision[51])
+	}
+}
+
+func TestPersistAPISpecRevisionVacuumResult_FailedClearsIssuesAndUpdatesState(t *testing.T) {
+	t.Parallel()
+
+	queries := newFakeVacuumPersistenceQueries(61)
+	if _, err := createVacuumIssue(context.Background(), queries, normalizedCreateVacuumIssueInput{
+		APISpecRevisionID: 61,
+		Issue: normalizedVacuumIssueMutation{
+			RuleID:   "duplicate-paths",
+			Message:  "existing",
+			JSONPath: "$.paths",
+			RangePos: []int32{1, 1, 1, 2},
+		},
+	}); err != nil {
+		t.Fatalf("createVacuumIssue() unexpected error: %v", err)
+	}
+	queries.calls = nil
+
+	row, err := persistAPISpecRevisionVacuumResult(context.Background(), queries, normalizedPersistAPISpecRevisionVacuumResultInput{
+		APISpecRevisionID: 61,
+		Issues:            nil,
+		VacuumStatus:      VacuumStatusFailed,
+		VacuumError:       "parse failed",
+	})
+	if err != nil {
+		t.Fatalf("persistAPISpecRevisionVacuumResult() unexpected error: %v", err)
+	}
+	if row.VacuumStatus != VacuumStatusFailed {
+		t.Fatalf("expected failed status, got %q", row.VacuumStatus)
+	}
+	if row.VacuumError != "parse failed" {
+		t.Fatalf("expected persisted vacuum_error, got %q", row.VacuumError)
+	}
+	if row.VacuumValidatedAt != nil {
+		t.Fatalf("expected validated_at to remain nil, got %+v", row.VacuumValidatedAt)
+	}
+	if len(queries.issueQueries.byRevision[61]) != 0 {
+		t.Fatalf("expected issues to be cleared, got %+v", queries.issueQueries.byRevision[61])
+	}
+	expectedCalls := []string{
+		"delete:61",
+		"state:61:failed",
+	}
+	if !reflect.DeepEqual(queries.calls, expectedCalls) {
+		t.Fatalf("unexpected call order: expected %v, got %v", expectedCalls, queries.calls)
+	}
+}
+
+func TestNormalizePersistAPISpecRevisionVacuumResultInput_RejectsInvalidStateCombinations(t *testing.T) {
+	t.Parallel()
+
+	validatedAt := time.Date(2026, time.March, 13, 17, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name  string
+		input PersistAPISpecRevisionVacuumResultInput
+		want  string
+	}{
+		{
+			name: "processed requires validated timestamp",
+			input: PersistAPISpecRevisionVacuumResultInput{
+				APISpecRevisionID: 71,
+				VacuumStatus:      VacuumStatusProcessed,
+			},
+			want: "vacuum_validated_at must be set when vacuum_status is processed",
+		},
+		{
+			name: "processed rejects vacuum error",
+			input: PersistAPISpecRevisionVacuumResultInput{
+				APISpecRevisionID: 71,
+				VacuumStatus:      VacuumStatusProcessed,
+				VacuumError:       "boom",
+				VacuumValidatedAt: &validatedAt,
+			},
+			want: "vacuum_error must be empty when vacuum_status is processed",
+		},
+		{
+			name: "failed requires empty issues",
+			input: PersistAPISpecRevisionVacuumResultInput{
+				APISpecRevisionID: 71,
+				VacuumStatus:      VacuumStatusFailed,
+				VacuumError:       "boom",
+				Issues: []VacuumIssueMutation{
+					{
+						RuleID:   "info-description",
+						Message:  "missing description",
+						JSONPath: "$.info",
+						RangePos: []int32{1, 2, 3, 4},
+					},
+				},
+			},
+			want: "issues must be empty when vacuum_status is failed",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := normalizePersistAPISpecRevisionVacuumResultInput(tc.input)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if err.Error() != tc.want {
+				t.Fatalf("expected error %q, got %q", tc.want, err.Error())
+			}
+		})
+	}
+}
+
 type fakeVacuumIssueQueries struct {
 	nextID     int64
 	calls      []string
@@ -277,4 +431,45 @@ func (f *fakeVacuumStateQueries) UpdateAPISpecRevisionVacuumState(
 	row.VacuumValidatedAt = arg.VacuumValidatedAt
 	f.byRevision[arg.ApiSpecRevisionID] = row
 	return row, nil
+}
+
+type fakeVacuumPersistenceQueries struct {
+	calls        []string
+	issueQueries *fakeVacuumIssueQueries
+	stateQueries *fakeVacuumStateQueries
+}
+
+func newFakeVacuumPersistenceQueries(apiSpecRevisionID int64) *fakeVacuumPersistenceQueries {
+	return &fakeVacuumPersistenceQueries{
+		issueQueries: newFakeVacuumIssueQueries(),
+		stateQueries: &fakeVacuumStateQueries{
+			byRevision: map[int64]sqlc.ApiSpecRevision{
+				apiSpecRevisionID: {
+					ID:                 apiSpecRevisionID,
+					ApiSpecID:          9,
+					IngestEventID:      10,
+					RootPathAtRevision: "apis/pets/openapi.yaml",
+					BuildStatus:        "processed",
+				},
+			},
+		},
+	}
+}
+
+func (f *fakeVacuumPersistenceQueries) CreateVacuumIssue(ctx context.Context, arg sqlc.CreateVacuumIssueParams) (sqlc.VacuumIssue, error) {
+	f.calls = append(f.calls, "create:"+strconv.FormatInt(arg.ApiSpecRevisionID, 10)+":"+arg.RuleID)
+	return f.issueQueries.CreateVacuumIssue(ctx, arg)
+}
+
+func (f *fakeVacuumPersistenceQueries) DeleteVacuumIssuesByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) error {
+	f.calls = append(f.calls, "delete:"+strconv.FormatInt(apiSpecRevisionID, 10))
+	return f.issueQueries.DeleteVacuumIssuesByAPISpecRevisionID(ctx, apiSpecRevisionID)
+}
+
+func (f *fakeVacuumPersistenceQueries) UpdateAPISpecRevisionVacuumState(
+	ctx context.Context,
+	arg sqlc.UpdateAPISpecRevisionVacuumStateParams,
+) (sqlc.ApiSpecRevision, error) {
+	f.calls = append(f.calls, "state:"+strconv.FormatInt(arg.ApiSpecRevisionID, 10)+":"+arg.VacuumStatus)
+	return f.stateQueries.UpdateAPISpecRevisionVacuumState(ctx, arg)
 }

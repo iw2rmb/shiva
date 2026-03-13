@@ -6,7 +6,7 @@ Documentation: `design/vacuum.md`
 
 Legend: [ ] todo, [x] done.
 
-- [ ] 2.1 Add the canonical-spec vacuum adapter
+- [x] 2.1 Add the canonical-spec vacuum adapter
   - Repository: `shiva`
   - Component: `internal/openapi/lint`
   - Verification: canonical spec input produces normalized rule-backed issues and parser failures are normalized separately
@@ -15,7 +15,7 @@ Legend: [ ] todo, [x] done.
 2. Integrate the pinned vacuum rule catalog and map native report output into Shiva issue rows with `rule_id`, `message`, `json_path`, and four-number range.
 3. Keep `origin.absoluteLocation` transient and exclude it from the persistent issue model.
 
-- [ ] 2.2 Wire vacuum execution into revision processing
+- [x] 2.2 Wire vacuum execution into revision processing
   - Repository: `shiva`
   - Component: `cmd/shivad`, `internal/store`
   - Verification: processed revisions persist issues, zero-issue revisions stay clean, failed vacuum runs mark the revision as failed
@@ -24,7 +24,7 @@ Legend: [ ] todo, [x] done.
 2. Run vacuum against the canonical spec for the current `api_spec_revision_id` and replace its stored issue set in one revision-scoped write path.
 3. Set `vacuum_status`, `vacuum_error`, and `vacuum_validated_at` deterministically on success and failure.
 
-- [ ] 2.3 Extend processor tests for vacuum persistence behavior
+- [x] 2.3 Extend processor tests for vacuum persistence behavior
   - Repository: `shiva`
   - Component: `cmd/shivad`
   - Verification: processor tests cover success, zero-issue success, and vacuum execution failure without regressing canonical persistence

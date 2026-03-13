@@ -54,6 +54,7 @@ This document describes current schema layout and SQL code generation workflow.
 - `CreateVacuumIssue(api_spec_revision_id, issue)` and `ListVacuumIssuesByAPISpecRevisionID(api_spec_revision_id)`: create and read persisted revision-scoped lint findings.
 - `DeleteVacuumIssuesByAPISpecRevisionID(api_spec_revision_id)` and `ReplaceVacuumIssues(api_spec_revision_id, issues)`: clear or replace the full persisted issue set for one revision.
 - `UpdateAPISpecRevisionVacuumState(...)`: updates `api_spec_revisions.vacuum_status`, `vacuum_error`, and `vacuum_validated_at`, and returns the persisted row.
+- `PersistAPISpecRevisionVacuumResult(...)`: transactionally replaces the full persisted issue set for one revision and writes its final `vacuum_status`, `vacuum_error`, and `vacuum_validated_at`.
 - Vacuum issue writes validate `range_pos` as exactly four integers before hitting SQL.
 
 ### Read Compatibility Behavior

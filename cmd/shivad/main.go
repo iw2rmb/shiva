@@ -20,6 +20,7 @@ import (
 	"github.com/iw2rmb/shiva/internal/notify"
 	"github.com/iw2rmb/shiva/internal/observability"
 	"github.com/iw2rmb/shiva/internal/openapi"
+	"github.com/iw2rmb/shiva/internal/openapi/lint"
 	"github.com/iw2rmb/shiva/internal/store"
 	"github.com/iw2rmb/shiva/internal/textutil"
 	"github.com/iw2rmb/shiva/internal/worker"
@@ -87,9 +88,10 @@ func run(ctx context.Context) error {
 		logger,
 		worker.WithQueue(storeQueueAdapter{store: storeInstance}),
 		worker.WithProcessor(revisionProcessor{
-			store:         storeInstance,
-			gitlabClient:  gitLabClient,
-			openapiLoader: openAPIResolver,
+			store:           storeInstance,
+			gitlabClient:    gitLabClient,
+			openapiLoader:   openAPIResolver,
+			canonicalLinter: lint.DefaultCanonicalRunner(),
 			notifier: notify.New(
 				storeInstance,
 				notify.WithHTTPClient(&http.Client{Timeout: cfg.OutboundTimeout}),
@@ -220,13 +222,14 @@ func (q storeQueueAdapter) MarkFailed(ctx context.Context, eventID int64, errorM
 }
 
 type revisionProcessor struct {
-	store         revisionStore
-	gitlabClient  gitlabResolverClient
-	openapiLoader openapiResolver
-	notifier      revisionNotifier
-	logger        *slog.Logger
-	metrics       *observability.Metrics
-	tracer        trace.Tracer
+	store           revisionStore
+	gitlabClient    gitlabResolverClient
+	openapiLoader   openapiResolver
+	canonicalLinter canonicalVacuumRunner
+	notifier        revisionNotifier
+	logger          *slog.Logger
+	metrics         *observability.Metrics
+	tracer          trace.Tracer
 }
 
 type revisionNotifier interface {
@@ -287,6 +290,14 @@ type revisionStore interface {
 	CreateAPISpecRevision(ctx context.Context, input store.CreateAPISpecRevisionInput) (store.APISpecRevision, error)
 	ReplaceAPISpecDependencies(ctx context.Context, input store.ReplaceAPISpecDependenciesInput) error
 	PersistCanonicalSpec(ctx context.Context, input store.PersistCanonicalSpecInput) error
+	UpdateAPISpecRevisionVacuumState(
+		ctx context.Context,
+		input store.UpdateAPISpecRevisionVacuumStateInput,
+	) (store.APISpecRevision, error)
+	PersistAPISpecRevisionVacuumResult(
+		ctx context.Context,
+		input store.PersistAPISpecRevisionVacuumResultInput,
+	) (store.APISpecRevision, error)
 	ListEndpointIndexByAPISpecRevision(ctx context.Context, apiSpecRevisionID int64) ([]store.EndpointIndexRecord, error)
 	PersistSpecChange(ctx context.Context, input store.PersistSpecChangeInput) error
 	GetRevisionByID(ctx context.Context, revisionID int64) (store.Revision, error)
@@ -299,6 +310,10 @@ type revisionStore interface {
 }
 
 type ingestionMode string
+
+type canonicalVacuumRunner interface {
+	RunCanonicalSpec(ctx context.Context, specYAML string) (lint.CanonicalExecutionResult, error)
+}
 
 const (
 	ingestionModeIncremental ingestionMode = "incremental"
@@ -336,6 +351,13 @@ func (p revisionProcessor) effectiveTracer() trace.Tracer {
 		return p.tracer
 	}
 	return trace.NewNoopTracerProvider().Tracer("github.com/iw2rmb/shiva")
+}
+
+func (p revisionProcessor) effectiveCanonicalLinter() canonicalVacuumRunner {
+	if p.canonicalLinter != nil {
+		return p.canonicalLinter
+	}
+	return lint.DefaultCanonicalRunner()
 }
 
 func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) (worker.ProcessResult, error) {
@@ -882,7 +904,8 @@ func (p revisionProcessor) processIncrementalAPI(
 		return store.APISpecRevision{}, false, fmt.Errorf("replace api spec dependencies for root %q: %w", apiSpec.RootPath, err)
 	}
 
-	if err := p.runBuildStage(ctx, job, revisionID, apiSpecRevision.ID, root); err != nil {
+	canonicalSpec, err := p.runBuildStage(ctx, job, revisionID, apiSpecRevision.ID, root)
+	if err != nil {
 		return p.handleIncrementalAPIFailure(
 			ctx,
 			apiSpec,
@@ -890,6 +913,9 @@ func (p revisionProcessor) processIncrementalAPI(
 			apiSpecRevision,
 			fmt.Errorf("build canonical openapi for root %q: %w", apiSpec.RootPath, err),
 		)
+	}
+	if err := p.runVacuumStage(ctx, job, revisionID, apiSpecRevision.ID, canonicalSpec); err != nil {
+		return store.APISpecRevision{}, false, fmt.Errorf("run vacuum for root %q: %w", apiSpec.RootPath, err)
 	}
 
 	processedRevision, err := p.store.CreateAPISpecRevision(ctx, store.CreateAPISpecRevisionInput{
@@ -1011,7 +1037,7 @@ func (p revisionProcessor) runBuildStage(
 	revisionID int64,
 	apiSpecRevisionID int64,
 	root openapi.RootResolution,
-) error {
+) (openapi.CanonicalSpec, error) {
 	buildCtx, buildSpan := p.effectiveTracer().Start(ctx, "spec.build", trace.WithAttributes(
 		attribute.Int64("repo.id", job.RepoID),
 		attribute.Int64("revision.id", revisionID),
@@ -1035,7 +1061,7 @@ func (p revisionProcessor) runBuildStage(
 	if err != nil {
 		buildSpan.RecordError(err)
 		buildSpan.SetStatus(codes.Error, "canonical build failed")
-		return err
+		return openapi.CanonicalSpec{}, err
 	}
 
 	endpoints := make([]store.EndpointIndexRecord, 0, len(canonicalSpec.Endpoints))
@@ -1060,11 +1086,89 @@ func (p revisionProcessor) runBuildStage(
 	}); err != nil {
 		buildSpan.RecordError(err)
 		buildSpan.SetStatus(codes.Error, "persist canonical spec failed")
-		return fmt.Errorf("persist canonical openapi for api spec revision %d: %w", apiSpecRevisionID, err)
+		return openapi.CanonicalSpec{}, fmt.Errorf("persist canonical openapi for api spec revision %d: %w", apiSpecRevisionID, err)
 	}
 
 	success = true
 
+	return canonicalSpec, nil
+}
+
+func (p revisionProcessor) runVacuumStage(
+	ctx context.Context,
+	job worker.QueueJob,
+	revisionID int64,
+	apiSpecRevisionID int64,
+	canonicalSpec openapi.CanonicalSpec,
+) error {
+	vacuumCtx, vacuumSpan := p.effectiveTracer().Start(ctx, "spec.vacuum", trace.WithAttributes(
+		attribute.Int64("repo.id", job.RepoID),
+		attribute.Int64("revision.id", revisionID),
+		attribute.Int64("api_spec_revision.id", apiSpecRevisionID),
+		attribute.String("delivery.id", job.DeliveryID),
+		attribute.String("revision.sha", job.Sha),
+	))
+	success := false
+	defer func() {
+		if success {
+			vacuumSpan.SetStatus(codes.Ok, "")
+		}
+		vacuumSpan.End()
+	}()
+
+	if _, err := p.store.UpdateAPISpecRevisionVacuumState(vacuumCtx, store.UpdateAPISpecRevisionVacuumStateInput{
+		APISpecRevisionID: apiSpecRevisionID,
+		VacuumStatus:      store.VacuumStatusProcessing,
+	}); err != nil {
+		vacuumSpan.RecordError(err)
+		vacuumSpan.SetStatus(codes.Error, "mark vacuum processing failed")
+		return fmt.Errorf("mark api spec revision %d vacuum processing: %w", apiSpecRevisionID, err)
+	}
+
+	result, err := p.effectiveCanonicalLinter().RunCanonicalSpec(vacuumCtx, canonicalSpec.SpecYAML)
+	if err != nil {
+		vacuumSpan.RecordError(err)
+		vacuumSpan.SetStatus(codes.Error, "run vacuum failed")
+		return fmt.Errorf("lint canonical spec for api spec revision %d: %w", apiSpecRevisionID, err)
+	}
+
+	if result.Failure != nil {
+		if _, err := p.store.PersistAPISpecRevisionVacuumResult(vacuumCtx, store.PersistAPISpecRevisionVacuumResultInput{
+			APISpecRevisionID: apiSpecRevisionID,
+			VacuumStatus:      store.VacuumStatusFailed,
+			VacuumError:       result.Failure.Message,
+		}); err != nil {
+			vacuumSpan.RecordError(err)
+			vacuumSpan.SetStatus(codes.Error, "persist vacuum failure failed")
+			return fmt.Errorf("persist failed vacuum result for api spec revision %d: %w", apiSpecRevisionID, err)
+		}
+		success = true
+		return nil
+	}
+
+	issues := make([]store.VacuumIssueMutation, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		issues = append(issues, store.VacuumIssueMutation{
+			RuleID:   issue.RuleID,
+			Message:  issue.Message,
+			JSONPath: issue.JSONPath,
+			RangePos: []int32{issue.RangePos[0], issue.RangePos[1], issue.RangePos[2], issue.RangePos[3]},
+		})
+	}
+
+	validatedAt := time.Now().UTC()
+	if _, err := p.store.PersistAPISpecRevisionVacuumResult(vacuumCtx, store.PersistAPISpecRevisionVacuumResultInput{
+		APISpecRevisionID: apiSpecRevisionID,
+		Issues:            issues,
+		VacuumStatus:      store.VacuumStatusProcessed,
+		VacuumValidatedAt: &validatedAt,
+	}); err != nil {
+		vacuumSpan.RecordError(err)
+		vacuumSpan.SetStatus(codes.Error, "persist vacuum result failed")
+		return fmt.Errorf("persist vacuum result for api spec revision %d: %w", apiSpecRevisionID, err)
+	}
+
+	success = true
 	return nil
 }
 
