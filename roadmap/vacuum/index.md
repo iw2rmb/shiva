@@ -24,7 +24,7 @@ Legend: [ ] todo, [x] done.
 2. Wire `cmd/shivad` revision processing to run vacuum after `PersistCanonicalSpec` and replace persisted issue rows for the target `api_spec_revision_id`.
 3. Extend processor tests to cover success, zero-issue, and vacuum-failure paths.
 
-- [ ] 3.0 Phase 3 GitLab CI validation surface
+- [x] 3.0 Phase 3 GitLab CI validation surface
   - Repository: `shiva`
   - Component: `internal/http`, `internal/openapi/lint`, `internal/gitlab`, `cmd/shivad`
   - Verification: CI endpoint returns empty results when no spec is impacted, returns source-file-localized issues when specs are impacted, emits GitLab Code Quality-compatible payloads

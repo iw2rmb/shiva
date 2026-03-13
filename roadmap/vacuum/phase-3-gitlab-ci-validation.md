@@ -24,11 +24,11 @@ Legend: [ ] todo, [x] done.
 2. [x] Reconstruct the root and dependency files in a temp workspace preserving repo-relative paths and run vacuum against the source root path.
 3. [x] Map transient file locations back to repo-relative paths and keep that mapping out of persistent storage.
 
-- [ ] 3.3 Verify HTTP behavior end to end
+- [x] 3.3 Verify HTTP behavior end to end
   - Repository: `shiva`
   - Component: `internal/http`, `cmd/shivad`
   - Verification: HTTP tests cover no-spec, spec-hit, and GitLab Code Quality response scenarios
   - Reasoning: high
 1. [x] Add route tests for a SHA with no impacted specs and assert an empty success response.
 2. [x] Add route tests for a SHA with impacted specs and assert source-file-localized issue rows.
-3. Add route tests for `format=gitlab_code_quality` and assert deterministic fingerprints and line mapping.
+3. [x] Add route tests for `format=gitlab_code_quality` and assert deterministic fingerprints and line mapping.

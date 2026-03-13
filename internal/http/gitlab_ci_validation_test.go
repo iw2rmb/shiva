@@ -254,6 +254,88 @@ func TestGitLabCIValidateHandler_ImpactedSpecReturnsSourceLocalizedIssueRows(t *
 	}
 }
 
+func TestGitLabCIValidateHandler_ImpactedSpecWritesCodeQualityFingerprintAndLines(t *testing.T) {
+	t.Parallel()
+
+	server, sourceRunner := newImpactedGitLabCIValidationServiceTestServer(
+		lint.SourceExecutionResult{
+			Issues: []lint.SourceIssue{
+				{
+					RuleID:   "paths-kebab-case",
+					Severity: "error",
+					Message:  "path segment should be kebab case",
+					JSONPath: "$.paths['/Bad_Path']",
+					FilePath: "apis/pets/paths.yaml",
+					RangePos: [4]int32{6, 3, 8, 1},
+				},
+			},
+		},
+	)
+
+	resp := doGitLabCIValidationRequest(
+		t,
+		server,
+		`{"gitlab_project_id":42,"namespace":"acme","repo":"platform","sha":"deadbeef","branch":"main","parent_sha":"cafebabe","format":"gitlab_code_quality"}`,
+	)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, string(payload))
+	}
+
+	var body []gitlabCodeQualityIssueResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("expected one code quality issue, got %d", len(body))
+	}
+
+	expectedFingerprint := gitlabCodeQualityFingerprint(
+		GitLabCIValidationInput{
+			GitLabProjectID: 42,
+			Namespace:       "acme",
+			Repo:            "platform",
+			SHA:             "deadbeef",
+			Branch:          "main",
+			ParentSHA:       "cafebabe",
+			Format:          GitLabCIValidationFormatGitLabCodeQuality,
+		},
+		"apis/pets/openapi.yaml",
+		normalizedGitLabCIValidationIssue{
+			ruleID:   "paths-kebab-case",
+			severity: "error",
+			message:  "path segment should be kebab case",
+			jsonPath: "$.paths['/Bad_Path']",
+			filePath: "apis/pets/paths.yaml",
+			rangePos: [4]int32{6, 3, 8, 1},
+		},
+	)
+
+	if body[0].Description != "path segment should be kebab case" {
+		t.Fatalf("unexpected description %q", body[0].Description)
+	}
+	if body[0].CheckName != "paths-kebab-case" {
+		t.Fatalf("unexpected check name %q", body[0].CheckName)
+	}
+	if body[0].Severity != "major" {
+		t.Fatalf("expected mapped severity major, got %q", body[0].Severity)
+	}
+	if body[0].Location.Path != "apis/pets/paths.yaml" {
+		t.Fatalf("expected source-localized path, got %q", body[0].Location.Path)
+	}
+	if body[0].Location.Lines.Begin != 6 || body[0].Location.Lines.End != 8 {
+		t.Fatalf("unexpected location lines %+v", body[0].Location.Lines)
+	}
+	if body[0].Fingerprint != expectedFingerprint {
+		t.Fatalf("expected fingerprint %q, got %q", expectedFingerprint, body[0].Fingerprint)
+	}
+	if len(sourceRunner.calls) != 1 || sourceRunner.calls[0] != "apis/pets/openapi.yaml" {
+		t.Fatalf("unexpected source runner calls %+v", sourceRunner.calls)
+	}
+}
+
 func TestGitLabCIValidateHandler_WritesShivaResponse(t *testing.T) {
 	t.Parallel()
 
