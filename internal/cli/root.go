@@ -61,6 +61,7 @@ func NewRootCommand(serviceFactory func() (Service, error)) *cobra.Command {
 		listCmd,
 		syncCmd,
 		newBatchCommand(serviceFactory, flags),
+		newTUICommand(serviceFactory, flags),
 		newCompletionCommand(rootCmd),
 		newHealthCommand(serviceFactory, flags),
 	)

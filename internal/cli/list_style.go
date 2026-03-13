@@ -1,6 +1,6 @@
 package cli
 
-import "charm.land/lipgloss/v2"
+import "github.com/charmbracelet/lipgloss/v2"
 
 type listStyles struct {
 	enabled       bool

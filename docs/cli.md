@@ -19,9 +19,12 @@ This document describes the shipped `shiva` CLI surface, selector grammar, catal
   - `shiva ls <namespace>/<repo-prefix>`
   - `shiva ls <namespace>/<repo>`
   - `shiva sync <repo-ref>`
+  - `shiva tui`
+  - `shiva tui <namespace>/`
+  - `shiva tui <namespace>/<repo>`
   - `shiva batch`
 
-`completion`, `health`, `ls`, `sync`, and `batch` are all implemented.
+`completion`, `health`, `ls`, `sync`, `tui`, and `batch` are all implemented.
 
 ## Selector Grammar
 - `repo-ref` keeps the `<namespace>/<repo>` shorthand, for example `allure/allure-deployment`.
@@ -42,6 +45,11 @@ This document describes the shipped `shiva` CLI surface, selector grammar, catal
 - `--rev` and `--sha` are mutually exclusive.
 - `--dry-run` is valid only in call mode.
 - `ls` accepts only selector input plus `--profile` and `--offline`.
+- `tui` accepts only `--profile` and `--offline`.
+- `tui` selector input is limited to:
+  - no selector
+  - `<namespace>/`
+  - `<namespace>/<repo>`
 
 ## Call Input Flags
 - `--path key=value`
@@ -105,6 +113,13 @@ Rules:
   - default output: `ndjson`
   - supported `-o/--output`: `ndjson`, `json`
   - emits result rows with `index`, `request`, `ok`, `output`, and `error`
+- `shiva tui`
+  - starts a read-only terminal UI shell
+  - initial route is selected by the optional argument:
+    - no selector starts in namespace mode
+    - `<namespace>/` starts in that namespace's repo view
+    - `<namespace>/<repo>` starts in that repo's explorer view
+  - current implementation is a route-aware placeholder surface that quits with `q` or `ctrl+c`
 
 Success writes to stdout. Errors write to stderr.
 
