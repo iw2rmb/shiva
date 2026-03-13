@@ -245,6 +245,8 @@ Keep current ownership:
 - `internal/store` owns persistent rule and issue storage
 
 ### Database Shape
+Update the original schema in `sql/schema/000001_initial.sql` directly. Do not add `ALTER` statements or a new migration file.
+
 Update `sql/schema/000001_initial.sql` to add:
 - `vacuum_rules`
 - `vacuum_issues`
@@ -275,6 +277,7 @@ Normalization before seeding:
 - denormalize common fields into dedicated columns
 
 Because the repository uses a checksum-locked initial migration, changing the seeded catalog is a schema change by definition.
+That change is made by editing `sql/schema/000001_initial.sql` itself, not by layering `ALTER` statements.
 
 ### Ingestion Flow Changes
 For each processed API revision:
