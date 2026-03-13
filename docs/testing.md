@@ -49,11 +49,13 @@ Current baseline should be validated by running `go test ./...`.
 - Canonical spec build and endpoint extraction.
 - Semantic diff computation.
 - Query endpoint validation, snapshot resolution, ambiguity reporting, and catalog payload mapping.
+- GitLab CI validation route registration, request-contract validation, Shiva JSON formatting, and GitLab Code Quality response formatting.
 - Runtime route parsing, repo/snapshot resolution, ambiguity handling, request validation, and spec-shaped stub response generation on `/gl/*`.
 - Shared call-envelope normalization, Shiva call-plan generation, direct-target planning, and dispatch behavior.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
 - CLI request-input parsing, selector-driven `ls` rendering, and `batch` NDJSON execution.
 - Endpoint contract tests for:
+  - `/internal/gitlab/ci/validate` request validation, service-unconfigured behavior, and both response formats,
   - `/gl/*` repo-path parsing, selector resolution, method/path normalization, ambiguity handling, request validation, fallback `400` behavior, and deterministic stub responses,
   - shared `repo`/`api`/`revision_id`/`sha` query validation,
   - `/v1/spec` format and `ETag` behavior,

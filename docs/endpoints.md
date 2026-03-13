@@ -1,7 +1,55 @@
 # Endpoints
 
 ## Scope
-This document describes how canonical OpenAPI specs are indexed, how Shiva serves the shipped query-driven inspect, inventory, and call-planning endpoints on `/v1/*`, and the locked contract for the reserved repo-backed runtime surface on `/gl/*`.
+This document describes how canonical OpenAPI specs are indexed, how Shiva serves the shipped query-driven inspect, inventory, and call-planning endpoints on `/v1/*`, the current GitLab CI validation contract on `/internal/gitlab/ci/validate`, and the locked contract for the reserved repo-backed runtime surface on `/gl/*`.
+
+## Internal GitLab CI Validation (`/internal/gitlab/ci/validate`)
+Current state:
+- `POST /internal/gitlab/ci/validate` is registered.
+- the route validates GitLab repo and SHA identity input and supports `shiva` and `gitlab_code_quality` output formats.
+- the route is contract-complete but validator wiring is still pending; without an injected validator implementation it returns `503`.
+
+### Request Contract
+- request body is one JSON object
+- accepted fields:
+  - `gitlab_project_id`
+  - `namespace`
+  - `repo`
+  - `sha`
+  - `branch`
+  - optional `parent_sha`
+  - optional `format`
+- validation rules:
+  - `gitlab_project_id` must be positive
+  - `namespace`, `repo`, `sha`, and `branch` must be non-empty after trimming
+  - `format`, when present, must be `shiva` or `gitlab_code_quality`
+  - omitted `format` defaults to `shiva`
+
+### Response Contract
+- `format=shiva` returns one JSON object with:
+  - `status`
+  - `format`
+  - `repo`
+  - `specs`
+- `repo` echoes the normalized GitLab repo identity and requested SHA/branch tuple
+- `specs` is grouped by `root_path`
+- each issue row includes:
+  - `rule_id`
+  - `severity`
+  - `message`
+  - `json_path`
+  - `file_path`
+  - `range` as `[start_line,start_character,end_line,end_character]`
+- `format=gitlab_code_quality` returns a GitLab Code Quality-compatible JSON array
+- each GitLab issue object includes:
+  - `description`
+  - `check_name`
+  - `fingerprint`
+  - `severity`
+  - `location.path`
+  - `location.lines.begin`
+  - optional `location.lines.end`
+- GitLab Code Quality fingerprints are deterministic from `(namespace/repo, root_path, rule_id, json_path, range, message)`
 
 ## Build-Time Endpoint Extraction
 Canonical build:
@@ -278,6 +326,7 @@ Legacy path-segment endpoints were removed:
 - `400`
   - malformed or unsupported query combinations
   - malformed call-envelope bodies
+  - malformed GitLab CI validation payloads
 - `404`
   - repo, snapshot, API snapshot, spec, or operation not found
 - `409`
@@ -288,6 +337,7 @@ Legacy path-segment endpoints were removed:
   - ambiguous call resolution
 - `503`
   - database is not configured
+  - GitLab CI validator is not configured
 - `500`
   - unexpected server failures
 

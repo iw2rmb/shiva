@@ -18,15 +18,16 @@ import (
 )
 
 type Server struct {
-	app            *fiber.App
-	cfg            config.Config
-	logger         *slog.Logger
-	store          *store.Store
-	gitlabIngestor gitlabWebhookIngestor
-	readStore      queryReadStore
-	runtimeSpecs   *runtimeSpecCache
-	metrics        *observability.Metrics
-	tracer         trace.Tracer
+	app               *fiber.App
+	cfg               config.Config
+	logger            *slog.Logger
+	store             *store.Store
+	gitlabIngestor    gitlabWebhookIngestor
+	gitlabCIValidator gitlabCIValidator
+	readStore         queryReadStore
+	runtimeSpecs      *runtimeSpecCache
+	metrics           *observability.Metrics
+	tracer            trace.Tracer
 }
 
 const (
@@ -52,6 +53,14 @@ func WithGitLabWebhookIngestor(ingestor gitlabWebhookIngestor) Option {
 	return func(s *Server) {
 		if ingestor != nil {
 			s.gitlabIngestor = ingestor
+		}
+	}
+}
+
+func WithGitLabCIValidator(validator gitlabCIValidator) Option {
+	return func(s *Server) {
+		if validator != nil {
+			s.gitlabCIValidator = validator
 		}
 	}
 }
@@ -113,6 +122,9 @@ func (s *Server) registerRoutes() {
 		},
 	}))
 	webhookGroup.Post("/gitlab", s.handleGitLabWebhook)
+
+	internalGitLabGroup := s.app.Group("/internal/gitlab")
+	internalGitLabGroup.Post("/ci/validate", s.handleGitLabCIValidate)
 
 	for _, method := range runtimeSupportedMethods {
 		s.app.Add(method, runtimeRoutePrefix+"/*", s.handleRuntimeRoute)

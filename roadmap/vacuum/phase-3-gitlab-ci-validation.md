@@ -6,14 +6,14 @@ Documentation: `design/vacuum.md`
 
 Legend: [ ] todo, [x] done.
 
-- [ ] 3.1 Add the GitLab CI validation route and contracts
+- [x] 3.1 Add the GitLab CI validation route and contracts
   - Repository: `shiva`
   - Component: `internal/http`
   - Verification: the route validates input, accepts GitLab repo and SHA identity, and supports `shiva` and `gitlab_code_quality` formats
   - Reasoning: high
-1. Add `POST /internal/gitlab/ci/validate` to `internal/http/server.go`.
-2. Define request parsing and validation for `gitlab_project_id`, `namespace`, `repo`, `sha`, `branch`, optional `parent_sha`, and optional `format`.
-3. Define response writers for Shiva JSON and GitLab Code Quality-compatible payloads.
+1. [x] Add `POST /internal/gitlab/ci/validate` to `internal/http/server.go`.
+2. [x] Define request parsing and validation for `gitlab_project_id`, `namespace`, `repo`, `sha`, `branch`, optional `parent_sha`, and optional `format`.
+3. [x] Define response writers for Shiva JSON and GitLab Code Quality-compatible payloads.
 
 - [ ] 3.2 Reconstruct source-layout specs and run transient vacuum validation
   - Repository: `shiva`
