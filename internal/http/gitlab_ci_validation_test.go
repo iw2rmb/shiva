@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/iw2rmb/shiva/internal/config"
+	"github.com/iw2rmb/shiva/internal/gitlab"
 	"github.com/iw2rmb/shiva/internal/store"
 )
 
@@ -126,6 +127,65 @@ func TestGitLabCIValidateHandler_ValidatorNotConfiguredReturns503(t *testing.T) 
 		t.Fatalf("expected status 503, got %d", resp.StatusCode)
 	}
 	assertJSONBody(t, resp, map[string]any{"error": "gitlab ci validator is not configured"})
+}
+
+func TestGitLabCIValidateHandler_NoSpecChangesReturnsEmptyShivaResponse(t *testing.T) {
+	t.Parallel()
+
+	sourceRunner := &fakeGitLabCISourceRunner{}
+	validator := NewGitLabCIValidationService(
+		&fakeGitLabCIValidationStore{
+			repo: store.Repo{ID: 7, GitLabProjectID: 42, Namespace: "acme", Repo: "platform"},
+			activeSpecs: []store.ActiveAPISpecWithLatestDependencies{
+				{
+					APISpec: store.APISpec{ID: 11, RepoID: 7, RootPath: "apis/pets/openapi.yaml"},
+					DependencyFilePaths: []string{
+						"shared/common.yaml",
+					},
+				},
+			},
+		},
+		&fakeGitLabCIValidationGitLabClient{
+			changedPaths: []gitlab.ChangedPath{{NewPath: "docs/readme.md"}},
+		},
+		&fakeGitLabCIValidationResolver{},
+		sourceRunner,
+		nil,
+	)
+	server := newGitLabCIValidationTestServer(validator)
+
+	resp := doGitLabCIValidationRequest(
+		t,
+		server,
+		`{"gitlab_project_id":42,"namespace":"acme","repo":"platform","sha":"deadbeef","branch":"main","parent_sha":"cafebabe"}`,
+	)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, string(payload))
+	}
+
+	var body gitlabCIValidationShivaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if body.Status != "ok" {
+		t.Fatalf("expected status ok, got %q", body.Status)
+	}
+	if body.Format != GitLabCIValidationFormatShiva {
+		t.Fatalf("expected format %q, got %q", GitLabCIValidationFormatShiva, body.Format)
+	}
+	if body.Repo.GitLabProjectID != 42 || body.Repo.Namespace != "acme" || body.Repo.Repo != "platform" || body.Repo.SHA != "deadbeef" || body.Repo.Branch != "main" || body.Repo.ParentSHA != "cafebabe" {
+		t.Fatalf("unexpected repo payload %+v", body.Repo)
+	}
+	if len(body.Specs) != 0 {
+		t.Fatalf("expected empty specs, got %+v", body.Specs)
+	}
+	if len(sourceRunner.calls) != 0 {
+		t.Fatalf("expected source runner not called, got %+v", sourceRunner.calls)
+	}
 }
 
 func TestGitLabCIValidateHandler_WritesShivaResponse(t *testing.T) {

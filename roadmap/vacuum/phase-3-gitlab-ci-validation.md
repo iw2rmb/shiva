@@ -29,6 +29,6 @@ Legend: [ ] todo, [x] done.
   - Component: `internal/http`, `cmd/shivad`
   - Verification: HTTP tests cover no-spec, spec-hit, and GitLab Code Quality response scenarios
   - Reasoning: high
-1. Add route tests for a SHA with no impacted specs and assert an empty success response.
+1. [x] Add route tests for a SHA with no impacted specs and assert an empty success response.
 2. Add route tests for a SHA with impacted specs and assert source-file-localized issue rows.
 3. Add route tests for `format=gitlab_code_quality` and assert deterministic fingerprints and line mapping.
