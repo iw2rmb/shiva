@@ -31,6 +31,7 @@ This document describes current schema layout and SQL code generation workflow.
 - `api_specs.status`: `active | deleted`
 - `api_spec_revisions.build_status`: processor writes `processing | processed | failed` during per-root build execution in both bootstrap and incremental loops.
 - `api_spec_revisions.vacuum_status`: `pending | processing | processed | failed`
+- `api_spec_revisions.vacuum_error`: trimmed normalized lint failure text; empty for `pending`, `processing`, and successful `processed` rows.
 - `api_spec_revisions.vacuum_validated_at`: lint completion timestamp; null until a revision has been validated.
 - `delivery_attempts.status`: `pending | retry_scheduled | succeeded | failed`
 - `repos.openapi_force_rescan`: `true` when next bootstrap decision should force full repository scan.
@@ -56,6 +57,9 @@ This document describes current schema layout and SQL code generation workflow.
 - `UpdateAPISpecRevisionVacuumState(...)`: updates `api_spec_revisions.vacuum_status`, `vacuum_error`, and `vacuum_validated_at`, and returns the persisted row.
 - `PersistAPISpecRevisionVacuumResult(...)`: transactionally replaces the full persisted issue set for one revision and writes its final `vacuum_status`, `vacuum_error`, and `vacuum_validated_at`.
 - Vacuum issue writes validate `range_pos` as exactly four integers before hitting SQL.
+- Final vacuum result persistence is intentionally narrow:
+  - `vacuum_status='processed'` requires `vacuum_validated_at` and an empty `vacuum_error`; zero issues are valid.
+  - `vacuum_status='failed'` requires a non-empty `vacuum_error`, clears `vacuum_validated_at`, and persists no `vacuum_issues`.
 
 ### Read Compatibility Behavior
 - `GetSpecArtifactByRevisionID` and `GetEndpointIndexByMethodPath` are retained only as compatibility helpers for store-level callers and tests.

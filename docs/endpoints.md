@@ -10,9 +10,11 @@ Current state:
 - the route revalidates source-layout OpenAPI roots from GitLab content and returns repo-relative issue locations without persisting transient temp-file paths.
 - when `parent_sha` is provided, the route reuses incremental compare impact rules against stored active-root dependency snapshots and falls back to changed-path discovery for new or renamed roots.
 - when `parent_sha` is omitted, the route falls back to repository-wide root discovery at `sha`.
+- each response is deterministic: specs are sorted by `root_path`, and issues are sorted by `(file_path, range, rule_id, json_path, message)`.
 
 ### Request Contract
 - request body is one JSON object
+- an empty body or non-JSON body returns `400`
 - accepted fields:
   - `gitlab_project_id`
   - `namespace`
@@ -22,6 +24,7 @@ Current state:
   - optional `parent_sha`
   - optional `format`
 - validation rules:
+  - `namespace` and `repo` are normalized through the shared repo identity parser before validation succeeds
   - `gitlab_project_id` must be positive
   - `namespace`, `repo`, `sha`, and `branch` must be non-empty after trimming
   - `format`, when present, must be `shiva` or `gitlab_code_quality`
@@ -42,6 +45,7 @@ Current state:
   - `json_path`
   - `file_path`
   - `range` as `[start_line,start_character,end_line,end_character]`
+- missing source severity is normalized to `warning` in `format=shiva`
 - `format=gitlab_code_quality` returns a GitLab Code Quality-compatible JSON array
 - each GitLab issue object includes:
   - `description`
@@ -52,8 +56,21 @@ Current state:
   - `location.lines.begin`
   - optional `location.lines.end`
 - GitLab Code Quality fingerprints are deterministic from `(namespace/repo, root_path, rule_id, json_path, range, message)`
+- GitLab Code Quality severity mapping is:
+  - `blocker -> blocker`
+  - `critical -> critical`
+  - `error | major -> major`
+  - `info | information -> info`
+  - everything else, including vacuum `warn`, -> `minor`
 - compare runs with no impacted or discovered OpenAPI roots return `status=ok` with an empty `specs` array
 - impacted roots are reconstructed in a temp workspace that preserves repo-relative paths, then `vacuum` origin paths are mapped back to repo-relative `file_path` values before the response is written
+- the route fails the whole request instead of returning partial results when source reconstruction or source-layout vacuum execution fails for any selected root
+
+### Error Surface
+- `503` when the top-level validator is not configured or the database store is unavailable
+- `404` when the repo is not indexed or GitLab cannot resolve the requested repository resource
+- `409` when `gitlab_project_id` does not match the indexed `(namespace, repo)` pair
+- `500` for missing internal GitLab/openapi/source-vacuum dependencies, compare failures, root reconstruction failures, or vacuum execution failures
 
 ## Build-Time Endpoint Extraction
 Canonical build:

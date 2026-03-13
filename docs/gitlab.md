@@ -50,6 +50,8 @@ Webhook / worker pipeline:
    - replace the full `vacuum_issues` set for that API spec revision and set final lint state:
      - `vacuum_status='processed'`, `vacuum_error=''`, `vacuum_validated_at=<now>` on success, including zero-issue runs,
      - `vacuum_status='failed'`, `vacuum_error=<normalized failure>`, `vacuum_validated_at=NULL` when `vacuum` cannot validate the canonical document.
+   - canonical lint persistence is atomic per `api_spec_revision_id`: success replaces the full issue set, while failure persists no issues and only the failed state.
+   - persisted canonical lint issues keep only `rule_id`, `message`, `json_path`, and four-number `range_pos`; source-file locations are computed only by `/internal/gitlab/ci/validate`.
 8. For each changed API (rebuilt or deactivated root):
    - compute and persist semantic diff (`spec_changes`) for that API.
    - return `openapi_changed=true` for worker finalization of the canonical `ingest_events` row.

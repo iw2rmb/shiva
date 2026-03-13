@@ -38,6 +38,7 @@ Current baseline should be validated by running `go test ./...`.
 - GitLab API client behavior.
 - Startup schema migration bootstrap and checksum validation.
 - Vacuum schema bootstrap seeding and store-level issue replacement / revision vacuum state transitions.
+- Canonical vacuum runner normalization, including deterministic issue ordering and normalized lint-failure messages.
 - Startup indexing orchestration and checkpoint resume behavior.
 - Inbound webhook validation + ingest persistence behavior.
 - Worker retry and permanent-failure handling.
@@ -52,6 +53,7 @@ Current baseline should be validated by running `go test ./...`.
 - GitLab CI validation route registration, request-contract validation, Shiva JSON formatting, and GitLab Code Quality response formatting.
 - GitLab CI validation service no-op compare behavior, impacted-root revalidation, fallback discovery, and repository discovery when `parent_sha` is absent.
 - Source-layout vacuum execution and temp-workspace path remapping back to repo-relative file paths.
+- Revision-processor vacuum stage success, zero-issue success, and normalized failure persistence behavior.
 - Runtime route parsing, repo/snapshot resolution, ambiguity handling, request validation, and spec-shaped stub response generation on `/gl/*`.
 - Shared call-envelope normalization, Shiva call-plan generation, direct-target planning, and dispatch behavior.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
@@ -69,6 +71,8 @@ Current baseline should be validated by running `go test ./...`.
   no-spec compare responses, impacted-root validation, fallback discovery, and repository discovery without `parent_sha`.
 - Source-layout vacuum tests in `internal/openapi/lint/source_test.go`:
   repo-relative file remapping from temp workspaces and input validation.
+- Canonical vacuum and processor vacuum-stage tests in `internal/openapi/lint/vacuum_test.go` and `cmd/shivad/revision_processor_vacuum_test.go`:
+  deterministic issue normalization, failure normalization, and final revision-state persistence.
 - Outbound notifier signing, retries, and terminal state behavior.
 - End-to-end ingest-to-notify flow in `cmd/shivad/webhook_to_notify_integration_test.go`.
 - Startup queue seeding in `cmd/shivad/startup_indexer_test.go`:
