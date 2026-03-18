@@ -29,10 +29,61 @@ Examples:
 EOF
 }
 
+parse_arches() {
+	local raw_platforms="$1"
+	local -A seen=()
+	local -a parsed=()
+	local platform
+
+	IFS=',' read -r -a list <<<"${raw_platforms}"
+	for platform in "${list[@]}"; do
+		platform="${platform//[[:space:]]/}"
+		if [[ -z "${platform}" ]]; then
+			continue
+		fi
+		if [[ "${platform}" != linux/* ]]; then
+			echo "unsupported platform '${platform}': only linux/* is supported" >&2
+			exit 1
+		fi
+		local arch="${platform#linux/}"
+		case "${arch}" in
+		amd64 | arm64)
+			;;
+		*)
+			echo "unsupported arch '${arch}': supported arches are amd64 and arm64" >&2
+			exit 1
+			;;
+		esac
+		if [[ -z "${seen[${arch}]:-}" ]]; then
+			seen["${arch}"]=1
+			parsed+=("${arch}")
+		fi
+	done
+	if [[ "${#parsed[@]}" -eq 0 ]]; then
+		echo "no valid platforms provided in PLATFORMS='${raw_platforms}'" >&2
+		exit 1
+	fi
+	printf '%s\n' "${parsed[@]}"
+}
+
+build_local_binary() {
+	local arch="$1"
+	local output="${repo_root}/bin/shivad-linux-${arch}"
+	echo "Building local binary for linux/${arch}: ${output}"
+	CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" \
+		go build -trimpath -ldflags="-s -w" -o "${output}" ./cmd/shivad
+}
+
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 	usage
 	exit 0
 fi
+
+mapfile -t target_arches < <(parse_arches "${platforms}")
+mkdir -p "${repo_root}/bin"
+for arch in "${target_arches[@]}"; do
+	build_local_binary "${arch}"
+done
 
 if [[ -n "${GHCR_TOKEN:-}" ]]; then
 	if [[ -z "${GHCR_USERNAME:-}" ]]; then

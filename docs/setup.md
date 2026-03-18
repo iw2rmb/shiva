@@ -120,6 +120,9 @@ Current CLI cache behavior:
 
 ## Container Image
 - Runtime image source: `deploy/image/Dockerfile`.
+- `deploy/image/build.sh` cross-compiles local binaries into `bin/` before the image build:
+  - `bin/shivad-linux-amd64`
+  - `bin/shivad-linux-arm64`
 - The final image contains only:
   - `/shivad` compiled binary
   - `/etc/ssl/certs/ca-certificates.crt` for outbound TLS validation
