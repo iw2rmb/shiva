@@ -116,6 +116,24 @@ Current CLI cache behavior:
 
 ## Deployment Reference
 - Kubernetes manifest example: `deploy/k8s/shiva.yaml`.
+- GHCR image build/push helper (multi-arch): `deploy/image/build.sh`.
+
+## Container Image
+- Runtime image source: `deploy/image/Dockerfile`.
+- The final image contains only:
+  - `/shivad` compiled binary
+  - `/etc/ssl/certs/ca-certificates.crt` for outbound TLS validation
+- Supported target platforms:
+  - `linux/amd64`
+  - `linux/arm64`
+- Build and push to GHCR:
+  - `./deploy/image/build.sh`
+- Override defaults when needed:
+  - `IMAGE_REPO=ghcr.io/<owner>/shiva IMAGE_TAG=v1.0.0 ./deploy/image/build.sh`
+  - `PUSH_LATEST=0 IMAGE_TAG=main ./deploy/image/build.sh`
+- Optional auth from environment:
+  - `GHCR_USERNAME=<github-username>`
+  - `GHCR_TOKEN=<github-token-with-packages-write>`
 
 ## References
 - CLI behavior: `docs/cli.md`

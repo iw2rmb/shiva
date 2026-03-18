@@ -62,3 +62,4 @@ Query semantics:
 
 ## Deployment
 - Kubernetes example manifest: [deploy/k8s/shiva.yaml](deploy/k8s/shiva.yaml)
+- Multi-arch GHCR image build/push helper: [deploy/image/build.sh](deploy/image/build.sh)
