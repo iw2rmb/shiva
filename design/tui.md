@@ -265,7 +265,7 @@ The TUI will not render raw JSON directly. It will:
 3. render markdown to ANSI with `github.com/charmbracelet/glamour`
 4. display the rendered ANSI text in `github.com/charmbracelet/viewport`
 
-The markdown builders will follow the structure of the reference renderer in `/Users/v.v.kovalev/@v.v.kovalev/services/src/markdown`:
+The markdown builders will follow the structure of the reference renderer in `/Users/vk/@iw2rmb/services/src/markdown`:
 - endpoint/service metadata at the top
 - parameter and body schemas rendered as code fences
 - responses grouped by status code
@@ -473,7 +473,7 @@ Testable outcome:
 - `internal/cli/service.go`
 - `internal/cli/service_inventory.go`
 - `internal/cli/httpclient/client.go`
-- `/Users/v.v.kovalev/@v.v.kovalev/services/src/markdown/renderService.ts`
-- `/Users/v.v.kovalev/@v.v.kovalev/services/src/markdown/renderRequestBody.ts`
-- `/Users/v.v.kovalev/@v.v.kovalev/services/src/markdown/renderResponses.ts`
-- `/Users/v.v.kovalev/@v.v.kovalev/services/src/markdown/renderParamsArray.ts`
+- `/Users/vk/@iw2rmb/services/src/markdown/renderService.ts`
+- `/Users/vk/@iw2rmb/services/src/markdown/renderRequestBody.ts`
+- `/Users/vk/@iw2rmb/services/src/markdown/renderResponses.ts`
+- `/Users/vk/@iw2rmb/services/src/markdown/renderParamsArray.ts`

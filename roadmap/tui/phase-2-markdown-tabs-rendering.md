@@ -23,7 +23,7 @@ Legend: [ ] todo, [x] done.
   - Verification: endpoint markdown includes method, path, params, request body, and responses; servers markdown follows operation-first precedence; errors markdown filters to non-2xx and `default`
   - Reasoning: high
 1. Add markdown builders for endpoint detail, server detail, and error detail in `internal/tui/markdown`.
-2. Follow the structure of `/Users/v.v.kovalev/@v.v.kovalev/services/src/markdown/renderService.ts`, `renderRequestBody.ts`, `renderResponses.ts`, and `renderParamsArray.ts`.
+2. Follow the structure of `/Users/vk/@iw2rmb/services/src/markdown/renderService.ts`, `renderRequestBody.ts`, `renderResponses.ts`, and `renderParamsArray.ts`.
 3. Normalize OpenAPI parameter, request-body, and response sections into stable markdown blocks and fenced code sections.
 4. Add empty-state markdown builders for missing servers and missing documented errors.
 5. Add table-driven tests for markdown builders using representative operation and spec payloads.
