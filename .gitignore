@@ -45,3 +45,6 @@ vendor/
 *.log
 tmp/
 *.pid
+
+# amata
+.amata/
