@@ -79,6 +79,7 @@ type RepoExplorerRouteState struct {
 	Repo      string
 	Endpoints []EndpointEntry
 	Selected  int
+	List      list.Model
 	Detail    DetailState
 }
 

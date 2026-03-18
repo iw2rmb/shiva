@@ -48,3 +48,6 @@ tmp/
 
 # amata
 .amata/
+
+# claude
+.claude/

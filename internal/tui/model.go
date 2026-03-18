@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
 type rootModel struct {
@@ -42,6 +41,7 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 			Namespace: route.Namespace,
 			Repo:      route.Repo,
 			Selected:  -1,
+			List:      newEndpointList(),
 			Detail: DetailState{
 				ActiveTab: DetailTabEndpoints,
 			},
@@ -84,7 +84,8 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainOperationList, typed.Token, nil)
-		model.explorer.Endpoints = append([]EndpointEntry(nil), typed.Entries...)
+		model.explorer.Endpoints = sortedEndpointEntries(typed.Entries)
+		model.refreshExplorerList()
 	case operationDetailLoadedMsg:
 		if !model.accepts(loadDomainOperationDetail, typed.Token) {
 			return model, nil
@@ -127,6 +128,8 @@ func (model *rootModel) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return model.updateNamespacesKey(msg)
 	case RouteRepos:
 		return model.updateReposKey(msg)
+	case RouteRepoExplorer:
+		return model.updateExplorerKey(msg)
 	default:
 		return model, nil
 	}
@@ -158,7 +161,11 @@ func (model *rootModel) updateReposKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		model.syncNamespaceSelection()
 		return model, nil
 	case "enter":
-		return model, nil
+		if model.repoList.Selected < 0 || model.repoList.Selected >= len(model.repoList.Entries) {
+			return model, nil
+		}
+		selected := model.repoList.Entries[model.repoList.Selected]
+		return model, model.openRepoExplorer(selected.Namespace, selected.Repo)
 	default:
 		var cmd tea.Cmd
 		model.repoList.List, cmd = model.repoList.List.Update(msg)
@@ -230,6 +237,8 @@ func (model *rootModel) resizeLists() {
 	width, height := listSize(model.width, model.height)
 	model.namespaces.List.SetSize(width, height)
 	model.repoList.List.SetSize(width, height)
+	explorerWidth, explorerHeight := endpointListSize(model.width, model.height)
+	model.explorer.List.SetSize(explorerWidth, explorerHeight)
 }
 
 func (model *rootModel) initialRouteCmd() tea.Cmd {
@@ -241,11 +250,7 @@ func (model *rootModel) initialRouteCmd() tea.Cmd {
 	case RouteRepoExplorer:
 		model.repoList.Namespace = model.initialRoute.Namespace
 		model.refreshRepoList()
-		token := model.beginOperationListLoad()
-		return loadOperationListCmd(context.Background(), model.service, request.Envelope{
-			Namespace: model.initialRoute.Namespace,
-			Repo:      model.initialRoute.Repo,
-		}, model.options, token)
+		return model.openRepoExplorer(model.initialRoute.Namespace, model.initialRoute.Repo)
 	}
 	return nil
 }
@@ -257,6 +262,8 @@ func (model *rootModel) View() tea.View {
 		s = model.viewNamespaces()
 	case RouteRepos:
 		s = model.viewRepos()
+	case RouteRepoExplorer:
+		s = model.viewRepoExplorer()
 	default:
 		s = model.viewPlaceholder()
 	}

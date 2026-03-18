@@ -39,7 +39,7 @@ Legend: [ ] todo, [x] done.
 4. Keep list sizing and styling separate from the service and state-transition code.
 5. Add model tests for namespace selection, repo filtering, empty catalogs, and startup load errors.
 
-- [ ] 1.4 Implement repo explorer with endpoint list and placeholder detail pane
+- [x] 1.4 Implement repo explorer with endpoint list and placeholder detail pane
   - Repository: `shiva`
   - Component: `internal/tui`
   - Verification: entering a repo loads operations, `up` and `down` change endpoint selection, placeholder detail updates with selected endpoint identity

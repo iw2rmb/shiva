@@ -477,6 +477,8 @@ type fakeBrowserService struct {
 	listReposErr       error
 	listOperationsBody []byte
 	listOperationsErr  error
+	listOperationsCall int
+	lastOperationQuery request.Envelope
 	operationBody      []byte
 	operationErr       error
 	specBody           []byte
@@ -502,7 +504,8 @@ func (service *fakeBrowserService) ListOperations(
 	format clioutput.ListFormat,
 ) ([]byte, error) {
 	service.lastContextValue = ctx.Value(contextKey("request"))
-	_ = selector
+	service.listOperationsCall++
+	service.lastOperationQuery = selector
 	_ = options
 	_ = format
 	return service.listOperationsBody, service.listOperationsErr
