@@ -3,7 +3,7 @@ package tui
 import (
 	"encoding/json"
 
-	"github.com/charmbracelet/bubbles/list"
+	"charm.land/bubbles/v2/list"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 )
 

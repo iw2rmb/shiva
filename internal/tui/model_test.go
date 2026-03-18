@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
@@ -217,13 +217,13 @@ func TestRootModelEnterOpensSelectedNamespaceRepos(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	model = updated.(*rootModel)
 	if model.namespaces.Selected != 1 {
 		t.Fatalf("expected selection to move to beta, got %d", model.namespaces.Selected)
 	}
 
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = updated.(*rootModel)
 
 	if model.activeRoute != RouteRepos {
@@ -260,7 +260,7 @@ func TestRootModelEscReturnsFromReposToNamespaces(t *testing.T) {
 		t.Fatalf("expected initial route to switch to repos, got %q", model.activeRoute)
 	}
 
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = updated.(*rootModel)
 
 	if model.activeRoute != RouteNamespaces {
@@ -280,7 +280,7 @@ func TestRootModelRendersEmptyCatalogState(t *testing.T) {
 	updated, _ := model.Update(repoCatalogLoadedMsg{Token: token})
 	model = updated.(*rootModel)
 
-	if got := model.View(); !strings.Contains(got, "No namespaces found.") {
+	if got := model.View().Content; !strings.Contains(got, "No namespaces found.") {
 		t.Fatalf("expected empty namespace state, got %q", got)
 	}
 }
@@ -298,7 +298,7 @@ func TestRootModelRendersStartupLoadFailure(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
-	view := model.View()
+	view := model.View().Content
 	if !strings.Contains(view, "Failed to load repositories.") {
 		t.Fatalf("expected failure heading, got %q", view)
 	}

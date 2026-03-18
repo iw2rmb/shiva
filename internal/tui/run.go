@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func Run(
@@ -34,7 +34,6 @@ func Run(
 		tea.WithContext(ctx),
 		tea.WithInput(input),
 		tea.WithOutput(output),
-		tea.WithAltScreen(),
 	)
 
 	_, err := program.Run()

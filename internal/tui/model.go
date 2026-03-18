@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
@@ -58,7 +58,7 @@ func (model *rootModel) Init() tea.Cmd {
 
 func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if model.shouldQuit(typed.String()) {
 			return model, tea.Quit
 		}
@@ -121,7 +121,7 @@ func (model *rootModel) shouldQuit(key string) bool {
 	}
 }
 
-func (model *rootModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (model *rootModel) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch model.activeRoute {
 	case RouteNamespaces:
 		return model.updateNamespacesKey(msg)
@@ -132,7 +132,7 @@ func (model *rootModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (model *rootModel) updateNamespacesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (model *rootModel) updateNamespacesKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		if !model.canEnterRepoList() {
@@ -151,7 +151,7 @@ func (model *rootModel) updateNamespacesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	}
 }
 
-func (model *rootModel) updateReposKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (model *rootModel) updateReposKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		model.activeRoute = RouteNamespaces
@@ -250,15 +250,19 @@ func (model *rootModel) initialRouteCmd() tea.Cmd {
 	return nil
 }
 
-func (model *rootModel) View() string {
+func (model *rootModel) View() tea.View {
+	var s string
 	switch model.activeRoute {
 	case RouteNamespaces:
-		return model.viewNamespaces()
+		s = model.viewNamespaces()
 	case RouteRepos:
-		return model.viewRepos()
+		s = model.viewRepos()
 	default:
-		return model.viewPlaceholder()
+		s = model.viewPlaceholder()
 	}
+	v := tea.NewView(s)
+	v.AltScreen = true
+	return v
 }
 
 func (model *rootModel) viewNamespaces() string {
