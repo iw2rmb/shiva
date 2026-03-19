@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
-	"github.com/charmbracelet/glamour"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type markdownRenderer interface {
@@ -22,8 +24,16 @@ func (glamourMarkdownRenderer) Render(markdown string, width int) string {
 		wrap = 20
 	}
 
+	style := os.Getenv("GLAMOUR_STYLE")
+	if style == "" {
+		style = "light"
+		if lipgloss.HasDarkBackground(os.Stdin, os.Stdout) {
+			style = "dark"
+		}
+	}
+
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStylePath(style),
 		glamour.WithWordWrap(wrap),
 	)
 	if err != nil {
