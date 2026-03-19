@@ -119,13 +119,23 @@ Rules:
     - no selector starts in namespace mode
     - `<namespace>/` starts in that namespace's repo view
     - `<namespace>/<repo>` starts in that repo's explorer view
-  - startup loads the repo catalog once, derives namespace summaries in memory, and renders namespace and repo browsing with keyboard navigation
+  - startup loads the repo catalog once and derives namespace/repo lists in memory
   - namespace mode:
     - `up` and `down` move the selection
     - `enter` opens the selected namespace's repo view
   - repo mode:
     - `up` and `down` move the selection
+    - `enter` opens the selected repo explorer
     - `esc` returns to namespace mode
+  - repo explorer mode:
+    - left pane lists repo endpoints (sorted deterministically by path, method, operation id, and API)
+    - right pane renders markdown details in tabs: `Endpoints`, `Servers`, `Errors`
+    - `tab` and `shift+tab` switch detail tabs
+    - `pgup`, `pgdown`, `home`, `end`, `ctrl+u`, and `ctrl+d` scroll the detail viewport
+    - `esc` returns to repo mode
+    - operation detail loads lazily for selected endpoint and is cached by endpoint identity
+    - spec detail loads only for `Servers` when operation-level servers are missing/empty and is cached by `(namespace, repo, api)`
+    - wide terminals render side-by-side panes; narrow terminals stack panes vertically
   - empty catalogs and startup catalog-load failures render explicit deterministic states
   - `q` and `ctrl+c` quit from any route
 

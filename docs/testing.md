@@ -46,7 +46,9 @@ Current baseline should be validated by running `go test ./...`.
 - Runtime route parsing, repo/snapshot resolution, ambiguity handling, request validation, and spec-shaped stub response generation on `/gl/*`.
 - Shared call-envelope normalization, Shiva call-plan generation, direct-target planning, and dispatch behavior.
 - CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
-- CLI request-input parsing, selector-driven `ls` rendering, and `batch` NDJSON execution.
+- CLI request-input parsing, selector-driven `ls` rendering, `batch` NDJSON execution, and `tui` route/flag validation.
+- TUI model behavior:
+  namespace/repo/explorer route transitions, route-local help content, endpoint selection syncing, tab switching, viewport scroll behavior, resize-driven rerendering, stale async-response rejection, and lazy operation/spec detail loading with endpoint/spec cache reuse.
 - Endpoint contract tests for:
   - `/internal/gitlab/ci/validate` request validation, service-unconfigured behavior, and both response formats,
   - `/gl/*` repo-path parsing, selector resolution, method/path normalization, ambiguity handling, request validation, fallback `400` behavior, and deterministic stub responses,
