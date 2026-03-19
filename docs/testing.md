@@ -23,7 +23,7 @@ Current baseline should be validated by running `go test ./...`.
 ## Coverage Areas
 - Config parsing and defaults.
 - CLI shorthand parsing, request-envelope normalization, query-transport dispatch, health command wiring, and static completion generation.
-- XDG-backed CLI config loading, source-profile selection, target source-profile overrides, catalog refresh policy, and offline cache reuse.
+- XDG-backed CLI config loading, source-profile selection, target source-profile overrides, and completion-cache refresh/fallback behavior.
 - GitLab API client behavior.
 - Startup schema migration bootstrap and checksum validation.
 - Vacuum schema bootstrap seeding and store-level issue replacement / revision vacuum state transitions.
@@ -45,7 +45,7 @@ Current baseline should be validated by running `go test ./...`.
 - Revision-processor vacuum stage success, zero-issue success, and normalized failure persistence behavior.
 - Runtime route parsing, repo/snapshot resolution, ambiguity handling, request validation, and spec-shaped stub response generation on `/gl/*`.
 - Shared call-envelope normalization, Shiva call-plan generation, direct-target planning, and dispatch behavior.
-- CLI snapshot-store resolution, repo/API/operation inventories, candidate-preserving operation lookup, and catalog freshness mapping.
+- CLI live query transport for repo/API/operation inventories, candidate-preserving operation lookup, and selector mapping.
 - CLI request-input parsing, selector-driven `ls` rendering, `batch` NDJSON execution, and `tui` route/flag validation.
 - TUI model behavior:
   namespace/repo/explorer route transitions, route-local help content, endpoint selection syncing, tab switching, viewport scroll behavior, resize-driven rerendering, stale async-response rejection, and lazy operation/spec detail loading with endpoint/spec cache reuse.

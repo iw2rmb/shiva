@@ -32,7 +32,7 @@ func TestServicePrepareOperationFloatingRefreshesLazily(t *testing.T) {
 	if first.Fingerprint.RevisionID != 42 || first.Fingerprint.SHA != "deadbeef" {
 		t.Fatalf("unexpected first fingerprint %+v", first.Fingerprint)
 	}
-	if client.reposCalls != 1 || client.statusCalls != 1 || client.apisCalls != 1 || client.operationsCalls != 1 {
+	if client.reposCalls != 0 || client.statusCalls != 1 || client.apisCalls != 1 || client.operationsCalls != 1 {
 		t.Fatalf("unexpected first refresh counts repos=%d status=%d apis=%d ops=%d",
 			client.reposCalls,
 			client.statusCalls,

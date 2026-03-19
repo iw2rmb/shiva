@@ -10,6 +10,7 @@ import (
 	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store/sqlc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var ErrRepoNotFound = errors.New("repo not found")
@@ -105,7 +106,7 @@ func (s *Store) GetRevisionByID(ctx context.Context, revisionID int64) (Revision
 		return Revision{}, errors.New("revision id must be positive")
 	}
 
-	revision, err := sqlc.New(s.pool).GetRevisionByID(ctx, revisionID)
+	revision, err := sqlc.New(s.pool).GetRevisionStateByID(ctx, revisionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Revision{}, fmt.Errorf("revision not found: id=%d", revisionID)
@@ -113,7 +114,7 @@ func (s *Store) GetRevisionByID(ctx context.Context, revisionID int64) (Revision
 		return Revision{}, fmt.Errorf("get revision by id %d: %w", revisionID, err)
 	}
 
-	return mapRevision(revision), nil
+	return mapRevisionStateByIDRow(revision), nil
 }
 
 func (s *Store) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
@@ -136,9 +137,9 @@ func (s *Store) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 		return Revision{}, false, errors.New("exclude revision id must be positive")
 	}
 
-	revision, err := sqlc.New(s.pool).GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+	revision, err := sqlc.New(s.pool).GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(
 		ctx,
-		sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams{
+		sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams{
 			RepoID:            repoID,
 			Branch:            branch,
 			ExcludeRevisionID: excludeRevisionID,
@@ -157,28 +158,110 @@ func (s *Store) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
 		)
 	}
 
-	return mapRevision(revision), true, nil
+	return mapRevisionStateByLatestProcessedOpenAPIBranchRow(revision), true, nil
 }
 
 func mapRevision(revision sqlc.IngestEvent) Revision {
+	return mapRevisionStateFields(
+		revision.ID,
+		revision.RepoID,
+		revision.Sha,
+		revision.Branch,
+		revision.ParentSha,
+		revision.ProcessedAt,
+		revision.OpenapiChanged,
+		revision.Status,
+		revision.Error,
+	)
+}
+
+func mapRevisionStateByIDRow(revision sqlc.GetRevisionStateByIDRow) Revision {
+	return mapRevisionStateFields(
+		revision.ID,
+		revision.RepoID,
+		revision.Sha,
+		revision.Branch,
+		revision.ParentSha,
+		revision.ProcessedAt,
+		revision.OpenapiChanged,
+		revision.Status,
+		revision.Error,
+	)
+}
+
+func mapRevisionStateBySHAPrefixRow(revision sqlc.GetRevisionStateByRepoSHAPrefixRow) Revision {
+	return mapRevisionStateFields(
+		revision.ID,
+		revision.RepoID,
+		revision.Sha,
+		revision.Branch,
+		revision.ParentSha,
+		revision.ProcessedAt,
+		revision.OpenapiChanged,
+		revision.Status,
+		revision.Error,
+	)
+}
+
+func mapRevisionStateByLatestBranchRow(revision sqlc.GetLatestRevisionStateByBranchRow) Revision {
+	return mapRevisionStateFields(
+		revision.ID,
+		revision.RepoID,
+		revision.Sha,
+		revision.Branch,
+		revision.ParentSha,
+		revision.ProcessedAt,
+		revision.OpenapiChanged,
+		revision.Status,
+		revision.Error,
+	)
+}
+
+func mapRevisionStateByLatestProcessedOpenAPIBranchRow(
+	revision sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow,
+) Revision {
+	return mapRevisionStateFields(
+		revision.ID,
+		revision.RepoID,
+		revision.Sha,
+		revision.Branch,
+		revision.ParentSha,
+		revision.ProcessedAt,
+		revision.OpenapiChanged,
+		revision.Status,
+		revision.Error,
+	)
+}
+
+func mapRevisionStateFields(
+	id int64,
+	repoID int64,
+	sha string,
+	branch string,
+	parentSHA pgtype.Text,
+	processedAt pgtype.Timestamptz,
+	openAPIChanged pgtype.Bool,
+	status string,
+	errMessage string,
+) Revision {
 	mapped := Revision{
-		ID:     revision.ID,
-		RepoID: revision.RepoID,
-		Sha:    revision.Sha,
-		Branch: revision.Branch,
-		Status: revision.Status,
-		Error:  revision.Error,
+		ID:     id,
+		RepoID: repoID,
+		Sha:    sha,
+		Branch: branch,
+		Status: status,
+		Error:  errMessage,
 	}
-	if revision.ParentSha.Valid {
-		mapped.ParentSHA = revision.ParentSha.String
+	if parentSHA.Valid {
+		mapped.ParentSHA = parentSHA.String
 	}
-	if revision.ProcessedAt.Valid {
-		processedAt := revision.ProcessedAt.Time.UTC()
-		mapped.ProcessedAt = &processedAt
+	if processedAt.Valid {
+		value := processedAt.Time.UTC()
+		mapped.ProcessedAt = &value
 	}
-	if revision.OpenapiChanged.Valid {
-		openAPIChanged := revision.OpenapiChanged.Bool
-		mapped.OpenAPIChanged = &openAPIChanged
+	if openAPIChanged.Valid {
+		value := openAPIChanged.Bool
+		mapped.OpenAPIChanged = &value
 	}
 	return mapped
 }

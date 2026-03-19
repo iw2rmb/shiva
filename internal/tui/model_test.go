@@ -229,6 +229,40 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 	}
 }
 
+func TestRootModelInitRepoExplorerSkipsRepoCatalogLoad(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{
+		listReposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		listOperationsBody: []byte(`[]`),
+	}
+
+	model := newRootModel(service, InitialRoute{
+		Kind:      RouteRepoExplorer,
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{})
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatalf("expected init command")
+	}
+	if model.async.RepoCatalog.Loading {
+		t.Fatalf("expected repo catalog load to be skipped for direct repo route")
+	}
+	if !model.async.OperationList.Loading {
+		t.Fatalf("expected operation list load to start for direct repo route")
+	}
+
+	msg := cmd()
+	_, ok := msg.(operationListLoadedMsg)
+	if !ok {
+		t.Fatalf("expected operationListLoadedMsg, got %T", msg)
+	}
+	if service.listReposCall != 0 {
+		t.Fatalf("expected no repo list calls on direct repo route init, got %d", service.listReposCall)
+	}
+}
+
 func TestLoadRepoCatalogCmdCarriesRequestToken(t *testing.T) {
 	t.Parallel()
 
@@ -679,6 +713,7 @@ func TestRootModelConvertsWindowSizeIntoTypedResizeMessage(t *testing.T) {
 type fakeBrowserService struct {
 	listReposBody      []byte
 	listReposErr       error
+	listReposCall      int
 	listOperationsBody []byte
 	listOperationsErr  error
 	listOperationsCall int
@@ -701,6 +736,7 @@ func (service *fakeBrowserService) ListRepos(
 	format clioutput.ListFormat,
 ) ([]byte, error) {
 	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.listReposCall++
 	_ = options
 	_ = format
 	return service.listReposBody, service.listReposErr

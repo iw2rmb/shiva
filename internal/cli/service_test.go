@@ -29,7 +29,7 @@ func TestRuntimeServiceExecuteCallUsesTargetSourceProfile(t *testing.T) {
 		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
 		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
-		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
+		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","ingest_event_id":42,"ingest_event_sha":"deadbeef","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
 	}
 
 	var resolvedProfiles []string
@@ -98,8 +98,8 @@ func TestRuntimeServicePinsFloatingRequestsToPreparedSnapshot(t *testing.T) {
 				return err
 			},
 			assert: func(t *testing.T, client *recordingTransportClient) {
-				if client.lastSpecSelector.RevisionID != 42 {
-					t.Fatalf("expected floating spec request to pin revision 42, got %+v", client.lastSpecSelector)
+				if client.lastSpecSelector.RevisionID != 0 {
+					t.Fatalf("expected floating spec request to stay floating, got %+v", client.lastSpecSelector)
 				}
 			},
 		},
@@ -120,8 +120,8 @@ func TestRuntimeServicePinsFloatingRequestsToPreparedSnapshot(t *testing.T) {
 				return err
 			},
 			assert: func(t *testing.T, client *recordingTransportClient) {
-				if client.lastOperationSelector.RevisionID != 42 {
-					t.Fatalf("expected floating operation request to pin revision 42, got %+v", client.lastOperationSelector)
+				if client.lastOperationSelector.RevisionID != 0 {
+					t.Fatalf("expected floating operation request to stay floating, got %+v", client.lastOperationSelector)
 				}
 			},
 		},
@@ -214,14 +214,11 @@ func TestRuntimeServiceGetOperationOfflineUsesCachedResponseOnly(t *testing.T) {
 
 	currentClient = offlineClient
 
-	cachedBody, err := service.GetOperation(context.Background(), selector, RequestOptions{
+	_, err = service.GetOperation(context.Background(), selector, RequestOptions{
 		Offline: true,
 	})
-	if err != nil {
-		t.Fatalf("offline get operation failed: %v", err)
-	}
-	if string(cachedBody) != `{"operationId":"listPets"}` {
-		t.Fatalf("unexpected cached body %q", string(cachedBody))
+	if err == nil || !strings.Contains(err.Error(), "offline mode is not supported") {
+		t.Fatalf("expected offline mode unsupported error, got %v", err)
 	}
 	if offlineClient.reposCalls != 0 || offlineClient.apisCalls != 0 || offlineClient.operationsCalls != 0 || offlineClient.operationCalls != 0 {
 		t.Fatalf("expected offline call to avoid network, got repos=%d apis=%d ops=%d op=%d",
@@ -273,18 +270,15 @@ func TestRuntimeServiceGetOperationOfflineUsesExplicitCacheWithoutCatalogSlices(
 		},
 	}
 
-	body, err := service.GetOperation(context.Background(), request.Envelope{
+	_, err = service.GetOperation(context.Background(), request.Envelope{
 		Namespace: "acme", Repo: "platform",
 		RevisionID:  42,
 		OperationID: "listPets",
 	}, RequestOptions{
 		Offline: true,
 	})
-	if err != nil {
-		t.Fatalf("offline get operation failed: %v", err)
-	}
-	if string(body) != `{"operationId":"listPets"}` {
-		t.Fatalf("unexpected cached body %q", string(body))
+	if err == nil || !strings.Contains(err.Error(), "offline mode is not supported") {
+		t.Fatalf("expected offline mode unsupported error, got %v", err)
 	}
 	if client.reposCalls != 0 || client.apisCalls != 0 || client.operationsCalls != 0 || client.operationCalls != 0 {
 		t.Fatalf("expected explicit offline cache hit to avoid network, got repos=%d apis=%d ops=%d op=%d",
@@ -396,11 +390,11 @@ func TestRuntimeServiceSyncRefreshesRepoWideAndPerAPIOperationCatalogs(t *testin
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
-	if !strings.Contains(string(body), `"operation_catalog_count":3`) {
-		t.Fatalf("expected sync result to include repo-wide plus per-api catalogs, got %q", string(body))
+	if !strings.Contains(string(body), `"operation_catalog_count":2`) {
+		t.Fatalf("expected sync result to include per-api operation catalogs, got %q", string(body))
 	}
-	if client.operationsCalls != 3 {
-		t.Fatalf("expected repo-wide plus two api-scoped operations refreshes, got %d", client.operationsCalls)
+	if client.operationsCalls != 2 {
+		t.Fatalf("expected two api-scoped operations refreshes, got %d", client.operationsCalls)
 	}
 }
 

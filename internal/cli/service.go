@@ -78,7 +78,7 @@ func (s *RuntimeService) GetSpec(
 	options RequestOptions,
 	format SpecFormat,
 ) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
+	if s == nil || s.newClient == nil {
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
@@ -90,20 +90,12 @@ func (s *RuntimeService) GetSpec(
 		return nil, normalizeCLIValidation(err)
 	}
 
-	scope := catalog.ScopeFromSelector(normalized.RevisionID, normalized.SHA)
-	repoKey := normalized.RepoPath()
 	source, err := s.resolveSource(options.Profile, normalized.Target)
 	if err != nil {
 		return nil, err
 	}
-
-	if cached, found, err := s.loadCachedSpecRecord(source.Name, normalized, scope, format); err != nil {
-		return nil, normalizeServiceError(err)
-	} else if found && options.Offline {
-		return cached.Payload, nil
-	}
 	if options.Offline {
-		return nil, &NotFoundError{Message: fmt.Sprintf("offline cache miss: spec for repo %q", repoKey)}
+		return nil, &InvalidInputError{Message: "offline mode is not supported"}
 	}
 
 	client, err := s.newTransportClient(source)
@@ -111,32 +103,8 @@ func (s *RuntimeService) GetSpec(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareSpec(ctx, client, source.Name, normalized, catalogOptions(options))
+	body, err := client.GetSpec(ctx, normalized, format)
 	if err != nil {
-		if cached, found, cacheErr := s.loadCachedSpecRecord(source.Name, normalized, scope, format); cacheErr == nil && found {
-			return cached.Payload, nil
-		}
-		return nil, normalizeServiceError(err)
-	}
-
-	pinnedSelector := pinSelectorToPreparedSnapshot(normalized, prepared)
-	body, err := client.GetSpec(ctx, pinnedSelector, format)
-	if err != nil {
-		if cached, found, cacheErr := s.loadCachedSpecRecord(source.Name, normalized, prepared.Scope, format); cacheErr == nil && found && cacheRecordMatches(cached, prepared.Fingerprint) {
-			return cached.Payload, nil
-		}
-		return nil, normalizeServiceError(err)
-	}
-
-	if err := s.catalogStore.SaveSpec(
-		source.Name,
-		repoKey,
-		normalized.API,
-		prepared.Scope,
-		string(format),
-		body,
-		prepared.Fingerprint,
-	); err != nil {
 		return nil, normalizeServiceError(err)
 	}
 	return body, nil
@@ -147,7 +115,7 @@ func (s *RuntimeService) GetOperation(
 	selector request.Envelope,
 	options RequestOptions,
 ) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
+	if s == nil || s.newClient == nil {
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
@@ -159,25 +127,12 @@ func (s *RuntimeService) GetOperation(
 		return nil, normalizeCLIValidation(err)
 	}
 
-	scope := catalog.ScopeFromSelector(normalized.RevisionID, normalized.SHA)
-	repoKey := normalized.RepoPath()
 	source, err := s.resolveSource(options.Profile, normalized.Target)
 	if err != nil {
 		return nil, err
 	}
-
-	selectorKey, err := operationSelectorKey(normalized)
-	if err != nil {
-		return nil, err
-	}
-
-	if cached, found, err := s.loadCachedOperationRecord(source.Name, normalized, scope, selectorKey); err != nil {
-		return nil, normalizeServiceError(err)
-	} else if found && options.Offline {
-		return cached.Payload, nil
-	}
 	if options.Offline {
-		return nil, &NotFoundError{Message: fmt.Sprintf("offline cache miss: operation for repo %q", repoKey)}
+		return nil, &InvalidInputError{Message: "offline mode is not supported"}
 	}
 
 	client, err := s.newTransportClient(source)
@@ -185,32 +140,8 @@ func (s *RuntimeService) GetOperation(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareOperation(ctx, client, source.Name, normalized, catalogOptions(options))
+	body, err := client.GetOperation(ctx, normalized)
 	if err != nil {
-		if cached, found, cacheErr := s.loadCachedOperationRecord(source.Name, normalized, scope, selectorKey); cacheErr == nil && found {
-			return cached.Payload, nil
-		}
-		return nil, normalizeServiceError(err)
-	}
-
-	pinnedSelector := pinSelectorToPreparedSnapshot(normalized, prepared)
-	body, err := client.GetOperation(ctx, pinnedSelector)
-	if err != nil {
-		if cached, found, cacheErr := s.loadCachedOperationRecord(source.Name, normalized, prepared.Scope, selectorKey); cacheErr == nil && found && cacheRecordMatches(cached, prepared.Fingerprint) {
-			return cached.Payload, nil
-		}
-		return nil, normalizeServiceError(err)
-	}
-
-	if err := s.catalogStore.SaveOperationResponse(
-		source.Name,
-		repoKey,
-		normalized.API,
-		prepared.Scope,
-		selectorKey,
-		body,
-		prepared.Fingerprint,
-	); err != nil {
 		return nil, normalizeServiceError(err)
 	}
 	return body, nil
@@ -267,32 +198,6 @@ func (s *RuntimeService) newTransportClient(source profile.Source) (transportCli
 	return client, nil
 }
 
-func (s *RuntimeService) loadCachedSpecRecord(
-	profileName string,
-	selector request.Envelope,
-	scope catalog.Scope,
-	format SpecFormat,
-) (catalog.Record, bool, error) {
-	record, found, err := s.catalogStore.LoadSpec(profileName, selector.RepoPath(), selector.API, scope, string(format))
-	if err != nil || !found {
-		return catalog.Record{}, found, err
-	}
-	return record, true, nil
-}
-
-func (s *RuntimeService) loadCachedOperationRecord(
-	profileName string,
-	selector request.Envelope,
-	scope catalog.Scope,
-	selectorKey string,
-) (catalog.Record, bool, error) {
-	record, found, err := s.catalogStore.LoadOperationResponse(profileName, selector.RepoPath(), selector.API, scope, selectorKey)
-	if err != nil || !found {
-		return catalog.Record{}, found, err
-	}
-	return record, true, nil
-}
-
 func normalizeServiceError(err error) error {
 	if err == nil {
 		return nil
@@ -318,47 +223,4 @@ func normalizeServiceError(err error) error {
 		return &TransportError{Err: err}
 	}
 	return err
-}
-
-func operationSelectorKey(selector request.Envelope) (string, error) {
-	switch {
-	case strings.TrimSpace(selector.OperationID) != "":
-		return "operation_id:" + strings.TrimSpace(selector.OperationID), nil
-	case strings.TrimSpace(selector.Method) != "" && strings.TrimSpace(selector.Path) != "":
-		return "method_path:" + strings.TrimSpace(selector.Method) + " " + strings.TrimSpace(selector.Path), nil
-	default:
-		return "", &InvalidInputError{Message: "operation selector is not complete"}
-	}
-}
-
-func envelopeCacheKey(selector request.Envelope) (string, error) {
-	body, err := json.Marshal(selector)
-	if err != nil {
-		return "", fmt.Errorf("encode request cache key: %w", err)
-	}
-	return string(body), nil
-}
-
-func cacheRecordMatches(record catalog.Record, fingerprint catalog.SnapshotFingerprint) bool {
-	return record.Fingerprint == fingerprint
-}
-
-func pinSelectorToPreparedSnapshot(selector request.Envelope, prepared catalog.PreparedSnapshot) request.Envelope {
-	if selector.RevisionID > 0 || strings.TrimSpace(selector.SHA) != "" {
-		return selector
-	}
-
-	if prepared.Fingerprint.RevisionID < 1 && strings.TrimSpace(prepared.Fingerprint.SHA) == "" {
-		return selector
-	}
-
-	pinned := selector
-	if prepared.Fingerprint.RevisionID > 0 {
-		pinned.RevisionID = prepared.Fingerprint.RevisionID
-		pinned.SHA = ""
-		return pinned
-	}
-
-	pinned.SHA = strings.TrimSpace(prepared.Fingerprint.SHA)
-	return pinned
 }

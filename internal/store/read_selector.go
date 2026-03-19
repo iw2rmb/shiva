@@ -115,12 +115,18 @@ type normalizedResolveReadSelectorInput struct {
 
 type selectorResolutionQueries interface {
 	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error)
-	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.IngestEvent, error)
-	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.IngestEvent, error)
-	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+	GetRevisionStateByRepoSHAPrefix(
 		ctx context.Context,
-		arg sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams,
-	) (sqlc.IngestEvent, error)
+		arg sqlc.GetRevisionStateByRepoSHAPrefixParams,
+	) (sqlc.GetRevisionStateByRepoSHAPrefixRow, error)
+	GetLatestRevisionStateByBranch(
+		ctx context.Context,
+		arg sqlc.GetLatestRevisionStateByBranchParams,
+	) (sqlc.GetLatestRevisionStateByBranchRow, error)
+	GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(
+		ctx context.Context,
+		arg sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams,
+	) (sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow, error)
 }
 
 func (s *Store) ResolveReadSelector(ctx context.Context, input ResolveReadSelectorInput) (ResolvedReadSelector, error) {
@@ -181,7 +187,7 @@ func resolveReadSelectorBySHA(
 	repo sqlc.Repo,
 	input normalizedResolveReadSelectorInput,
 ) (ResolvedReadSelector, error) {
-	revision, err := queries.GetRevisionByRepoSHAPrefix(ctx, sqlc.GetRevisionByRepoSHAPrefixParams{
+	revisionRow, err := queries.GetRevisionStateByRepoSHAPrefix(ctx, sqlc.GetRevisionStateByRepoSHAPrefixParams{
 		RepoID: repo.ID,
 		ShaPrefix: pgtype.Text{
 			String: input.selector,
@@ -204,6 +210,7 @@ func resolveReadSelectorBySHA(
 		)
 	}
 
+	revision := mapRevisionStateBySHAPrefixRow(revisionRow)
 	if revision.Status != revisionProcessed {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
 			Code:              SelectorResolutionUnprocessed,
@@ -214,7 +221,7 @@ func resolveReadSelectorBySHA(
 		}
 	}
 
-	if !revision.OpenapiChanged.Valid || !revision.OpenapiChanged.Bool {
+	if revision.OpenAPIChanged == nil || !*revision.OpenAPIChanged {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
 			Code:     SelectorResolutionNotFound,
 			RepoPath: input.repoPath,
@@ -227,7 +234,7 @@ func resolveReadSelectorBySHA(
 		RepoPath:     repoid.Identity{Namespace: repo.Namespace, Repo: repo.Repo}.Path(),
 		SelectorKind: input.kind,
 		Selector:     input.selector,
-		Revision:     mapRevision(revision),
+		Revision:     revision,
 	}, nil
 }
 
@@ -238,7 +245,7 @@ func resolveReadSelectorByBranch(
 	input normalizedResolveReadSelectorInput,
 	branch string,
 ) (ResolvedReadSelector, error) {
-	headRevision, err := queries.GetLatestRevisionByBranch(ctx, sqlc.GetLatestRevisionByBranchParams{
+	headRevisionRow, err := queries.GetLatestRevisionStateByBranch(ctx, sqlc.GetLatestRevisionStateByBranchParams{
 		RepoID: repo.ID,
 		Branch: branch,
 	})
@@ -258,6 +265,7 @@ func resolveReadSelectorByBranch(
 		)
 	}
 
+	headRevision := mapRevisionStateByLatestBranchRow(headRevisionRow)
 	if headRevision.Status != revisionProcessed {
 		return ResolvedReadSelector{}, &SelectorResolutionError{
 			Code:              SelectorResolutionUnprocessed,
@@ -268,9 +276,9 @@ func resolveReadSelectorByBranch(
 		}
 	}
 
-	revision, err := queries.GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+	revisionRow, err := queries.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(
 		ctx,
-		sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams{
+		sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams{
 			RepoID:            repo.ID,
 			Branch:            branch,
 			ExcludeRevisionID: 0,
@@ -292,12 +300,13 @@ func resolveReadSelectorByBranch(
 		)
 	}
 
+	revision := mapRevisionStateByLatestProcessedOpenAPIBranchRow(revisionRow)
 	return ResolvedReadSelector{
 		RepoID:       repo.ID,
 		RepoPath:     repoid.Identity{Namespace: repo.Namespace, Repo: repo.Repo}.Path(),
 		SelectorKind: input.kind,
 		Selector:     input.selector,
-		Revision:     mapRevision(revision),
+		Revision:     revision,
 	}, nil
 }
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/iw2rmb/shiva/internal/cli/catalog"
 	"github.com/iw2rmb/shiva/internal/cli/executor"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/profile"
@@ -20,7 +19,7 @@ func (s *RuntimeService) ExecuteCall(
 	options RequestOptions,
 	format CallFormat,
 ) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
+	if s == nil || s.newClient == nil {
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
@@ -39,18 +38,26 @@ func (s *RuntimeService) ExecuteCall(
 	if resolvedTarget == nil {
 		return nil, &InvalidInputError{Message: "call target is not configured"}
 	}
+	if options.Offline {
+		return nil, &InvalidInputError{Message: "offline mode is not supported"}
+	}
 
 	client, err := s.newTransportClient(source)
 	if err != nil {
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareCall(ctx, client, source.Name, normalized, catalogOptions(options))
+	body, err := client.ListOperations(ctx, normalized)
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
 
-	resolvedEnvelope, err := s.resolvePreparedCall(source.Name, normalized, prepared)
+	var rows []clioutput.OperationRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("decode operation inventory: %w", err)
+	}
+
+	resolvedEnvelope, err := resolveCallFromOperationRows(normalized, rows)
 	if err != nil {
 		return nil, err
 	}
@@ -79,38 +86,7 @@ func (s *RuntimeService) ExecuteCall(
 	}
 }
 
-func buildCallPlan(envelope request.Envelope, source profile.Source, targetEntry target.Entry) (executor.CallPlan, error) {
-	switch targetEntry.Mode {
-	case target.ModeShiva:
-		return executor.PlanShivaDispatchCall(envelope, source.BaseURL, source.ResolvedToken(), source.Timeout)
-	case target.ModeDirect:
-		return executor.PlanDirectCall(envelope, targetEntry.BaseURL, targetEntry.ResolvedToken(), targetEntry.Timeout)
-	default:
-		return executor.CallPlan{}, fmt.Errorf("unsupported target mode %q", targetEntry.Mode)
-	}
-}
-
-func renderDryRun(plan executor.CallPlan, format CallFormat) ([]byte, error) {
-	switch format {
-	case CallFormatJSON:
-		return clioutput.RenderCallPlanJSON(plan)
-	case CallFormatCurl:
-		return clioutput.RenderCallCurl(plan)
-	default:
-		return nil, &InvalidInputError{Message: fmt.Sprintf("unsupported dry-run output %q", format)}
-	}
-}
-
-func (s *RuntimeService) resolvePreparedCall(
-	profileName string,
-	selector request.Envelope,
-	prepared catalog.PreparedSnapshot,
-) (request.Envelope, error) {
-	rows, err := s.loadOperationInventoryRows(profileName, selector, prepared.Scope)
-	if err != nil {
-		return request.Envelope{}, err
-	}
-
+func resolveCallFromOperationRows(selector request.Envelope, rows []clioutput.OperationRow) (request.Envelope, error) {
 	candidates := filterOperationRows(rows, selector)
 	switch len(candidates) {
 	case 0:
@@ -138,8 +114,8 @@ func (s *RuntimeService) resolvePreparedCall(
 	resolved := selector
 	resolved.Kind = request.KindCall
 	resolved.API = row.API
-	resolved.RevisionID = chooseRevisionID(row.IngestEventID, prepared.Fingerprint.RevisionID, selector.RevisionID)
-	resolved.SHA = chooseSHA(row.IngestEventSHA, prepared.Fingerprint.SHA, selector.SHA)
+	resolved.RevisionID = chooseRevisionID(row.IngestEventID, selector.RevisionID)
+	resolved.SHA = chooseSHA(row.IngestEventSHA, selector.SHA)
 	if strings.TrimSpace(row.OperationID) != "" {
 		resolved.OperationID = row.OperationID
 	}
@@ -151,6 +127,28 @@ func (s *RuntimeService) resolvePreparedCall(
 		return request.Envelope{}, normalizeCLIValidation(err)
 	}
 	return normalized, nil
+}
+
+func buildCallPlan(envelope request.Envelope, source profile.Source, targetEntry target.Entry) (executor.CallPlan, error) {
+	switch targetEntry.Mode {
+	case target.ModeShiva:
+		return executor.PlanShivaDispatchCall(envelope, source.BaseURL, source.ResolvedToken(), source.Timeout)
+	case target.ModeDirect:
+		return executor.PlanDirectCall(envelope, targetEntry.BaseURL, targetEntry.ResolvedToken(), targetEntry.Timeout)
+	default:
+		return executor.CallPlan{}, fmt.Errorf("unsupported target mode %q", targetEntry.Mode)
+	}
+}
+
+func renderDryRun(plan executor.CallPlan, format CallFormat) ([]byte, error) {
+	switch format {
+	case CallFormatJSON:
+		return clioutput.RenderCallPlanJSON(plan)
+	case CallFormatCurl:
+		return clioutput.RenderCallCurl(plan)
+	default:
+		return nil, &InvalidInputError{Message: fmt.Sprintf("unsupported dry-run output %q", format)}
+	}
 }
 
 func filterOperationRows(rows []clioutput.OperationRow, selector request.Envelope) []clioutput.OperationRow {
@@ -184,24 +182,4 @@ func chooseSHA(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func (s *RuntimeService) loadOperationInventoryRows(
-	profileName string,
-	selector request.Envelope,
-	scope catalog.Scope,
-) ([]clioutput.OperationRow, error) {
-	record, found, err := s.catalogStore.LoadOperations(profileName, selector.RepoPath(), selector.API, scope)
-	if err != nil {
-		return nil, normalizeServiceError(err)
-	}
-	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("operation catalog for repo %q is not cached", selector.RepoPath())}
-	}
-
-	var rows []clioutput.OperationRow
-	if err := json.Unmarshal(record.Payload, &rows); err != nil {
-		return nil, fmt.Errorf("decode operation inventory: %w", err)
-	}
-	return rows, nil
 }

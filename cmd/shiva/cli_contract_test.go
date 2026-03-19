@@ -32,10 +32,7 @@ func TestCLIContractScenarios(t *testing.T) {
 			wantCode:   0,
 			wantStdout: []string{"openapi: 3.1.0", "title: Pets API"},
 			wantMinCalls: map[string]int{
-				"GET /v1/repos":          1,
-				"GET /v1/catalog/status": 1,
-				"GET /v1/apis":           1,
-				"GET /v1/spec":           1,
+				"GET /v1/spec": 1,
 			},
 		},
 		{
@@ -44,11 +41,7 @@ func TestCLIContractScenarios(t *testing.T) {
 			wantCode:   0,
 			wantStdout: []string{`"operationId":"getPet"`, `"summary":"Get pet"`},
 			wantMinCalls: map[string]int{
-				"GET /v1/repos":          1,
-				"GET /v1/catalog/status": 1,
-				"GET /v1/apis":           1,
-				"GET /v1/operations":     1,
-				"GET /v1/operation":      1,
+				"GET /v1/operation": 1,
 			},
 		},
 		{
@@ -57,11 +50,7 @@ func TestCLIContractScenarios(t *testing.T) {
 			wantCode:   0,
 			wantStdout: []string{`"operationId":"getPet"`},
 			wantMinCalls: map[string]int{
-				"GET /v1/repos":          1,
-				"GET /v1/catalog/status": 1,
-				"GET /v1/apis":           1,
-				"GET /v1/operations":     1,
-				"GET /v1/operation":      1,
+				"GET /v1/operation": 1,
 			},
 		},
 		{
@@ -70,10 +59,7 @@ func TestCLIContractScenarios(t *testing.T) {
 			wantCode:   0,
 			wantStdout: []string{"curl -X GET", "https://api.example.test/pets/42?expand=owner"},
 			wantMinCalls: map[string]int{
-				"GET /v1/repos":          1,
-				"GET /v1/catalog/status": 1,
-				"GET /v1/apis":           1,
-				"GET /v1/operations":     1,
+				"GET /v1/operations": 1,
 			},
 		},
 		{
@@ -90,12 +76,10 @@ func TestCLIContractScenarios(t *testing.T) {
 			name:       "sync refreshes api and operation catalogs",
 			args:       []string{"sync", "acme/platform"},
 			wantCode:   0,
-			wantStdout: []string{`"namespace":"acme","repo":"platform"`, `"scope":"default-branch-latest"`, `"operation_catalog_count":2`},
+			wantStdout: []string{`"namespace":"acme","repo":"platform"`, `"scope":"floating"`, `"operation_catalog_count":1`},
 			wantMinCalls: map[string]int{
-				"GET /v1/repos":          1,
-				"GET /v1/catalog/status": 1,
-				"GET /v1/apis":           1,
-				"GET /v1/operations":     2,
+				"GET /v1/apis":       1,
+				"GET /v1/operations": 1,
 			},
 		},
 		{
@@ -112,9 +96,6 @@ func TestCLIContractScenarios(t *testing.T) {
 			wantMinCalls: map[string]int{
 				"GET /v1/spec":       1,
 				"GET /v1/operation":  1,
-				"GET /v1/repos":      1,
-				"GET /v1/catalog/status": 1,
-				"GET /v1/apis":       1,
 				"GET /v1/operations": 1,
 				"POST /v1/call":      1,
 			},
@@ -311,7 +292,7 @@ func newCLIContractServer(t *testing.T) *cliContractServer {
 				},
 			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/spec":
-			assertPinnedRevision(t, r.URL.Query())
+			assertFloatingOrPinnedRevision(t, r.URL.Query())
 			switch r.URL.Query().Get("format") {
 			case "yaml":
 				w.Header().Set("Content-Type", "application/yaml")
@@ -322,7 +303,7 @@ func newCLIContractServer(t *testing.T) *cliContractServer {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unexpected format"})
 			}
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operation":
-			assertPinnedRevision(t, r.URL.Query())
+			assertFloatingOrPinnedRevision(t, r.URL.Query())
 			query := r.URL.Query()
 			switch {
 			case query.Get("operation_id") == "getPet":
@@ -373,10 +354,11 @@ func (s *cliContractServer) CallCount(key string) int {
 	return s.counts[key]
 }
 
-func assertPinnedRevision(t *testing.T, query url.Values) {
+func assertFloatingOrPinnedRevision(t *testing.T, query url.Values) {
 	t.Helper()
-	if query.Get("revision_id") != "42" {
-		t.Fatalf("expected pinned revision_id=42, got query %v", query)
+	revision := query.Get("revision_id")
+	if revision != "" && revision != "42" {
+		t.Fatalf("expected empty or pinned revision_id=42, got query %v", query)
 	}
 }
 

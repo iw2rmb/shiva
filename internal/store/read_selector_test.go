@@ -15,11 +15,11 @@ func TestResolveReadSelector_NoSelectorDefaultsToMainHead(t *testing.T) {
 
 	queries := newSelectorTestQueries()
 	queries.repo.DefaultBranch = "release"
-	queries.latestByBranch = map[string]sqlc.IngestEvent{
-		"release": newSelectorTestRevision(500, "processed", boolPtr(false), "release", "release-head"),
+	queries.latestByBranch = map[string]sqlc.GetLatestRevisionStateByBranchRow{
+		"release": newSelectorTestLatestBranchRevision(500, "processed", boolPtr(false), "release", "release-head"),
 	}
-	queries.openAPIByBranch = map[string]sqlc.IngestEvent{
-		"release": newSelectorTestRevision(490, "processed", boolPtr(true), "release", "release-artifact"),
+	queries.openAPIByBranch = map[string]sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{
+		"release": newSelectorTestLatestProcessedOpenAPIRevision(490, "processed", boolPtr(true), "release", "release-artifact"),
 	}
 
 	resolved, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindNoSelector, ""))
@@ -42,8 +42,8 @@ func TestResolveReadSelector_NoSelectorHeadUnprocessedReturnsConflict(t *testing
 	t.Parallel()
 
 	queries := newSelectorTestQueries()
-	queries.latestByBranch = map[string]sqlc.IngestEvent{
-		"main": newSelectorTestRevision(501, "pending", nil, "main", "main-head"),
+	queries.latestByBranch = map[string]sqlc.GetLatestRevisionStateByBranchRow{
+		"main": newSelectorTestLatestBranchRevision(501, "pending", nil, "main", "main-head"),
 	}
 
 	_, err := resolveReadSelector(context.Background(), queries, newSelectorTestInput(SelectorKindNoSelector, ""))
@@ -67,8 +67,8 @@ func TestResolveReadSelector_SHAProcessedWithoutOpenAPIArtifactReturnsNotFound(t
 	t.Parallel()
 
 	queries := newSelectorTestQueries()
-	queries.bySHAPrefix = map[string]sqlc.IngestEvent{
-		"11111111": newSelectorTestRevision(
+	queries.bySHAPrefix = map[string]sqlc.GetRevisionStateByRepoSHAPrefixRow{
+		"11111111": newSelectorTestSHAPrefixRevision(
 			700,
 			"processed",
 			boolPtr(false),
@@ -208,9 +208,9 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 func newSelectorTestQueries() *fakeSelectorResolutionQueries {
 	return &fakeSelectorResolutionQueries{
 		repo: sqlc.Repo{
-			ID:                44,
+			ID:        44,
 			Namespace: "acme", Repo: "platform-api",
-			DefaultBranch:     "main",
+			DefaultBranch: "main",
 		},
 	}
 }
@@ -228,9 +228,9 @@ func newSelectorTestInput(kind SelectorKind, selector string) normalizedResolveR
 type fakeSelectorResolutionQueries struct {
 	repo sqlc.Repo
 
-	bySHAPrefix     map[string]sqlc.IngestEvent
-	latestByBranch  map[string]sqlc.IngestEvent
-	openAPIByBranch map[string]sqlc.IngestEvent
+	bySHAPrefix     map[string]sqlc.GetRevisionStateByRepoSHAPrefixRow
+	latestByBranch  map[string]sqlc.GetLatestRevisionStateByBranchRow
+	openAPIByBranch map[string]sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow
 
 	lastHeadBranch string
 }
@@ -242,51 +242,95 @@ func (f *fakeSelectorResolutionQueries) GetRepoByNamespaceAndRepo(_ context.Cont
 	return f.repo, nil
 }
 
-func (f *fakeSelectorResolutionQueries) GetRevisionByRepoSHAPrefix(
+func (f *fakeSelectorResolutionQueries) GetRevisionStateByRepoSHAPrefix(
 	_ context.Context,
-	arg sqlc.GetRevisionByRepoSHAPrefixParams,
-) (sqlc.IngestEvent, error) {
+	arg sqlc.GetRevisionStateByRepoSHAPrefixParams,
+) (sqlc.GetRevisionStateByRepoSHAPrefixRow, error) {
 	if f.bySHAPrefix == nil {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetRevisionStateByRepoSHAPrefixRow{}, pgx.ErrNoRows
 	}
 	revision, ok := f.bySHAPrefix[arg.ShaPrefix.String]
 	if !ok {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetRevisionStateByRepoSHAPrefixRow{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func (f *fakeSelectorResolutionQueries) GetLatestRevisionByBranch(
+func (f *fakeSelectorResolutionQueries) GetLatestRevisionStateByBranch(
 	_ context.Context,
-	arg sqlc.GetLatestRevisionByBranchParams,
-) (sqlc.IngestEvent, error) {
+	arg sqlc.GetLatestRevisionStateByBranchParams,
+) (sqlc.GetLatestRevisionStateByBranchRow, error) {
 	f.lastHeadBranch = arg.Branch
 	if f.latestByBranch == nil {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestRevisionStateByBranchRow{}, pgx.ErrNoRows
 	}
 	revision, ok := f.latestByBranch[arg.Branch]
 	if !ok {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestRevisionStateByBranchRow{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func (f *fakeSelectorResolutionQueries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+func (f *fakeSelectorResolutionQueries) GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(
 	_ context.Context,
-	arg sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams,
-) (sqlc.IngestEvent, error) {
+	arg sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams,
+) (sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow, error) {
 	if f.openAPIByBranch == nil {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{}, pgx.ErrNoRows
 	}
 	revision, ok := f.openAPIByBranch[arg.Branch]
 	if !ok {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func newSelectorTestRevision(id int64, status string, openAPIChanged *bool, branch string, sha string) sqlc.IngestEvent {
-	revision := sqlc.IngestEvent{
+func newSelectorTestSHAPrefixRevision(
+	id int64,
+	status string,
+	openAPIChanged *bool,
+	branch string,
+	sha string,
+) sqlc.GetRevisionStateByRepoSHAPrefixRow {
+	revision := sqlc.GetRevisionStateByRepoSHAPrefixRow{
+		ID:     id,
+		Status: status,
+		Branch: branch,
+		Sha:    sha,
+	}
+	if openAPIChanged != nil {
+		revision.OpenapiChanged = pgtype.Bool{Bool: *openAPIChanged, Valid: true}
+	}
+	return revision
+}
+
+func newSelectorTestLatestBranchRevision(
+	id int64,
+	status string,
+	openAPIChanged *bool,
+	branch string,
+	sha string,
+) sqlc.GetLatestRevisionStateByBranchRow {
+	revision := sqlc.GetLatestRevisionStateByBranchRow{
+		ID:     id,
+		Status: status,
+		Branch: branch,
+		Sha:    sha,
+	}
+	if openAPIChanged != nil {
+		revision.OpenapiChanged = pgtype.Bool{Bool: *openAPIChanged, Valid: true}
+	}
+	return revision
+}
+
+func newSelectorTestLatestProcessedOpenAPIRevision(
+	id int64,
+	status string,
+	openAPIChanged *bool,
+	branch string,
+	sha string,
+) sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow {
+	revision := sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{
 		ID:     id,
 		Status: status,
 		Branch: branch,

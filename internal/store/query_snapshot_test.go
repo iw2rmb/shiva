@@ -15,11 +15,11 @@ func TestResolveReadSnapshot_DefaultBranchLatestUsesLatestProcessedOpenAPISnapsh
 
 	queries := newReadSnapshotTestQueries()
 	queries.repo.DefaultBranch = "release"
-	queries.latestByBranch = map[string]sqlc.IngestEvent{
-		"release": newReadSnapshotTestRevision(500, 44, "processed", boolPtrReadSnapshot(false), "release", "release-head"),
+	queries.latestByBranch = map[string]sqlc.GetLatestRevisionStateByBranchRow{
+		"release": newReadSnapshotTestLatestBranchRevision(500, 44, "processed", boolPtrReadSnapshot(false), "release", "release-head"),
 	}
-	queries.openAPIByBranch = map[string]sqlc.IngestEvent{
-		"release": newReadSnapshotTestRevision(490, 44, "processed", boolPtrReadSnapshot(true), "release", "release-openapi"),
+	queries.openAPIByBranch = map[string]sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{
+		"release": newReadSnapshotTestLatestProcessedOpenAPIRevision(490, 44, "processed", boolPtrReadSnapshot(true), "release", "release-openapi"),
 	}
 
 	resolved, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
@@ -47,8 +47,8 @@ func TestResolveReadSnapshot_SHAAllowsProcessedSnapshotWithoutOpenAPIChange(t *t
 	t.Parallel()
 
 	queries := newReadSnapshotTestQueries()
-	queries.bySHAPrefix = map[string]sqlc.IngestEvent{
-		"11111111": newReadSnapshotTestRevision(700, 44, "processed", boolPtrReadSnapshot(false), "main", "1111111111111111111111111111111111111111"),
+	queries.bySHAPrefix = map[string]sqlc.GetRevisionStateByRepoSHAPrefixRow{
+		"11111111": newReadSnapshotTestSHAPrefixRevision(700, 44, "processed", boolPtrReadSnapshot(false), "main", "1111111111111111111111111111111111111111"),
 	}
 
 	resolved, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
@@ -77,8 +77,8 @@ func TestResolveReadSnapshot_RevisionIDRequiresMatchingRepoAndProcessedState(t *
 		t.Parallel()
 
 		queries := newReadSnapshotTestQueries()
-		queries.byID = map[int64]sqlc.IngestEvent{
-			91: newReadSnapshotTestRevision(91, 999, "processed", boolPtrReadSnapshot(true), "main", "abc"),
+		queries.byID = map[int64]sqlc.GetRevisionStateByIDRow{
+			91: newReadSnapshotTestRevisionByID(91, 999, "processed", boolPtrReadSnapshot(true), "main", "abc"),
 		}
 
 		_, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
@@ -100,8 +100,8 @@ func TestResolveReadSnapshot_RevisionIDRequiresMatchingRepoAndProcessedState(t *
 		t.Parallel()
 
 		queries := newReadSnapshotTestQueries()
-		queries.byID = map[int64]sqlc.IngestEvent{
-			92: newReadSnapshotTestRevision(92, 44, "processing", nil, "main", "def"),
+		queries.byID = map[int64]sqlc.GetRevisionStateByIDRow{
+			92: newReadSnapshotTestRevisionByID(92, 44, "processing", nil, "main", "def"),
 		}
 
 		_, err := resolveReadSnapshot(context.Background(), queries, normalizedResolveReadSnapshotInput{
@@ -140,7 +140,7 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 			name: "sha selector",
 			input: ResolveReadSnapshotInput{
 				Namespace: "acme", Repo: "platform-api",
-				SHA:      "deadbeef",
+				SHA: "deadbeef",
 			},
 			kind: ReadSnapshotSelectorSHA,
 		},
@@ -167,7 +167,7 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 			name: "sha must be lowercase short hex",
 			input: ResolveReadSnapshotInput{
 				Namespace: "acme", Repo: "platform-api",
-				SHA:      "DEADBEEF",
+				SHA: "DEADBEEF",
 			},
 			expectError: true,
 		},
@@ -198,10 +198,10 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 func newReadSnapshotTestQueries() *fakeReadSnapshotQueries {
 	return &fakeReadSnapshotQueries{
 		repo: sqlc.Repo{
-			ID:                44,
-			GitlabProjectID:   444,
-			Namespace: "acme", Repo: "platform-api",
-			DefaultBranch:     "main",
+			ID:              44,
+			GitlabProjectID: 444,
+			Namespace:       "acme", Repo: "platform-api",
+			DefaultBranch: "main",
 		},
 	}
 }
@@ -209,10 +209,10 @@ func newReadSnapshotTestQueries() *fakeReadSnapshotQueries {
 type fakeReadSnapshotQueries struct {
 	repo sqlc.Repo
 
-	byID            map[int64]sqlc.IngestEvent
-	bySHAPrefix     map[string]sqlc.IngestEvent
-	latestByBranch  map[string]sqlc.IngestEvent
-	openAPIByBranch map[string]sqlc.IngestEvent
+	byID            map[int64]sqlc.GetRevisionStateByIDRow
+	bySHAPrefix     map[string]sqlc.GetRevisionStateByRepoSHAPrefixRow
+	latestByBranch  map[string]sqlc.GetLatestRevisionStateByBranchRow
+	openAPIByBranch map[string]sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow
 
 	lastHeadBranch string
 }
@@ -224,69 +224,132 @@ func (f *fakeReadSnapshotQueries) GetRepoByNamespaceAndRepo(_ context.Context, a
 	return f.repo, nil
 }
 
-func (f *fakeReadSnapshotQueries) GetRevisionByID(_ context.Context, id int64) (sqlc.IngestEvent, error) {
+func (f *fakeReadSnapshotQueries) GetRevisionStateByID(_ context.Context, id int64) (sqlc.GetRevisionStateByIDRow, error) {
 	if f.byID == nil {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetRevisionStateByIDRow{}, pgx.ErrNoRows
 	}
 	revision, ok := f.byID[id]
 	if !ok {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetRevisionStateByIDRow{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func (f *fakeReadSnapshotQueries) GetRevisionByRepoSHAPrefix(
+func (f *fakeReadSnapshotQueries) GetRevisionStateByRepoSHAPrefix(
 	_ context.Context,
-	arg sqlc.GetRevisionByRepoSHAPrefixParams,
-) (sqlc.IngestEvent, error) {
+	arg sqlc.GetRevisionStateByRepoSHAPrefixParams,
+) (sqlc.GetRevisionStateByRepoSHAPrefixRow, error) {
 	if f.bySHAPrefix == nil {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetRevisionStateByRepoSHAPrefixRow{}, pgx.ErrNoRows
 	}
 	revision, ok := f.bySHAPrefix[arg.ShaPrefix.String]
 	if !ok {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetRevisionStateByRepoSHAPrefixRow{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func (f *fakeReadSnapshotQueries) GetLatestRevisionByBranch(
+func (f *fakeReadSnapshotQueries) GetLatestRevisionStateByBranch(
 	_ context.Context,
-	arg sqlc.GetLatestRevisionByBranchParams,
-) (sqlc.IngestEvent, error) {
+	arg sqlc.GetLatestRevisionStateByBranchParams,
+) (sqlc.GetLatestRevisionStateByBranchRow, error) {
 	f.lastHeadBranch = arg.Branch
 	if f.latestByBranch == nil {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestRevisionStateByBranchRow{}, pgx.ErrNoRows
 	}
 	revision, ok := f.latestByBranch[arg.Branch]
 	if !ok {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestRevisionStateByBranchRow{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func (f *fakeReadSnapshotQueries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+func (f *fakeReadSnapshotQueries) GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(
 	_ context.Context,
-	arg sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams,
-) (sqlc.IngestEvent, error) {
+	arg sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams,
+) (sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow, error) {
 	if f.openAPIByBranch == nil {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{}, pgx.ErrNoRows
 	}
 	revision, ok := f.openAPIByBranch[arg.Branch]
 	if !ok {
-		return sqlc.IngestEvent{}, pgx.ErrNoRows
+		return sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{}, pgx.ErrNoRows
 	}
 	return revision, nil
 }
 
-func newReadSnapshotTestRevision(
+func newReadSnapshotTestRevisionByID(
 	id int64,
 	repoID int64,
 	status string,
 	openAPIChanged *bool,
 	branch string,
 	sha string,
-) sqlc.IngestEvent {
-	revision := sqlc.IngestEvent{
+) sqlc.GetRevisionStateByIDRow {
+	revision := sqlc.GetRevisionStateByIDRow{
+		ID:     id,
+		RepoID: repoID,
+		Status: status,
+		Branch: branch,
+		Sha:    sha,
+	}
+	if openAPIChanged != nil {
+		revision.OpenapiChanged = pgtype.Bool{Bool: *openAPIChanged, Valid: true}
+	}
+	return revision
+}
+
+func newReadSnapshotTestSHAPrefixRevision(
+	id int64,
+	repoID int64,
+	status string,
+	openAPIChanged *bool,
+	branch string,
+	sha string,
+) sqlc.GetRevisionStateByRepoSHAPrefixRow {
+	revision := sqlc.GetRevisionStateByRepoSHAPrefixRow{
+		ID:     id,
+		RepoID: repoID,
+		Status: status,
+		Branch: branch,
+		Sha:    sha,
+	}
+	if openAPIChanged != nil {
+		revision.OpenapiChanged = pgtype.Bool{Bool: *openAPIChanged, Valid: true}
+	}
+	return revision
+}
+
+func newReadSnapshotTestLatestBranchRevision(
+	id int64,
+	repoID int64,
+	status string,
+	openAPIChanged *bool,
+	branch string,
+	sha string,
+) sqlc.GetLatestRevisionStateByBranchRow {
+	revision := sqlc.GetLatestRevisionStateByBranchRow{
+		ID:     id,
+		RepoID: repoID,
+		Status: status,
+		Branch: branch,
+		Sha:    sha,
+	}
+	if openAPIChanged != nil {
+		revision.OpenapiChanged = pgtype.Bool{Bool: *openAPIChanged, Valid: true}
+	}
+	return revision
+}
+
+func newReadSnapshotTestLatestProcessedOpenAPIRevision(
+	id int64,
+	repoID int64,
+	status string,
+	openAPIChanged *bool,
+	branch string,
+	sha string,
+) sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow {
+	revision := sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow{
 		ID:     id,
 		RepoID: repoID,
 		Status: status,

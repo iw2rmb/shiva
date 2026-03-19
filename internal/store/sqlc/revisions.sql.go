@@ -52,6 +52,53 @@ func (q *Queries) GetLatestProcessedOpenAPIRevisionByBranchExcludingID(ctx conte
 	return i, err
 }
 
+const getLatestProcessedOpenAPIRevisionStateByBranchExcludingID = `-- name: GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error
+FROM ingest_events
+WHERE repo_id = $1
+  AND branch = $2
+  AND status = 'processed'
+  AND openapi_changed = TRUE
+  AND id <> $3
+ORDER BY processed_at DESC NULLS LAST, id DESC
+LIMIT 1
+`
+
+type GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams struct {
+	RepoID            int64  `json:"repo_id"`
+	Branch            string `json:"branch"`
+	ExcludeRevisionID int64  `json:"exclude_revision_id"`
+}
+
+type GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow struct {
+	ID             int64              `json:"id"`
+	RepoID         int64              `json:"repo_id"`
+	Sha            string             `json:"sha"`
+	Branch         string             `json:"branch"`
+	ParentSha      pgtype.Text        `json:"parent_sha"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	OpenapiChanged pgtype.Bool        `json:"openapi_changed"`
+	Status         string             `json:"status"`
+	Error          string             `json:"error"`
+}
+
+func (q *Queries) GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(ctx context.Context, arg GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams) (GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow, error) {
+	row := q.db.QueryRow(ctx, getLatestProcessedOpenAPIRevisionStateByBranchExcludingID, arg.RepoID, arg.Branch, arg.ExcludeRevisionID)
+	var i GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
+
 const getLatestProcessedRevisionByBranch = `-- name: GetLatestProcessedRevisionByBranch :one
 SELECT id, repo_id, sha, branch, parent_sha, event_type, delivery_id, payload_json, received_at, attempt_count, next_retry_at, processed_at, openapi_changed, status, error
 FROM ingest_events
@@ -119,6 +166,49 @@ func (q *Queries) GetLatestRevisionByBranch(ctx context.Context, arg GetLatestRe
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
+
+const getLatestRevisionStateByBranch = `-- name: GetLatestRevisionStateByBranch :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error
+FROM ingest_events
+WHERE repo_id = $1
+  AND branch = $2
+ORDER BY received_at DESC, id DESC
+LIMIT 1
+`
+
+type GetLatestRevisionStateByBranchParams struct {
+	RepoID int64  `json:"repo_id"`
+	Branch string `json:"branch"`
+}
+
+type GetLatestRevisionStateByBranchRow struct {
+	ID             int64              `json:"id"`
+	RepoID         int64              `json:"repo_id"`
+	Sha            string             `json:"sha"`
+	Branch         string             `json:"branch"`
+	ParentSha      pgtype.Text        `json:"parent_sha"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	OpenapiChanged pgtype.Bool        `json:"openapi_changed"`
+	Status         string             `json:"status"`
+	Error          string             `json:"error"`
+}
+
+func (q *Queries) GetLatestRevisionStateByBranch(ctx context.Context, arg GetLatestRevisionStateByBranchParams) (GetLatestRevisionStateByBranchRow, error) {
+	row := q.db.QueryRow(ctx, getLatestRevisionStateByBranch, arg.RepoID, arg.Branch)
+	var i GetLatestRevisionStateByBranchRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,
@@ -220,6 +310,84 @@ func (q *Queries) GetRevisionByRepoSHAPrefix(ctx context.Context, arg GetRevisio
 		&i.ReceivedAt,
 		&i.AttemptCount,
 		&i.NextRetryAt,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
+
+const getRevisionStateByID = `-- name: GetRevisionStateByID :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error
+FROM ingest_events
+WHERE id = $1
+`
+
+type GetRevisionStateByIDRow struct {
+	ID             int64              `json:"id"`
+	RepoID         int64              `json:"repo_id"`
+	Sha            string             `json:"sha"`
+	Branch         string             `json:"branch"`
+	ParentSha      pgtype.Text        `json:"parent_sha"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	OpenapiChanged pgtype.Bool        `json:"openapi_changed"`
+	Status         string             `json:"status"`
+	Error          string             `json:"error"`
+}
+
+func (q *Queries) GetRevisionStateByID(ctx context.Context, id int64) (GetRevisionStateByIDRow, error) {
+	row := q.db.QueryRow(ctx, getRevisionStateByID, id)
+	var i GetRevisionStateByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
+		&i.ProcessedAt,
+		&i.OpenapiChanged,
+		&i.Status,
+		&i.Error,
+	)
+	return i, err
+}
+
+const getRevisionStateByRepoSHAPrefix = `-- name: GetRevisionStateByRepoSHAPrefix :one
+SELECT id, repo_id, sha, branch, parent_sha, processed_at, openapi_changed, status, error
+FROM ingest_events
+WHERE repo_id = $1
+  AND sha LIKE $2 || '%'
+ORDER BY received_at DESC, id DESC
+LIMIT 1
+`
+
+type GetRevisionStateByRepoSHAPrefixParams struct {
+	RepoID    int64       `json:"repo_id"`
+	ShaPrefix pgtype.Text `json:"sha_prefix"`
+}
+
+type GetRevisionStateByRepoSHAPrefixRow struct {
+	ID             int64              `json:"id"`
+	RepoID         int64              `json:"repo_id"`
+	Sha            string             `json:"sha"`
+	Branch         string             `json:"branch"`
+	ParentSha      pgtype.Text        `json:"parent_sha"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	OpenapiChanged pgtype.Bool        `json:"openapi_changed"`
+	Status         string             `json:"status"`
+	Error          string             `json:"error"`
+}
+
+func (q *Queries) GetRevisionStateByRepoSHAPrefix(ctx context.Context, arg GetRevisionStateByRepoSHAPrefixParams) (GetRevisionStateByRepoSHAPrefixRow, error) {
+	row := q.db.QueryRow(ctx, getRevisionStateByRepoSHAPrefix, arg.RepoID, arg.ShaPrefix)
+	var i GetRevisionStateByRepoSHAPrefixRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Sha,
+		&i.Branch,
+		&i.ParentSha,
 		&i.ProcessedAt,
 		&i.OpenapiChanged,
 		&i.Status,

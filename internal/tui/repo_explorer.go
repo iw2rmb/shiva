@@ -14,7 +14,7 @@ func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.C
 	case "esc":
 		model.activeRoute = RouteRepos
 		model.syncRepoSelection()
-		return model, nil
+		return model, model.ensureRepoCatalogLoadCmd()
 	case "tab":
 		return model, model.switchExplorerTab(1)
 	case "shift+tab":

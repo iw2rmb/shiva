@@ -121,13 +121,19 @@ type normalizedResolveReadSnapshotInput struct {
 
 type readSnapshotQueries interface {
 	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error)
-	GetRevisionByID(ctx context.Context, id int64) (sqlc.IngestEvent, error)
-	GetRevisionByRepoSHAPrefix(ctx context.Context, arg sqlc.GetRevisionByRepoSHAPrefixParams) (sqlc.IngestEvent, error)
-	GetLatestRevisionByBranch(ctx context.Context, arg sqlc.GetLatestRevisionByBranchParams) (sqlc.IngestEvent, error)
-	GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+	GetRevisionStateByID(ctx context.Context, id int64) (sqlc.GetRevisionStateByIDRow, error)
+	GetRevisionStateByRepoSHAPrefix(
 		ctx context.Context,
-		arg sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams,
-	) (sqlc.IngestEvent, error)
+		arg sqlc.GetRevisionStateByRepoSHAPrefixParams,
+	) (sqlc.GetRevisionStateByRepoSHAPrefixRow, error)
+	GetLatestRevisionStateByBranch(
+		ctx context.Context,
+		arg sqlc.GetLatestRevisionStateByBranchParams,
+	) (sqlc.GetLatestRevisionStateByBranchRow, error)
+	GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(
+		ctx context.Context,
+		arg sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams,
+	) (sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDRow, error)
 }
 
 func (s *Store) ResolveReadSnapshot(ctx context.Context, input ResolveReadSnapshotInput) (ResolvedReadSnapshot, error) {
@@ -190,7 +196,7 @@ func resolveReadSnapshotByRevisionID(
 	repo sqlc.Repo,
 	input normalizedResolveReadSnapshotInput,
 ) (ResolvedReadSnapshot, error) {
-	revision, err := queries.GetRevisionByID(ctx, input.revisionID)
+	revisionRow, err := queries.GetRevisionStateByID(ctx, input.revisionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedReadSnapshot{}, &ReadSnapshotResolutionError{
@@ -204,6 +210,7 @@ func resolveReadSnapshotByRevisionID(
 		return ResolvedReadSnapshot{}, fmt.Errorf("load revision %d for repo %q: %w", input.revisionID, input.repoPath, err)
 	}
 
+	revision := mapRevisionStateByIDRow(revisionRow)
 	if revision.RepoID != repo.ID {
 		return ResolvedReadSnapshot{}, &ReadSnapshotResolutionError{
 			Code:       ReadSnapshotResolutionNotFound,
@@ -223,7 +230,7 @@ func resolveReadSnapshotBySHA(
 	repo sqlc.Repo,
 	input normalizedResolveReadSnapshotInput,
 ) (ResolvedReadSnapshot, error) {
-	revision, err := queries.GetRevisionByRepoSHAPrefix(ctx, sqlc.GetRevisionByRepoSHAPrefixParams{
+	revisionRow, err := queries.GetRevisionStateByRepoSHAPrefix(ctx, sqlc.GetRevisionStateByRepoSHAPrefixParams{
 		RepoID: repo.ID,
 		ShaPrefix: pgtype.Text{
 			String: input.sha,
@@ -243,6 +250,7 @@ func resolveReadSnapshotBySHA(
 		return ResolvedReadSnapshot{}, fmt.Errorf("load revision by sha %q for repo %q: %w", input.sha, input.repoPath, err)
 	}
 
+	revision := mapRevisionStateBySHAPrefixRow(revisionRow)
 	return buildResolvedReadSnapshot(repo, input, revision)
 }
 
@@ -252,7 +260,7 @@ func resolveReadSnapshotByDefaultBranchLatest(
 	repo sqlc.Repo,
 	input normalizedResolveReadSnapshotInput,
 ) (ResolvedReadSnapshot, error) {
-	headRevision, err := queries.GetLatestRevisionByBranch(ctx, sqlc.GetLatestRevisionByBranchParams{
+	headRevisionRow, err := queries.GetLatestRevisionStateByBranch(ctx, sqlc.GetLatestRevisionStateByBranchParams{
 		RepoID: repo.ID,
 		Branch: repo.DefaultBranch,
 	})
@@ -274,6 +282,7 @@ func resolveReadSnapshotByDefaultBranchLatest(
 		)
 	}
 
+	headRevision := mapRevisionStateByLatestBranchRow(headRevisionRow)
 	if headRevision.Status != revisionProcessed {
 		return ResolvedReadSnapshot{}, &ReadSnapshotResolutionError{
 			Code:              ReadSnapshotResolutionUnprocessed,
@@ -286,9 +295,9 @@ func resolveReadSnapshotByDefaultBranchLatest(
 		}
 	}
 
-	revision, err := queries.GetLatestProcessedOpenAPIRevisionByBranchExcludingID(
+	revisionRow, err := queries.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingID(
 		ctx,
-		sqlc.GetLatestProcessedOpenAPIRevisionByBranchExcludingIDParams{
+		sqlc.GetLatestProcessedOpenAPIRevisionStateByBranchExcludingIDParams{
 			RepoID:            repo.ID,
 			Branch:            repo.DefaultBranch,
 			ExcludeRevisionID: 0,
@@ -312,6 +321,7 @@ func resolveReadSnapshotByDefaultBranchLatest(
 		)
 	}
 
+	revision := mapRevisionStateByLatestProcessedOpenAPIBranchRow(revisionRow)
 	return ResolvedReadSnapshot{
 		Repo: Repo{
 			ID:              repo.ID,
@@ -322,14 +332,14 @@ func resolveReadSnapshotByDefaultBranchLatest(
 		},
 		APIPath:      input.apiPath,
 		SelectorKind: input.kind,
-		Revision:     mapRevision(revision),
+		Revision:     revision,
 	}, nil
 }
 
 func buildResolvedReadSnapshot(
 	repo sqlc.Repo,
 	input normalizedResolveReadSnapshotInput,
-	revision sqlc.IngestEvent,
+	revision Revision,
 ) (ResolvedReadSnapshot, error) {
 	if revision.Status != revisionProcessed {
 		return ResolvedReadSnapshot{}, &ReadSnapshotResolutionError{
@@ -353,7 +363,7 @@ func buildResolvedReadSnapshot(
 		},
 		APIPath:      input.apiPath,
 		SelectorKind: input.kind,
-		Revision:     mapRevision(revision),
+		Revision:     revision,
 	}, nil
 }
 

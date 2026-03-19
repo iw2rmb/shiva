@@ -135,9 +135,6 @@ func (s *Service) prepare(
 
 	scope := ScopeFromSelector(selector.RevisionID, selector.SHA)
 	if scope.Floating {
-		if err := s.ensureRepos(ctx, client, profile, options); err != nil {
-			return PreparedSnapshot{}, err
-		}
 		return s.prepareFloating(ctx, client, profile, selector, options, needOperations)
 	}
 	return s.preparePinned(ctx, client, profile, selector, options, scope, needOperations)

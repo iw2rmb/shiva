@@ -28,7 +28,7 @@ func TestRuntimeServiceExecuteCallDirectDryRunUsesCatalogResolution(t *testing.T
 		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
 		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
-		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
+		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","ingest_event_id":42,"ingest_event_sha":"deadbeef","method":"get","path":"/pets","operation_id":"listPets","operation":{"operationId":"listPets"}}]`),
 	}
 
 	service := &RuntimeService{
@@ -97,7 +97,7 @@ func TestRuntimeServiceExecuteCallDirectDispatchesToTarget(t *testing.T) {
 		reposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
 		statusBody:     []byte(`{"namespace":"acme","repo":"platform","snapshot_revision":{"id":42,"sha":"deadbeef"}}`),
 		apisBody:       []byte(`[{"api":"apis/pets/openapi.yaml","has_snapshot":true}]`),
-		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","method":"post","path":"/pets/{id}","operation_id":"createPet","operation":{"operationId":"createPet"}}]`),
+		operationsBody: []byte(`[{"api":"apis/pets/openapi.yaml","ingest_event_id":42,"ingest_event_sha":"deadbeef","method":"post","path":"/pets/{id}","operation_id":"createPet","operation":{"operationId":"createPet"}}]`),
 	}
 
 	service := &RuntimeService{

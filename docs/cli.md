@@ -1,7 +1,7 @@
 # CLI
 
 ## Scope
-This document describes the shipped `shiva` CLI surface, selector grammar, catalog/cache behavior, and inspect/call execution modes.
+This document describes the shipped `shiva` CLI surface, selector grammar, runtime query behavior, and inspect/call execution modes.
 
 ## Command Surface
 - Root shorthand:
@@ -68,11 +68,11 @@ Rules:
 - Spec fetch uses `GET /v1/spec`.
 - Operation fetch uses `GET /v1/operation`.
 - `@shiva` calls dispatch to `POST /v1/call`.
-- Direct targets resolve the operation from cached catalog data and dispatch the final HTTP request from the CLI process.
+- Direct targets resolve the operation from `GET /v1/operations` and dispatch the final HTTP request from the CLI process.
 - `shiva health` uses `GET /healthz`.
 - The CLI no longer resolves `operationId` by downloading a full spec and scanning it client-side.
 - Packed and positional shorthand are normalized into the shared request-envelope model before execution.
-- The transport and cache layers key repos by the normalized slash form `<namespace>/<repo>`, while structured HTTP requests send separate `namespace` and `repo` fields.
+- Structured HTTP requests send separate `namespace` and `repo` fields.
 
 ## Output
 - `shiva <repo-ref>`
@@ -119,7 +119,8 @@ Rules:
     - no selector starts in the `SHIVA` home list
     - `<namespace>/` starts in that namespace's repo view
     - `<namespace>/<repo>` starts in that repo's explorer view
-  - startup loads the repo catalog once and derives namespace/repo lists in memory
+  - startup for home/namespace routes loads repo catalog and derives namespace/repo lists in memory
+  - startup for direct repo route (`shiva tui <namespace>/<repo>`) skips repo catalog preload and loads repo operations immediately
   - home mode:
     - list title: `SHIVA`
     - entries: `Repos`, `Endpoints`
@@ -176,18 +177,11 @@ Success writes to stdout. Errors write to stderr.
   - fallback timeout used only when `~/.config/shiva/profiles.yaml` is absent
   - default: `10`
 
-## Catalog Cache
-- Catalog data is cached under `$XDG_CACHE_HOME/shiva/catalog/v1` or `~/.cache/shiva/catalog/v1`.
-- The cache stores:
-  - repo inventory from `/v1/repos`
-  - default-branch freshness rows from `/v1/catalog/status`
-  - API inventory from `/v1/apis`
-  - operation inventory from `/v1/operations`
-  - explicit spec and operation responses for offline reuse
-- Floating selectors without `--sha` or `--rev` refresh lazily from `/v1/catalog/status` before refreshing catalog slices.
-- Pinned `--sha` and `--rev` selectors reuse immutable cache entries.
-- `--offline` forbids network refreshes and serves only cached catalog and explicit response data.
-- `shiva sync <repo-ref>` is the only explicit refresh command; it forces a repo-wide API and operation catalog refresh and returns a JSON summary.
+## Local Catalog Cache
+- Runtime CLI requests use live query endpoints (`/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/repos`) and do not use the local catalog cache.
+- Local catalog cache remains for completion provider flows under `$XDG_CACHE_HOME/shiva/catalog/v1` or `~/.cache/shiva/catalog/v1`.
+- `--offline` no longer provides cached inspect/call behavior; inspect and call flows require live connectivity.
+- `shiva sync <repo-ref>` performs live refresh checks via `/v1/apis` and per-API `/v1/operations` and returns a JSON summary.
 
 ## Exit Codes
 - `0`: success

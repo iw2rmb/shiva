@@ -104,10 +104,10 @@ targets:
 If `profiles.yaml` is absent, the CLI synthesizes one `default` profile from `SHIVA_BASE_URL` and `SHIVA_REQUEST_TIMEOUT_SECONDS`.
 
 Current CLI cache behavior:
-- floating selectors refresh repo/API/operation catalog slices lazily
-- pinned `--sha` and `--rev` selectors reuse immutable cache entries
-- `--offline` serves only cached catalog and explicit response data
-- `shiva sync <repo-ref>` is the explicit repo refresh command
+- runtime inspect/list/tui/call paths use live `/v1/*` query endpoints
+- local catalog cache is used by completion provider refresh/fallback flows
+- `--offline` is not a runtime cache mode for inspect/call flows
+- `shiva sync <repo-ref>` is the explicit live repo refresh command
 
 ## Health and Metrics
 - `GET /healthz`

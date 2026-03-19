@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/iw2rmb/shiva/internal/cli/catalog"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
@@ -26,7 +25,7 @@ func (s *RuntimeService) ListRepos(
 	options RequestOptions,
 	format clioutput.ListFormat,
 ) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
+	if s == nil || s.newClient == nil {
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
@@ -40,20 +39,12 @@ func (s *RuntimeService) ListRepos(
 		return nil, err
 	}
 
-	if err := s.catalogService.PrepareRepos(ctx, client, source.Name, catalogOptions(options)); err != nil {
-		return nil, normalizeServiceError(err)
-	}
-
-	record, found, err := s.catalogStore.LoadRepos(source.Name)
+	var rows []clioutput.RepoRow
+	body, err := client.ListRepos(ctx)
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
-	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("repo catalog for profile %q is not cached", source.Name)}
-	}
-
-	var rows []clioutput.RepoRow
-	if err := json.Unmarshal(record.Payload, &rows); err != nil {
+	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("decode repo inventory: %w", err)
 	}
 	return clioutput.RenderRepos(rows, format)
@@ -65,7 +56,7 @@ func (s *RuntimeService) ListAPIs(
 	options RequestOptions,
 	format clioutput.ListFormat,
 ) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
+	if s == nil || s.newClient == nil {
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
@@ -73,7 +64,6 @@ func (s *RuntimeService) ListAPIs(
 	if err != nil {
 		return nil, err
 	}
-	repoKey := normalized.RepoPath()
 
 	source, err := s.resolveSource(options.Profile, "")
 	if err != nil {
@@ -85,21 +75,13 @@ func (s *RuntimeService) ListAPIs(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, catalogOptions(options))
+	body, err := client.ListAPIs(ctx, normalized)
 	if err != nil {
 		return nil, normalizeServiceError(err)
-	}
-
-	record, found, err := s.catalogStore.LoadAPIs(source.Name, repoKey, prepared.Scope)
-	if err != nil {
-		return nil, normalizeServiceError(err)
-	}
-	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("api catalog for repo %q is not cached", repoKey)}
 	}
 
 	var rows []clioutput.APIRow
-	if err := json.Unmarshal(record.Payload, &rows); err != nil {
+	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("decode api inventory: %w", err)
 	}
 	for index := range rows {
@@ -116,7 +98,7 @@ func (s *RuntimeService) ListOperations(
 	options RequestOptions,
 	format clioutput.ListFormat,
 ) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
+	if s == nil || s.newClient == nil {
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
@@ -124,7 +106,6 @@ func (s *RuntimeService) ListOperations(
 	if err != nil {
 		return nil, err
 	}
-	repoKey := normalized.RepoPath()
 
 	source, err := s.resolveSource(options.Profile, "")
 	if err != nil {
@@ -136,21 +117,13 @@ func (s *RuntimeService) ListOperations(
 		return nil, err
 	}
 
-	prepared, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, catalogOptions(options))
+	body, err := client.ListOperations(ctx, normalized)
 	if err != nil {
 		return nil, normalizeServiceError(err)
-	}
-
-	record, found, err := s.catalogStore.LoadOperations(source.Name, repoKey, normalized.API, prepared.Scope)
-	if err != nil {
-		return nil, normalizeServiceError(err)
-	}
-	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("operation catalog for repo %q is not cached", repoKey)}
 	}
 
 	var rows []clioutput.OperationRow
-	if err := json.Unmarshal(record.Payload, &rows); err != nil {
+	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("decode operation inventory: %w", err)
 	}
 	for index := range rows {
@@ -166,7 +139,7 @@ func (s *RuntimeService) Sync(
 	selector request.Envelope,
 	options RequestOptions,
 ) ([]byte, error) {
-	if s == nil || s.catalogService == nil || s.catalogStore == nil || s.newClient == nil {
+	if s == nil || s.newClient == nil {
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
@@ -174,7 +147,6 @@ func (s *RuntimeService) Sync(
 	if err != nil {
 		return nil, err
 	}
-	repoKey := normalized.RepoPath()
 	if normalized.API != "" {
 		return nil, &InvalidInputError{Message: "sync does not accept --api; it refreshes the whole repo snapshot"}
 	}
@@ -192,32 +164,17 @@ func (s *RuntimeService) Sync(
 		return nil, err
 	}
 
-	refreshOptions := catalog.RefreshOptions{Refresh: true}
-
-	prepared, err := s.catalogService.PrepareAPIs(ctx, client, source.Name, normalized, refreshOptions)
-	if err != nil {
-		return nil, normalizeServiceError(err)
-	}
-
-	apiRecord, found, err := s.catalogStore.LoadAPIs(source.Name, repoKey, prepared.Scope)
-	if err != nil {
-		return nil, normalizeServiceError(err)
-	}
-	if !found {
-		return nil, &NotFoundError{Message: fmt.Sprintf("api catalog for repo %q is not cached", repoKey)}
-	}
-
 	var apiRows []clioutput.APIRow
-	if err := json.Unmarshal(apiRecord.Payload, &apiRows); err != nil {
+	apiBody, err := client.ListAPIs(ctx, normalized)
+	if err != nil {
+		return nil, normalizeServiceError(err)
+	}
+	if err := json.Unmarshal(apiBody, &apiRows); err != nil {
 		return nil, fmt.Errorf("decode synced api inventory: %w", err)
 	}
 
-	if _, err := s.catalogService.PrepareOperations(ctx, client, source.Name, normalized, refreshOptions); err != nil {
-		return nil, normalizeServiceError(err)
-	}
-
 	apiNames := make([]string, 0, len(apiRows))
-	operationCatalogCount := 1
+	operationCatalogCount := 0
 	for _, row := range apiRows {
 		apiNames = append(apiNames, row.API)
 		if !row.HasSnapshot {
@@ -226,7 +183,7 @@ func (s *RuntimeService) Sync(
 
 		apiSelector := normalized
 		apiSelector.API = row.API
-		if _, err := s.catalogService.PrepareOperations(ctx, client, source.Name, apiSelector, refreshOptions); err != nil {
+		if _, err := client.ListOperations(ctx, apiSelector); err != nil {
 			return nil, normalizeServiceError(err)
 		}
 		operationCatalogCount++
@@ -235,8 +192,8 @@ func (s *RuntimeService) Sync(
 	body, err := json.Marshal(SyncResult{
 		Namespace:             normalized.Namespace,
 		Repo:                  normalized.Repo,
-		Scope:                 prepared.Scope.Key,
-		SnapshotRevision:      revisionStateFromFingerprint(prepared.Fingerprint),
+		Scope:                 scopeKeyFromSelector(normalized),
+		SnapshotRevision:      revisionStateFromSelector(normalized),
 		APICount:              len(apiRows),
 		OperationCatalogCount: operationCatalogCount,
 		APIs:                  apiNames,
@@ -271,13 +228,23 @@ func normalizeInventorySelector(selector request.Envelope, allowAPI bool) (reque
 	}, nil
 }
 
-func revisionStateFromFingerprint(fingerprint catalog.SnapshotFingerprint) *clioutput.RevisionState {
-	if fingerprint.RevisionID < 1 && strings.TrimSpace(fingerprint.SHA) == "" {
+func revisionStateFromSelector(selector request.Envelope) *clioutput.RevisionState {
+	if selector.RevisionID < 1 && strings.TrimSpace(selector.SHA) == "" {
 		return nil
 	}
 
 	return &clioutput.RevisionState{
-		ID:  fingerprint.RevisionID,
-		SHA: strings.TrimSpace(fingerprint.SHA),
+		ID:  selector.RevisionID,
+		SHA: strings.TrimSpace(selector.SHA),
 	}
+}
+
+func scopeKeyFromSelector(selector request.Envelope) string {
+	if selector.RevisionID > 0 {
+		return fmt.Sprintf("rev:%d", selector.RevisionID)
+	}
+	if strings.TrimSpace(selector.SHA) != "" {
+		return "sha:" + strings.TrimSpace(selector.SHA)
+	}
+	return "floating"
 }

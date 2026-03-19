@@ -86,8 +86,8 @@ func TestResolveSpecSnapshots_FiltersToResolvedSpecCandidates(t *testing.T) {
 	t.Parallel()
 
 	queries := newFakeCLICatalogQueries()
-	queries.byID = map[int64]sqlc.IngestEvent{
-		71: newReadSnapshotTestRevision(71, 44, "processed", boolPtrReadSnapshot(false), "main", "sha"),
+	queries.byID = map[int64]sqlc.GetRevisionStateByIDRow{
+		71: newReadSnapshotTestRevisionByID(71, 44, "processed", boolPtrReadSnapshot(false), "main", "sha"),
 	}
 	queries.apiInventoryRows = []sqlc.ListAPISnapshotInventoryByRepoRevisionRow{
 		{
@@ -113,10 +113,10 @@ func TestResolveSpecSnapshots_FiltersToResolvedSpecCandidates(t *testing.T) {
 	}
 
 	resolved, err := resolveSpecSnapshots(context.Background(), queries, normalizedResolveReadSnapshotInput{
-			namespace:  "acme",
-			repo:       "platform-api",
-			repoPath:   "acme/platform-api",
-			revisionID: 71,
+		namespace:  "acme",
+		repo:       "platform-api",
+		repoPath:   "acme/platform-api",
+		revisionID: 71,
 		kind:       ReadSnapshotSelectorRevisionID,
 	})
 	if err != nil {
@@ -135,8 +135,8 @@ func TestResolveOperationCandidatesByOperationID_PreservesRepoSnapshotAmbiguity(
 	t.Parallel()
 
 	queries := newFakeCLICatalogQueries()
-	queries.byID = map[int64]sqlc.IngestEvent{
-		81: newReadSnapshotTestRevision(81, 44, "processed", boolPtrReadSnapshot(true), "main", "sha"),
+	queries.byID = map[int64]sqlc.GetRevisionStateByIDRow{
+		81: newReadSnapshotTestRevisionByID(81, 44, "processed", boolPtrReadSnapshot(true), "main", "sha"),
 	}
 	queries.operationRowsByID = []sqlc.FindOperationCandidatesByRepoRevisionAndOperationIDRow{
 		{
@@ -197,8 +197,8 @@ func TestResolveOperationCandidatesByMethodPath_ScopesToExplicitAPI(t *testing.T
 	t.Parallel()
 
 	queries := newFakeCLICatalogQueries()
-	queries.bySHAPrefix = map[string]sqlc.IngestEvent{
-		"deadbeef": newReadSnapshotTestRevision(91, 44, "processed", boolPtrReadSnapshot(true), "main", "deadbeef0000"),
+	queries.bySHAPrefix = map[string]sqlc.GetRevisionStateByRepoSHAPrefixRow{
+		"deadbeef": newReadSnapshotTestSHAPrefixRevision(91, 44, "processed", boolPtrReadSnapshot(true), "main", "deadbeef0000"),
 	}
 	queries.operationRowsByAPIMethodPath = []sqlc.FindOperationCandidatesByRepoRevisionAndAPIAndMethodPathRow{
 		{
@@ -224,9 +224,9 @@ func TestResolveOperationCandidatesByMethodPath_ScopesToExplicitAPI(t *testing.T
 			namespace: "acme",
 			repo:      "platform-api",
 			repoPath:  "acme/platform-api",
-			apiPath:  "apis/users.yaml",
-			sha:      "deadbeef",
-			kind:     ReadSnapshotSelectorSHA,
+			apiPath:   "apis/users.yaml",
+			sha:       "deadbeef",
+			kind:      ReadSnapshotSelectorSHA,
 		},
 		"get",
 		"/users/{id}",

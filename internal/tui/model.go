@@ -71,6 +71,9 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 }
 
 func (model *rootModel) Init() tea.Cmd {
+	if model.initialRoute.Kind == RouteRepoExplorer {
+		return model.initialRouteCmd()
+	}
 	token := model.beginRepoCatalogLoad()
 	return loadRepoCatalogCmd(context.Background(), model.service, model.options, token)
 }
@@ -239,6 +242,7 @@ func (model *rootModel) updateHomeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		if target == RouteNamespaces {
 			model.activeRoute = RouteNamespaces
 			model.syncNamespaceSelection()
+			return model, model.ensureRepoCatalogLoadCmd()
 		}
 		return model, nil
 	default:
@@ -275,7 +279,7 @@ func (model *rootModel) updateNamespacesKey(msg tea.KeyPressMsg) (tea.Model, tea
 		model.repoList.Namespace = selection.Namespace
 		model.activeRoute = RouteRepos
 		model.refreshRepoList()
-		return model, nil
+		return model, model.ensureRepoCatalogLoadCmd()
 	default:
 		var cmd tea.Cmd
 		model.namespaces.List, cmd = model.namespaces.List.Update(msg)
@@ -402,10 +406,12 @@ func (model *rootModel) initialRouteCmd() tea.Cmd {
 	switch model.initialRoute.Kind {
 	case RouteHome:
 		model.activeRoute = RouteHome
+		return model.ensureRepoCatalogLoadCmd()
 	case RouteRepos:
 		model.activeRoute = RouteRepos
 		model.repoList.Namespace = model.initialRoute.Namespace
 		model.refreshRepoList()
+		return model.ensureRepoCatalogLoadCmd()
 	case RouteRepoExplorer:
 		model.repoList.Namespace = model.initialRoute.Namespace
 		model.refreshRepoList()
@@ -554,6 +560,14 @@ func routeLabel(route RouteKind, repoNamespace string, explorerNamespace string,
 
 func (model *rootModel) beginRepoCatalogLoad() RequestToken {
 	return model.beginLoad(loadDomainRepoCatalog)
+}
+
+func (model *rootModel) ensureRepoCatalogLoadCmd() tea.Cmd {
+	if model.async.RepoCatalog.Loading || model.async.RepoCatalog.ActiveToken > 0 {
+		return nil
+	}
+	token := model.beginRepoCatalogLoad()
+	return loadRepoCatalogCmd(context.Background(), model.service, model.options, token)
 }
 
 func (model *rootModel) beginOperationListLoad() RequestToken {
