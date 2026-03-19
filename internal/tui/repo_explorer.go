@@ -95,7 +95,7 @@ func (model *rootModel) syncExplorerSelection() tea.Cmd {
 func (model *rootModel) viewRepoExplorer() string {
 	repoLabel := model.explorer.Namespace + "/" + model.explorer.Repo
 	leftPane := model.explorerListPane()
-	rightPane := model.explorerPlaceholderPane()
+	rightPane := model.explorerDetailPane()
 	return strings.Join([]string{
 		"Shiva TUI",
 		"",
@@ -124,7 +124,7 @@ func (model *rootModel) explorerListPane() string {
 	}
 }
 
-func (model *rootModel) explorerPlaceholderPane() string {
+func (model *rootModel) explorerDetailPane() string {
 	return model.explorer.Detail.Viewport.View()
 }
 

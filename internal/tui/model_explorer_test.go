@@ -88,7 +88,7 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	}
 }
 
-func TestRootModelExplorerArrowKeysUpdatePlaceholderIdentity(t *testing.T) {
+func TestRootModelExplorerArrowKeysUpdateSelection(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{
