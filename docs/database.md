@@ -4,9 +4,9 @@
 This document describes current schema layout and SQL code generation workflow.
 
 ## Schema Source
-- Migration source: `sql/schema/000001_initial.sql`
-- Query source files: `sql/query/*.sql`
-- Generated access layer: `internal/store/sqlc/*`
+- The schema is maintained as a single embedded initial migration.
+- Query definitions are maintained as sqlc SQL inputs.
+- The generated access layer is produced by sqlc and used by the runtime store package.
 
 ## Core Tables
 - `schema_migrations`: startup schema bootstrap record (`version`, `checksum`, `applied_at`).
@@ -83,32 +83,30 @@ This document describes current schema layout and SQL code generation workflow.
 - `FindOperationCandidatesByRepoRevisionAndMethodPath(...)` and API-scoped counterpart: provide the same candidate-preserving lookup for canonical `(method, path)` resolution.
 
 ### Query Source Layout
-- `sql/query/cli_reads.sql`: snapshot-oriented repo/API/operation inventory and candidate lookup queries used by the CLI/query transport work.
-- `sql/schema/000001_initial.sql` includes supporting indexes for:
+- Snapshot-oriented repo/API/operation inventory and candidate lookup queries back the CLI/query transport flow.
+- The initial schema includes supporting indexes for:
   - default-branch head and latest processed OpenAPI lookups on `ingest_events`,
   - latest snapshot selection on `api_spec_revisions`,
   - `operation_id` lookup inside `endpoint_index`.
 
 ## Generation
 sqlc config:
-- `sqlc.yaml`
 - engine: PostgreSQL
-- schema dir: `sql/schema`
-- query dir: `sql/query`
-- output: `internal/store/sqlc`
+- schema and query SQL sources are repository-managed
+- generated output is repository-managed typed store access code
 
 Regenerate code:
 - `sqlc generate`
 
 ## Change Workflow
-1. Update `sql/schema/000001_initial.sql`.
-2. Update affected `sql/query/*.sql` files.
+1. Update the initial schema definition.
+2. Update affected SQL query definitions.
 3. Run `sqlc generate`.
-4. Run `go test ./internal/store` and `go test ./...`.
+4. Run focused store tests, then run `go test ./...`.
 
 Notes:
 - Repository currently keeps schema in the initial migration file.
-- Shiva applies the embedded `sql/schema/000001_initial.sql` schema at startup and records version/checksum in `schema_migrations`.
+- Shiva applies the embedded initial schema at startup and records version/checksum in `schema_migrations`.
 - Startup schema bootstrap is idempotent for fresh databases and repeated restarts, but it is not a multi-step migration system for upgrading arbitrary existing schemas.
 
 ## References

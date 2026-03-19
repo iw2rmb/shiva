@@ -203,7 +203,7 @@ Success writes to stdout. Errors write to stderr.
 - Reload completion after install, for example:
   - `autoload -Uz compinit && compinit`
 - The generated script registers completion for the command name `shiva`.
-- Invoking the binary as `./shiva` does not use the generated `shiva` completion binding.
+- Invoking the binary with a path prefix bypasses the generated `shiva` completion binding.
 
 ## References
 - Endpoint transport contract: `docs/endpoints.md`

@@ -10,26 +10,15 @@ This document describes the current test layout and practical test commands.
 Current baseline should be validated by running `go test ./...`.
 
 ## Focused Commands
-- HTTP query/runtime endpoints and webhook handlers:
-  - `go test ./internal/http`
-- Runtime endpoint contract and stub-response tests only:
-  - `go test ./internal/http -run Runtime`
-- End-to-end CLI contract and entrypoint wiring:
-  - `go test ./cmd/shiva`
-- Shared CLI request-envelope, call-planning, and executor packages:
-  - `go test ./internal/cli/request ./internal/cli/executor`
-- CLI parser, request transport, and command entrypoint:
-  - `go test ./internal/cli/... ./cmd/shiva/...`
-- OpenAPI resolver/build/diff:
-  - `go test ./internal/openapi`
-- Store + selector behavior:
-  - `go test ./internal/store`
-- Worker behavior:
-  - `go test ./internal/worker`
-- End-to-end pipeline integration test package:
-  - `go test ./cmd/shivad`
-- Documentation cross-reference check:
-  - `~/@iw2rmb/auto/scripts/check_docs_links.sh`
+- Run focused subsets with package-level `go test` targets before the full suite.
+- Primary focused domains:
+  - HTTP query/runtime endpoints and webhook handlers.
+  - CLI parser, request transport, envelopes, and command wiring.
+  - OpenAPI resolver/build/diff and vacuum flows.
+  - Store snapshot resolution and selector behavior.
+  - Worker retry/orchestration behavior.
+  - End-to-end service pipeline integration.
+- Documentation cross-reference checks are part of the repository docs tooling.
 
 ## Coverage Areas
 - Config parsing and defaults.
@@ -67,25 +56,22 @@ Current baseline should be validated by running `go test ./...`.
   - `/v1/call` request-envelope validation, ambiguity reporting, and resolved planning payloads,
   - `/v1/apis`, `/v1/operations`, `/v1/repos`, and `/v1/catalog/status` response shapes,
   - removal of legacy `/v1/specs` and `/v1/routes` read surfaces.
-- Internal CI validation service tests in `internal/http/gitlab_ci_validator_service_test.go`:
-  no-spec compare responses, impacted-root validation, fallback discovery, and repository discovery without `parent_sha`.
-- Source-layout vacuum tests in `internal/openapi/lint/source_test.go`:
-  repo-relative file remapping from temp workspaces and input validation.
-- Canonical vacuum and processor vacuum-stage tests in `internal/openapi/lint/vacuum_test.go` and `cmd/shivad/revision_processor_vacuum_test.go`:
-  deterministic issue normalization, failure normalization, and final revision-state persistence.
+- Internal CI validation service tests cover no-spec compare responses, impacted-root validation, fallback discovery, and repository discovery without `parent_sha`.
+- Source-layout vacuum tests cover repo-relative file remapping from temp workspaces and input validation.
+- Canonical vacuum and processor vacuum-stage tests cover deterministic issue normalization, failure normalization, and final revision-state persistence.
 - Outbound notifier signing, retries, and terminal state behavior.
-- End-to-end ingest-to-notify flow in `cmd/shivad/webhook_to_notify_integration_test.go`.
-- Startup queue seeding in `cmd/shivad/startup_indexer_test.go`:
+- End-to-end ingest-to-notify flow coverage.
+- Startup queue seeding coverage:
   zero-checkpoint startup seeding, checkpoint resume via `id_after`, personal-project skip behavior, skip rules for missing default branch/head, checkpoint advancement, and failure behavior for checkpoint load / project discovery / enqueue.
-- Delete-only incremental integration path in `cmd/shivad/webhook_to_notify_integration_test.go`:
+- Delete-only incremental integration coverage:
   no artifact persisted, `openapi_changed=true`, `spec_changes` persisted, and outbound emits diff-only event.
-- Bootstrap ingest regression guard in `cmd/shivad/webhook_to_notify_integration_test.go`:
+- Bootstrap ingest regression coverage:
   compare has no OpenAPI paths, repository-tree bootstrap still persists artifact/index, and zero-root bootstrap emits no notifications.
-- Incremental impact orchestration in `cmd/shivad/revision_processor_incremental_impact_test.go`:
+- Incremental impact orchestration coverage:
   dependency-intersection impact-only rebuild, unrelated change no rebuild, deleted-root deactivation, fallback discovery for create/rename changes, and per-API permanent-failure isolation (failed API + successful API in one revision).
-- Resolver-level incremental behavior in `internal/openapi/resolver_test.go`:
+- Resolver-level incremental coverage:
   `ResolveRootOpenAPIAtSHA` strict root validation and fallback discovery (`ResolveDiscoveredRootsAtPaths`) candidate filtering/collapse on changed path inputs.
-- Notifier payload identity and dedupe in `internal/notify/notifier_test.go`:
+- Notifier payload identity and dedupe coverage:
   API-scoped payload contract fields (`api`, `api_revision_id`), per-API event-id identity, and mixed API deliveries in a single repo revision.
 
 ## Cross-Checks
@@ -98,7 +84,7 @@ Current baseline should be validated by running `go test ./...`.
 ## DB/Query Change Validation
 When SQL schema/query files change:
 1. Regenerate sqlc code (`sqlc generate`).
-2. Run focused store tests (`go test ./internal/store`).
+2. Run focused store tests.
 3. Run full suite (`go test ./...`).
 
 ## References
