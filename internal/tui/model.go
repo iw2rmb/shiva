@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -18,6 +19,7 @@ type rootModel struct {
 	help         help.Model
 	styles       tuiStyles
 	repos        []RepoEntry
+	home         HomeRouteState
 	namespaces   NamespaceRouteState
 	repoList     RepoRouteState
 	explorer     RepoExplorerRouteState
@@ -35,6 +37,11 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 		markdown:     newMarkdownRenderer(),
 		help:         newRouteHelpModel(),
 		styles:       newTUIStyles(),
+		home: HomeRouteState{
+			Entries:  defaultHomeEntries(),
+			Selected: -1,
+			List:     newShivaList(),
+		},
 		namespaces: NamespaceRouteState{
 			Selected: -1,
 			List:     newNamespaceList(),
@@ -57,6 +64,7 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 			SpecCache:      make(map[SpecIdentity]SpecDetail),
 		},
 	}
+	model.refreshHomeList()
 	model.resizeLists()
 	model.refreshExplorerDetailViewport()
 	return model
@@ -74,6 +82,8 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, tea.Quit
 		}
 		return model.updateKey(typed)
+	case list.FilterMatchesMsg:
+		return model.updateActiveRouteList(typed)
 	case tea.WindowSizeMsg:
 		return model, func() tea.Msg {
 			return resizeMsg{Width: typed.Width, Height: typed.Height}
@@ -154,15 +164,60 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model *rootModel) shouldQuit(key string) bool {
 	switch key {
-	case "ctrl+c", "q":
+	case "ctrl+c":
 		return true
+	case "q":
+		return !model.activeListSettingFilter()
 	default:
 		return false
 	}
 }
 
+func (model *rootModel) activeListSettingFilter() bool {
+	switch model.activeRoute {
+	case RouteHome:
+		return model.home.List.SettingFilter()
+	case RouteNamespaces:
+		return model.namespaces.List.SettingFilter()
+	case RouteRepos:
+		return model.repoList.List.SettingFilter()
+	case RouteRepoExplorer:
+		return model.explorer.List.SettingFilter()
+	default:
+		return false
+	}
+}
+
+func (model *rootModel) updateActiveRouteList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch model.activeRoute {
+	case RouteHome:
+		var cmd tea.Cmd
+		model.home.List, cmd = model.home.List.Update(msg)
+		model.syncHomeSelection()
+		return model, cmd
+	case RouteNamespaces:
+		var cmd tea.Cmd
+		model.namespaces.List, cmd = model.namespaces.List.Update(msg)
+		model.syncNamespaceSelection()
+		return model, cmd
+	case RouteRepos:
+		var cmd tea.Cmd
+		model.repoList.List, cmd = model.repoList.List.Update(msg)
+		model.syncRepoSelection()
+		return model, cmd
+	case RouteRepoExplorer:
+		var cmd tea.Cmd
+		model.explorer.List, cmd = model.explorer.List.Update(msg)
+		return model, cmd
+	default:
+		return model, nil
+	}
+}
+
 func (model *rootModel) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch model.activeRoute {
+	case RouteHome:
+		return model.updateHomeKey(msg)
 	case RouteNamespaces:
 		return model.updateNamespacesKey(msg)
 	case RouteRepos:
@@ -174,9 +229,45 @@ func (model *rootModel) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (model *rootModel) updateNamespacesKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (model *rootModel) updateHomeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
+		if model.home.Selected < 0 || model.home.Selected >= len(model.home.Entries) {
+			return model, nil
+		}
+		target := model.home.Entries[model.home.Selected].Route
+		if target == RouteNamespaces {
+			model.activeRoute = RouteNamespaces
+			model.syncNamespaceSelection()
+		}
+		return model, nil
+	default:
+		var cmd tea.Cmd
+		model.home.List, cmd = model.home.List.Update(msg)
+		model.syncHomeSelection()
+		return model, cmd
+	}
+}
+
+func (model *rootModel) updateNamespacesKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		if model.namespaces.List.SettingFilter() || model.namespaces.List.IsFiltered() {
+			var cmd tea.Cmd
+			model.namespaces.List, cmd = model.namespaces.List.Update(msg)
+			model.syncNamespaceSelection()
+			return model, cmd
+		}
+		model.activeRoute = RouteHome
+		model.syncHomeSelection()
+		return model, nil
+	case "enter":
+		if model.namespaces.List.SettingFilter() {
+			var cmd tea.Cmd
+			model.namespaces.List, cmd = model.namespaces.List.Update(msg)
+			model.syncNamespaceSelection()
+			return model, cmd
+		}
 		if !model.canEnterRepoList() {
 			return model, nil
 		}
@@ -217,6 +308,19 @@ func (model *rootModel) canEnterRepoList() bool {
 	return model.namespaces.Selected >= 0 && model.namespaces.Selected < len(model.namespaces.Entries)
 }
 
+func (model *rootModel) refreshHomeList() {
+	model.home.List.SetItems(homeItems(model.home.Entries))
+	if len(model.home.Entries) == 0 {
+		model.home.Selected = -1
+		model.home.List.ResetSelected()
+		return
+	}
+	if model.home.Selected < 0 || model.home.Selected >= len(model.home.Entries) {
+		model.home.Selected = 0
+	}
+	model.home.List.Select(model.home.Selected)
+}
+
 func (model *rootModel) refreshCatalogViews() {
 	model.refreshNamespaceList()
 	model.refreshRepoList()
@@ -255,12 +359,21 @@ func (model *rootModel) refreshRepoList() {
 }
 
 func (model *rootModel) syncNamespaceSelection() {
-	index := model.namespaces.List.Index()
+	index := model.namespaces.List.GlobalIndex()
 	if len(model.namespaces.Entries) == 0 || index < 0 || index >= len(model.namespaces.Entries) {
 		model.namespaces.Selected = -1
 		return
 	}
 	model.namespaces.Selected = index
+}
+
+func (model *rootModel) syncHomeSelection() {
+	index := model.home.List.Index()
+	if len(model.home.Entries) == 0 || index < 0 || index >= len(model.home.Entries) {
+		model.home.Selected = -1
+		return
+	}
+	model.home.Selected = index
 }
 
 func (model *rootModel) syncRepoSelection() {
@@ -274,6 +387,7 @@ func (model *rootModel) syncRepoSelection() {
 
 func (model *rootModel) resizeLists() {
 	width, height := listSize(model.width, model.height)
+	model.home.List.SetSize(width, height)
 	model.namespaces.List.SetSize(width, height)
 	model.repoList.List.SetSize(width, height)
 	model.help.SetWidth(width)
@@ -286,6 +400,8 @@ func (model *rootModel) resizeLists() {
 
 func (model *rootModel) initialRouteCmd() tea.Cmd {
 	switch model.initialRoute.Kind {
+	case RouteHome:
+		model.activeRoute = RouteHome
 	case RouteRepos:
 		model.activeRoute = RouteRepos
 		model.repoList.Namespace = model.initialRoute.Namespace
@@ -301,6 +417,8 @@ func (model *rootModel) initialRouteCmd() tea.Cmd {
 func (model *rootModel) View() tea.View {
 	var s string
 	switch model.activeRoute {
+	case RouteHome:
+		s = model.viewHome()
 	case RouteNamespaces:
 		s = model.viewNamespaces()
 	case RouteRepos:
@@ -315,11 +433,24 @@ func (model *rootModel) View() tea.View {
 	return v
 }
 
+func (model *rootModel) viewHome() string {
+	if len(model.home.Entries) == 0 {
+		return strings.Join([]string{
+			model.styles.EmptyBlock("No sections found."),
+			"",
+			model.routeHelpView(),
+		}, "\n")
+	}
+	return strings.Join([]string{
+		model.home.List.View(),
+		"",
+		model.routeHelpView(),
+	}, "\n")
+}
+
 func (model *rootModel) viewNamespaces() string {
 	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
 		return strings.Join([]string{
-			model.styles.Header("Shiva TUI"),
-			"",
 			model.styles.EmptyBlock("Loading repositories..."),
 			"",
 			model.routeHelpView(),
@@ -327,8 +458,6 @@ func (model *rootModel) viewNamespaces() string {
 	}
 	if model.async.RepoCatalog.LastError != nil {
 		return strings.Join([]string{
-			model.styles.Header("Shiva TUI"),
-			"",
 			model.styles.Subtle("Namespaces"),
 			"",
 			model.styles.ErrorBlock(
@@ -341,8 +470,6 @@ func (model *rootModel) viewNamespaces() string {
 	}
 	if len(model.namespaces.Entries) == 0 {
 		return strings.Join([]string{
-			model.styles.Header("Shiva TUI"),
-			"",
 			model.styles.Subtle("Namespaces"),
 			"",
 			model.styles.EmptyBlock("No namespaces found."),
@@ -351,8 +478,6 @@ func (model *rootModel) viewNamespaces() string {
 		}, "\n")
 	}
 	return strings.Join([]string{
-		model.styles.Header("Shiva TUI"),
-		"",
 		model.namespaces.List.View(),
 		"",
 		model.routeHelpView(),
@@ -362,8 +487,6 @@ func (model *rootModel) viewNamespaces() string {
 func (model *rootModel) viewRepos() string {
 	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
 		return strings.Join([]string{
-			model.styles.Header("Shiva TUI"),
-			"",
 			model.styles.EmptyBlock("Loading repositories..."),
 			"",
 			model.routeHelpView(),
@@ -371,8 +494,6 @@ func (model *rootModel) viewRepos() string {
 	}
 	if model.async.RepoCatalog.LastError != nil {
 		return strings.Join([]string{
-			model.styles.Header("Shiva TUI"),
-			"",
 			model.styles.Subtle("Repositories"),
 			"",
 			model.styles.ErrorBlock(
@@ -385,8 +506,6 @@ func (model *rootModel) viewRepos() string {
 	}
 	if len(model.repoList.Entries) == 0 {
 		return strings.Join([]string{
-			model.styles.Header("Shiva TUI"),
-			"",
 			model.styles.Subtle("Repositories: " + model.repoList.Namespace),
 			"",
 			model.styles.EmptyBlock("No repositories found in namespace."),
@@ -395,8 +514,6 @@ func (model *rootModel) viewRepos() string {
 		}, "\n")
 	}
 	return strings.Join([]string{
-		model.styles.Header("Shiva TUI"),
-		"",
 		model.repoList.List.View(),
 		"",
 		model.routeHelpView(),
@@ -405,8 +522,6 @@ func (model *rootModel) viewRepos() string {
 
 func (model *rootModel) viewPlaceholder() string {
 	lines := []string{
-		"Shiva TUI",
-		"",
 		routeLabel(model.activeRoute, model.repoList.Namespace, model.explorer.Namespace, model.explorer.Repo),
 	}
 	if model.options.Profile != "" {
@@ -424,6 +539,8 @@ func (model *rootModel) viewPlaceholder() string {
 
 func routeLabel(route RouteKind, repoNamespace string, explorerNamespace string, repo string) string {
 	switch route {
+	case RouteHome:
+		return "start: home"
 	case RouteNamespaces:
 		return "start: namespaces"
 	case RouteRepos:

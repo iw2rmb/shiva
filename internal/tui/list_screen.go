@@ -15,15 +15,22 @@ const (
 
 func newNamespaceList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	delegate.SetSpacing(0)
 	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
 	configureList(&model, "Namespaces", "namespace", "namespaces")
+	model.SetFilteringEnabled(true)
+	model.SetShowFilter(true)
+	return model
+}
+
+func newShivaList() list.Model {
+	delegate := list.NewDefaultDelegate()
+	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
+	configureList(&model, "SHIVA", "entry", "entries")
 	return model
 }
 
 func newRepoList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	delegate.SetSpacing(0)
 	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
 	configureList(&model, "Repositories", "repo", "repos")
 	return model
@@ -31,7 +38,6 @@ func newRepoList() list.Model {
 
 func newEndpointList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	delegate.SetSpacing(0)
 	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
 	configureList(&model, "Endpoints", "endpoint", "endpoints")
 	return model
@@ -77,6 +83,30 @@ type endpointListItem struct {
 func (item endpointListItem) FilterValue() string { return item.filter }
 func (item endpointListItem) Title() string       { return item.title }
 func (item endpointListItem) Description() string { return item.description }
+
+type homeListItem struct {
+	title       string
+	description string
+	filter      string
+}
+
+func (item homeListItem) FilterValue() string { return item.filter }
+func (item homeListItem) Title() string       { return item.title }
+func (item homeListItem) Description() string { return item.description }
+
+func defaultHomeEntries() []HomeEntry {
+	return []HomeEntry{
+		{
+			Title:       "Repos",
+			Description: "Browse namespaces and repositories",
+			Route:       RouteNamespaces,
+		},
+		{
+			Title:       "Endpoints",
+			Description: "Coming soon",
+		},
+	}
+}
 
 func namespaceEntriesFromRepos(rows []RepoEntry) []NamespaceEntry {
 	if len(rows) == 0 {
@@ -146,6 +176,18 @@ func namespaceItems(entries []NamespaceEntry) []list.Item {
 			title:       entry.Namespace,
 			description: description,
 			filter:      entry.Namespace,
+		})
+	}
+	return items
+}
+
+func homeItems(entries []HomeEntry) []list.Item {
+	items := make([]list.Item, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, homeListItem{
+			title:       entry.Title,
+			description: entry.Description,
+			filter:      entry.Title,
 		})
 	}
 	return items

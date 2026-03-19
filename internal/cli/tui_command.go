@@ -53,7 +53,7 @@ func newTUICommand(serviceFactory func() (Service, error), flags *RootFlags) *co
 
 func parseTUIInitialRoute(args []string) (tui.InitialRoute, error) {
 	if len(args) == 0 {
-		return tui.InitialRoute{Kind: tui.RouteNamespaces}, nil
+		return tui.InitialRoute{Kind: tui.RouteHome}, nil
 	}
 
 	selector := strings.TrimSpace(args[0])

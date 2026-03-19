@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 )
 
 func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
@@ -30,7 +31,16 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	repoToken := model.beginRepoCatalogLoad()
 	updated, _ := model.Update(repoCatalogLoadedMsg{
 		Token: repoToken,
-		Rows:  []RepoEntry{{Namespace: "acme", Repo: "platform"}},
+		Rows: []RepoEntry{{
+			Namespace: "acme",
+			Repo:      "platform",
+			Row: clioutput.RepoRow{
+				Namespace:        "acme",
+				Repo:             "platform",
+				ActiveAPICount:   1,
+				SnapshotRevision: &clioutput.RevisionState{ID: 42, SHA: "deadbeef"},
+			},
+		}},
 	})
 	model = updated.(*rootModel)
 
@@ -88,6 +98,50 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	}
 }
 
+func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{}
+	model := newRootModel(service, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
+
+	repoToken := model.beginRepoCatalogLoad()
+	updated, _ := model.Update(repoCatalogLoadedMsg{
+		Token: repoToken,
+		Rows: []RepoEntry{{
+			Namespace: "acme",
+			Repo:      "platform",
+			Row: clioutput.RepoRow{
+				Namespace:        "acme",
+				Repo:             "platform",
+				ActiveAPICount:   0,
+				SnapshotRevision: nil,
+			},
+		}},
+	})
+	model = updated.(*rootModel)
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = next.(*rootModel)
+
+	if model.activeRoute != RouteRepoExplorer {
+		t.Fatalf("expected active route %q, got %q", RouteRepoExplorer, model.activeRoute)
+	}
+	if cmd != nil {
+		t.Fatalf("expected operation list load command to be skipped")
+	}
+	if service.listOperationsCall != 0 {
+		t.Fatalf("expected no operation list calls, got %d", service.listOperationsCall)
+	}
+	if model.async.OperationList.Loading {
+		t.Fatalf("expected operation list loading to remain false")
+	}
+
+	got := stripANSI(model.View().Content)
+	if !strings.Contains(got, "No endpoints found in") || !strings.Contains(got, "repository.") {
+		t.Fatalf("expected empty operation catalog message, got %q", got)
+	}
+}
+
 func TestRootModelExplorerArrowKeysUpdateSelection(t *testing.T) {
 	t.Parallel()
 
@@ -131,7 +185,16 @@ func TestRootModelExplorerEscReturnsToRepoList(t *testing.T) {
 	repoToken := model.beginRepoCatalogLoad()
 	updated, _ := model.Update(repoCatalogLoadedMsg{
 		Token: repoToken,
-		Rows:  []RepoEntry{{Namespace: "acme", Repo: "platform"}},
+		Rows: []RepoEntry{{
+			Namespace: "acme",
+			Repo:      "platform",
+			Row: clioutput.RepoRow{
+				Namespace:        "acme",
+				Repo:             "platform",
+				ActiveAPICount:   1,
+				SnapshotRevision: &clioutput.RevisionState{ID: 42, SHA: "deadbeef"},
+			},
+		}},
 	})
 	model = updated.(*rootModel)
 

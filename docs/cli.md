@@ -116,13 +116,19 @@ Rules:
 - `shiva tui`
   - starts a read-only terminal UI shell
   - initial route is selected by the optional argument:
-    - no selector starts in namespace mode
+    - no selector starts in the `SHIVA` home list
     - `<namespace>/` starts in that namespace's repo view
     - `<namespace>/<repo>` starts in that repo's explorer view
   - startup loads the repo catalog once and derives namespace/repo lists in memory
+  - home mode:
+    - list title: `SHIVA`
+    - entries: `Repos`, `Endpoints`
+    - `enter` on `Repos` opens namespace mode
   - namespace mode:
+    - built-in list filtering is enabled
     - `up` and `down` move the selection
     - `enter` opens the selected namespace's repo view
+    - `esc` returns to home mode
   - repo mode:
     - `up` and `down` move the selection
     - `enter` opens the selected repo explorer

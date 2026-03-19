@@ -37,6 +37,15 @@ func keyHelp(keys string, description string) key.Binding {
 func namespaceRouteHelp() routeHelpKeyMap {
 	short := []key.Binding{
 		keyHelp("enter", "open namespace"),
+		keyHelp("esc", "back"),
+		keyHelp("q", "quit"),
+	}
+	return routeHelpKeyMap{short: short}
+}
+
+func homeRouteHelp() routeHelpKeyMap {
+	short := []key.Binding{
+		keyHelp("enter", "open section"),
 		keyHelp("q", "quit"),
 	}
 	return routeHelpKeyMap{short: short}
@@ -64,6 +73,8 @@ func explorerRouteHelp() routeHelpKeyMap {
 
 func (model *rootModel) routeHelp() routeHelpKeyMap {
 	switch model.activeRoute {
+	case RouteHome:
+		return homeRouteHelp()
 	case RouteNamespaces:
 		return namespaceRouteHelp()
 	case RouteRepos:

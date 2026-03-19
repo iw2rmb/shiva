@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/request"
@@ -43,6 +44,163 @@ func TestNewRootModelSeedsRouteSpecificState(t *testing.T) {
 	if model.repoList.List.Title != "Repositories" {
 		t.Fatalf("expected repo list to initialize, got %q", model.repoList.List.Title)
 	}
+}
+
+func TestNewRootModelHomeRouteShowsShivaSections(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected active route %q, got %q", RouteHome, model.activeRoute)
+	}
+	if model.home.List.Title != "SHIVA" {
+		t.Fatalf("expected home list title SHIVA, got %q", model.home.List.Title)
+	}
+	if len(model.home.Entries) != 2 {
+		t.Fatalf("expected two home entries, got %d", len(model.home.Entries))
+	}
+	if model.home.Entries[0].Title != "Repos" || model.home.Entries[1].Title != "Endpoints" {
+		t.Fatalf("unexpected home entries %+v", model.home.Entries)
+	}
+}
+
+func TestRootModelEnterReposFromHomeOpensNamespaces(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+
+	updated, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = updated.(*rootModel)
+
+	if model.activeRoute != RouteNamespaces {
+		t.Fatalf("expected route %q after selecting Repos, got %q", RouteNamespaces, model.activeRoute)
+	}
+}
+
+func TestRootModelNamespacesListUsesDefaultFiltering(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+
+	if !model.namespaces.List.FilteringEnabled() {
+		t.Fatalf("expected namespace list filtering to be enabled")
+	}
+	if !model.namespaces.List.ShowFilter() {
+		t.Fatalf("expected namespace list filter input to be visible")
+	}
+}
+
+func TestRootModelNamespacesFilterInputReducesVisibleItems(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(repoCatalogLoadedMsg{
+		Token: token,
+		Rows: []RepoEntry{
+			{Namespace: "acme", Repo: "gateway"},
+			{Namespace: "beta", Repo: "platform"},
+		},
+	})
+	model = updated.(*rootModel)
+	model.namespaces.List.SetFilterState(list.Filtering)
+
+	updated, cmd := model.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	model = updated.(*rootModel)
+	if cmd == nil {
+		t.Fatalf("expected filter update command")
+	}
+	model = applyListCmd(model, cmd)
+
+	visible := model.namespaces.List.VisibleItems()
+	if len(visible) != 1 {
+		t.Fatalf("expected one visible namespace after filter, got %d", len(visible))
+	}
+	item, ok := visible[0].(namespaceListItem)
+	if !ok {
+		t.Fatalf("expected namespace list item, got %T", visible[0])
+	}
+	if item.title != "beta" {
+		t.Fatalf("expected filtered namespace beta, got %q", item.title)
+	}
+}
+
+func TestRootModelTypingQInNamespaceFilterDoesNotQuit(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	model.namespaces.List.SetFilterState(list.Filtering)
+
+	updated, cmd := model.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	model = updated.(*rootModel)
+
+	if model.activeRoute != RouteNamespaces {
+		t.Fatalf("expected to stay on namespaces route, got %q", model.activeRoute)
+	}
+	if model.namespaces.List.FilterValue() != "q" {
+		t.Fatalf("expected filter input to contain q, got %q", model.namespaces.List.FilterValue())
+	}
+	if cmd != nil {
+		if _, ok := cmd().(tea.QuitMsg); ok {
+			t.Fatalf("expected q in filter input to not quit the app")
+		}
+	}
+}
+
+func TestRootModelEnterFilteredNamespaceOpensSelectedNamespaceRepos(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(repoCatalogLoadedMsg{
+		Token: token,
+		Rows: []RepoEntry{
+			{Namespace: "acme", Repo: "gateway"},
+			{Namespace: "beta", Repo: "payments"},
+		},
+	})
+	model = updated.(*rootModel)
+
+	model.namespaces.List.SetFilterText("be")
+	model.syncNamespaceSelection()
+
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = updated.(*rootModel)
+
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected route %q, got %q", RouteRepos, model.activeRoute)
+	}
+	if model.repoList.Namespace != "beta" {
+		t.Fatalf("expected filtered namespace beta, got %q", model.repoList.Namespace)
+	}
+	if len(model.repoList.Entries) != 1 || model.repoList.Entries[0].Repo != "payments" {
+		t.Fatalf("expected beta/payments repo entries, got %+v", model.repoList.Entries)
+	}
+}
+
+func applyListCmd(model *rootModel, cmd tea.Cmd) *rootModel {
+	if cmd == nil {
+		return model
+	}
+
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		updated, _ := model.Update(msg)
+		return updated.(*rootModel)
+	}
+
+	for _, command := range batch {
+		if command == nil {
+			continue
+		}
+		updated, _ := model.Update(command())
+		model = updated.(*rootModel)
+	}
+	return model
 }
 
 func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {

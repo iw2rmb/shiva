@@ -8,6 +8,7 @@ import (
 type RouteKind string
 
 const (
+	RouteHome         RouteKind = "home"
 	RouteNamespaces   RouteKind = "namespaces"
 	RouteRepos        RouteKind = "repos"
 	RouteRepoExplorer RouteKind = "repo_explorer"
@@ -21,6 +22,10 @@ type InitialRoute struct {
 
 func (route InitialRoute) Validate() error {
 	switch route.Kind {
+	case RouteHome:
+		if route.Namespace != "" || route.Repo != "" {
+			return fmt.Errorf("namespace and repo must be empty for %q route", route.Kind)
+		}
 	case RouteNamespaces:
 		if route.Namespace != "" || route.Repo != "" {
 			return fmt.Errorf("namespace and repo must be empty for %q route", route.Kind)

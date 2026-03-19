@@ -19,9 +19,9 @@ func TestTUICommandParsesValidEntryRoutes(t *testing.T) {
 		expectedOption tui.RequestOptions
 	}{
 		{
-			name:          "root tui starts in namespaces",
+			name:          "root tui starts in home",
 			args:          []string{"tui"},
-			expectedRoute: tui.InitialRoute{Kind: tui.RouteNamespaces},
+			expectedRoute: tui.InitialRoute{Kind: tui.RouteHome},
 		},
 		{
 			name:          "namespace selector starts in repo list",

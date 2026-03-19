@@ -46,11 +46,25 @@ func (model *rootModel) openRepoExplorer(namespace string, repo string) tea.Cmd 
 	model.explorer.List.SetItems(nil)
 	model.explorer.List.ResetSelected()
 
+	if model.repoLacksSnapshotCatalog(namespace, repo) {
+		return nil
+	}
+
 	token := model.beginOperationListLoad()
 	return loadOperationListCmd(context.Background(), model.service, request.Envelope{
 		Namespace: namespace,
 		Repo:      repo,
 	}, model.options, token)
+}
+
+func (model *rootModel) repoLacksSnapshotCatalog(namespace string, repo string) bool {
+	for _, entry := range model.repos {
+		if entry.Namespace != namespace || entry.Repo != repo {
+			continue
+		}
+		return entry.Row.SnapshotRevision == nil && entry.Row.ActiveAPICount == 0
+	}
+	return false
 }
 
 func (model *rootModel) refreshExplorerList() {
@@ -97,8 +111,6 @@ func (model *rootModel) viewRepoExplorer() string {
 	leftPane := model.explorerListPane()
 	rightPane := model.explorerDetailPane()
 	return strings.Join([]string{
-		model.styles.Header("Shiva TUI"),
-		"",
 		model.styles.Subtle("Repository: " + repoLabel),
 		model.explorerTabRow(),
 		"",

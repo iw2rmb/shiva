@@ -22,6 +22,12 @@ type NamespaceEntry struct {
 	AllPending bool
 }
 
+type HomeEntry struct {
+	Title       string
+	Description string
+	Route       RouteKind
+}
+
 type RepoEntry struct {
 	Namespace string
 	Repo      string
@@ -71,6 +77,12 @@ type SpecIdentity struct {
 
 type NamespaceRouteState struct {
 	Entries  []NamespaceEntry
+	Selected int
+	List     list.Model
+}
+
+type HomeRouteState struct {
+	Entries  []HomeEntry
 	Selected int
 	List     list.Model
 }
