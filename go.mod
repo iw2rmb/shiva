@@ -1,12 +1,13 @@
 module github.com/iw2rmb/shiva
 
-go 1.25.0
+go 1.25.8
 
 require (
 	charm.land/bubbles/v2 v2.0.0
 	charm.land/bubbletea/v2 v2.0.0
 	charm.land/lipgloss/v2 v2.0.0
 	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/charmbracelet/glamour v0.10.0
 	github.com/daveshanley/vacuum v0.25.0
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/gofiber/fiber/v2 v2.52.5
@@ -30,7 +31,6 @@ require (
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
-	github.com/charmbracelet/glamour v0.10.0 // indirect
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260205113103-524a6607adb8 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
