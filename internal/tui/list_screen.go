@@ -255,15 +255,33 @@ func listSize(width int, height int) (int, int) {
 }
 
 func endpointListSize(width int, height int) (int, int) {
+	leftWidth, _, paneHeight, _ := explorerPaneLayout(width, height)
+	return leftWidth, paneHeight
+}
+
+func detailPaneSize(width int, height int) (int, int) {
+	_, rightWidth, paneHeight, _ := explorerPaneLayout(width, height)
+	return rightWidth, paneHeight
+}
+
+func explorerPaneLayout(width int, height int) (int, int, int, bool) {
 	width, height = listSize(width, height)
-	if width >= 72 {
-		width = (width - 5) / 2
+	paneHeight := height
+	if paneHeight > 10 {
+		paneHeight -= 8
 	}
-	if height > 10 {
-		height -= 8
+	if paneHeight < 8 {
+		paneHeight = 8
 	}
-	if height < 8 {
-		height = 8
+	if width < 72 {
+		return width, width, paneHeight, true
 	}
-	return width, height
+
+	const gapWidth = 5
+	leftWidth := (width - gapWidth) / 2
+	rightWidth := width - gapWidth - leftWidth
+	if leftWidth < 24 || rightWidth < 24 {
+		return width, width, paneHeight, true
+	}
+	return leftWidth, rightWidth, paneHeight, false
 }

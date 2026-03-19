@@ -54,6 +54,7 @@ func (model *rootModel) loadSelectedOperationDetail() tea.Cmd {
 		detail := cached
 		model.explorer.Detail.Operation = &detail
 		model.finishLoad(loadDomainOperationDetail, token, nil)
+		model.refreshExplorerDetailViewport()
 		return nil
 	}
 
@@ -85,6 +86,7 @@ func (model *rootModel) loadSelectedSpecDetailIfNeeded() tea.Cmd {
 		detail := cached
 		model.explorer.Detail.Spec = &detail
 		model.finishLoad(loadDomainSpecDetail, token, nil)
+		model.refreshExplorerDetailViewport()
 		return nil
 	}
 

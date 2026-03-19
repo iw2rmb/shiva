@@ -13,6 +13,7 @@ type rootModel struct {
 	initialRoute InitialRoute
 	activeRoute  RouteKind
 	options      RequestOptions
+	markdown     markdownRenderer
 	repos        []RepoEntry
 	namespaces   NamespaceRouteState
 	repoList     RepoRouteState
@@ -28,6 +29,7 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 		initialRoute: route,
 		activeRoute:  route.Kind,
 		options:      options,
+		markdown:     newMarkdownRenderer(),
 		namespaces: NamespaceRouteState{
 			Selected: -1,
 			List:     newNamespaceList(),
@@ -44,12 +46,14 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 			List:      newEndpointList(),
 			Detail: DetailState{
 				ActiveTab: DetailTabEndpoints,
+				Viewport:  newDetailViewport(defaultListWidth, defaultListHeight),
 			},
 			OperationCache: make(map[EndpointIdentity]OperationDetail),
 			SpecCache:      make(map[SpecIdentity]SpecDetail),
 		},
 	}
 	model.resizeLists()
+	model.refreshExplorerDetailViewport()
 	return model
 }
 
@@ -73,6 +77,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.width = typed.Width
 		model.height = typed.Height
 		model.resizeLists()
+		model.refreshExplorerDetailViewport()
 	case repoCatalogLoadedMsg:
 		if !model.accepts(loadDomainRepoCatalog, typed.Token) {
 			return model, nil
@@ -89,6 +94,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.clearExplorerDetailState()
 		model.explorer.Endpoints = sortedEndpointEntries(typed.Entries)
 		model.refreshExplorerList()
+		model.refreshExplorerDetailViewport()
 		return model, model.loadExplorerDetailForSelection()
 	case operationDetailLoadedMsg:
 		if !model.accepts(loadDomainOperationDetail, typed.Token) {
@@ -102,6 +108,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		detail := typed.Detail
 		model.explorer.OperationCache[detail.Endpoint] = detail
 		model.explorer.Detail.Operation = &detail
+		model.refreshExplorerDetailViewport()
 		return model, model.loadSelectedSpecDetailIfNeeded()
 	case specDetailLoadedMsg:
 		if !model.accepts(loadDomainSpecDetail, typed.Token) {
@@ -124,6 +131,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		detail := typed.Detail
 		model.explorer.SpecCache[received] = detail
 		model.explorer.Detail.Spec = &detail
+		model.refreshExplorerDetailViewport()
 	case loadFailedMsg:
 		if !model.accepts(typed.Domain, typed.Token) {
 			return model, nil
@@ -131,6 +139,8 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.finishLoad(typed.Domain, typed.Token, typed.Err)
 		if typed.Domain == loadDomainRepoCatalog {
 			model.refreshCatalogViews()
+		} else if typed.Domain == loadDomainOperationDetail || typed.Domain == loadDomainSpecDetail {
+			model.refreshExplorerDetailViewport()
 		}
 	}
 
@@ -263,6 +273,9 @@ func (model *rootModel) resizeLists() {
 	model.repoList.List.SetSize(width, height)
 	explorerWidth, explorerHeight := endpointListSize(model.width, model.height)
 	model.explorer.List.SetSize(explorerWidth, explorerHeight)
+	detailWidth, detailHeight := detailPaneSize(model.width, model.height)
+	model.explorer.Detail.Viewport.SetWidth(detailWidth)
+	model.explorer.Detail.Viewport.SetHeight(detailHeight)
 }
 
 func (model *rootModel) initialRouteCmd() tea.Cmd {

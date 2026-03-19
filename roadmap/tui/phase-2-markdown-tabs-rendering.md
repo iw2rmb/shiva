@@ -28,7 +28,7 @@ Legend: [ ] todo, [x] done.
 4. Add empty-state markdown builders for missing servers and missing documented errors.
 5. Add table-driven tests for markdown builders using representative operation and spec payloads.
 
-- [ ] 2.3 Integrate `glamour`, `viewport`, and tab-specific rendering
+- [x] 2.3 Integrate `glamour`, `viewport`, and tab-specific rendering
   - Repository: `shiva`
   - Component: `internal/tui`
   - Verification: `tab` and `shift+tab` switch rendered content, markdown is scrollable, rerender uses viewport width and updates on resize

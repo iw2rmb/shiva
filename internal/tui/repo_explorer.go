@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
@@ -14,11 +15,19 @@ func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.C
 		model.activeRoute = RouteRepos
 		model.syncRepoSelection()
 		return model, nil
+	case "tab":
+		return model, model.switchExplorerTab(1)
+	case "shift+tab":
+		return model, model.switchExplorerTab(-1)
 	default:
 		var listCmd tea.Cmd
 		model.explorer.List, listCmd = model.explorer.List.Update(msg)
+		var viewportCmd tea.Cmd
+		if shouldRouteKeyToDetailViewport(msg) {
+			model.explorer.Detail.Viewport, viewportCmd = model.explorer.Detail.Viewport.Update(msg)
+		}
 		detailCmd := model.syncExplorerSelection()
-		return model, batchCmds(listCmd, detailCmd)
+		return model, batchCmds(listCmd, viewportCmd, detailCmd)
 	}
 }
 
@@ -32,6 +41,7 @@ func (model *rootModel) openRepoExplorer(namespace string, repo string) tea.Cmd 
 	model.explorer.OperationCache = make(map[EndpointIdentity]OperationDetail)
 	model.explorer.SpecCache = make(map[SpecIdentity]SpecDetail)
 	model.clearExplorerDetailState()
+	model.refreshExplorerDetailViewport()
 	model.explorer.List.Title = "Endpoints"
 	model.explorer.List.SetItems(nil)
 	model.explorer.List.ResetSelected()
@@ -68,6 +78,7 @@ func (model *rootModel) syncExplorerSelection() tea.Cmd {
 		model.explorer.Selected = -1
 		if previous >= 0 {
 			model.clearExplorerDetailState()
+			model.refreshExplorerDetailViewport()
 		}
 		return nil
 	}
@@ -75,6 +86,7 @@ func (model *rootModel) syncExplorerSelection() tea.Cmd {
 	model.explorer.Selected = index
 	if previous != index {
 		model.clearExplorerDetailState()
+		model.refreshExplorerDetailViewport()
 		return model.loadExplorerDetailForSelection()
 	}
 	return nil
@@ -92,7 +104,7 @@ func (model *rootModel) viewRepoExplorer() string {
 		"",
 		renderExplorerPanes(leftPane, rightPane, model.width),
 		"",
-		"up/down: select endpoint  esc: back  q: quit",
+		"up/down: select endpoint  tab/shift+tab: switch tab  pgup/pgdown: scroll details  esc: back  q: quit",
 	}, "\n")
 }
 
@@ -113,29 +125,7 @@ func (model *rootModel) explorerListPane() string {
 }
 
 func (model *rootModel) explorerPlaceholderPane() string {
-	selected, ok := model.explorer.SelectedEndpoint()
-	if !ok {
-		return strings.Join([]string{
-			"Detail Placeholder",
-			"",
-			"Select an endpoint to show identity details.",
-		}, "\n")
-	}
-
-	lines := []string{
-		"Detail Placeholder",
-		"",
-		"tab: " + detailTabLabel(model.explorer.Detail.ActiveTab),
-		"namespace: " + selected.Identity.Namespace,
-		"repo: " + selected.Identity.Repo,
-		"api: " + selected.Identity.API,
-		"method: " + strings.ToUpper(selected.Identity.Method),
-		"path: " + selected.Identity.Path,
-	}
-	if selected.Identity.OperationID != "" {
-		lines = append(lines, "operation_id: "+selected.Identity.OperationID)
-	}
-	return strings.Join(lines, "\n")
+	return model.explorer.Detail.Viewport.View()
 }
 
 func (model *rootModel) explorerTabRow() string {
@@ -163,11 +153,38 @@ func detailTabLabel(tab DetailTab) string {
 	}
 }
 
+func (model *rootModel) switchExplorerTab(delta int) tea.Cmd {
+	tabs := []DetailTab{DetailTabEndpoints, DetailTabServers, DetailTabErrors}
+	index := 0
+	for i, tab := range tabs {
+		if tab == model.explorer.Detail.ActiveTab {
+			index = i
+			break
+		}
+	}
+
+	index = (index + delta + len(tabs)) % len(tabs)
+	model.explorer.Detail.ActiveTab = tabs[index]
+	model.refreshExplorerDetailViewport()
+	return model.loadSelectedSpecDetailIfNeeded()
+}
+
+func shouldRouteKeyToDetailViewport(msg tea.KeyPressMsg) bool {
+	switch msg.Code {
+	case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+		return true
+	}
+	switch msg.String() {
+	case "ctrl+u", "ctrl+d":
+		return true
+	default:
+		return false
+	}
+}
+
 func renderExplorerPanes(left string, right string, width int) string {
-	if width <= 0 {
-		width = defaultListWidth
-	}
-	if width < 72 {
+	leftWidth, rightWidth, _, stacked := explorerPaneLayout(width, defaultListHeight)
+	if stacked {
 		return strings.Join([]string{
 			"Endpoints",
 			left,
@@ -177,57 +194,7 @@ func renderExplorerPanes(left string, right string, width int) string {
 		}, "\n")
 	}
 
-	gap := "  |  "
-	leftWidth := (width - len(gap)) / 2
-	rightWidth := width - len(gap) - leftWidth
-	if leftWidth < 24 || rightWidth < 24 {
-		return strings.Join([]string{
-			"Endpoints",
-			left,
-			"",
-			"Details",
-			right,
-		}, "\n")
-	}
-
-	leftLines := strings.Split(left, "\n")
-	rightLines := strings.Split(right, "\n")
-	maxLines := len(leftLines)
-	if len(rightLines) > maxLines {
-		maxLines = len(rightLines)
-	}
-
-	rendered := make([]string, 0, maxLines)
-	for i := 0; i < maxLines; i++ {
-		leftLine := ""
-		if i < len(leftLines) {
-			leftLine = leftLines[i]
-		}
-		rightLine := ""
-		if i < len(rightLines) {
-			rightLine = rightLines[i]
-		}
-		rendered = append(rendered, fitColumn(leftLine, leftWidth)+gap+trimColumn(rightLine, rightWidth))
-	}
-	return strings.Join(rendered, "\n")
-}
-
-func fitColumn(value string, width int) string {
-	value = trimColumn(value, width)
-	runeWidth := len([]rune(value))
-	if runeWidth >= width {
-		return value
-	}
-	return value + strings.Repeat(" ", width-runeWidth)
-}
-
-func trimColumn(value string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	runes := []rune(value)
-	if len(runes) <= width {
-		return value
-	}
-	return string(runes[:width])
+	leftPane := lipgloss.NewStyle().Width(leftWidth).Render(left)
+	rightPane := lipgloss.NewStyle().Width(rightWidth).Render(right)
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftPane, "  |  ", rightPane)
 }

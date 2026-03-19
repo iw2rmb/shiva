@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/viewport"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 )
 
@@ -59,6 +60,7 @@ type DetailState struct {
 	ActiveTab DetailTab
 	Operation *OperationDetail
 	Spec      *SpecDetail
+	Viewport  viewport.Model
 }
 
 type SpecIdentity struct {

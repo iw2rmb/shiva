@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -109,26 +110,17 @@ func TestRootModelExplorerArrowKeysUpdatePlaceholderIdentity(t *testing.T) {
 	if model.explorer.Selected != 0 {
 		t.Fatalf("expected first endpoint selected, got %d", model.explorer.Selected)
 	}
-	if got := model.View().Content; !strings.Contains(got, "path: /alpha") {
-		t.Fatalf("expected placeholder for first endpoint, got %q", got)
-	}
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	model = updated.(*rootModel)
 	if model.explorer.Selected != 1 {
 		t.Fatalf("expected selection to move down to 1, got %d", model.explorer.Selected)
 	}
-	if got := model.View().Content; !strings.Contains(got, "path: /beta") {
-		t.Fatalf("expected placeholder to follow moved selection, got %q", got)
-	}
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	model = updated.(*rootModel)
 	if model.explorer.Selected != 0 {
 		t.Fatalf("expected selection to move up to 0, got %d", model.explorer.Selected)
-	}
-	if got := model.View().Content; !strings.Contains(got, "path: /alpha") {
-		t.Fatalf("expected placeholder to follow selection up, got %q", got)
 	}
 }
 
@@ -440,6 +432,105 @@ func TestRootModelExplorerIgnoresStaleOperationResponseAfterRapidSelectionChange
 	}
 }
 
+func TestRootModelExplorerTabSwitchesReplaceViewportContent(t *testing.T) {
+	t.Parallel()
+
+	model, _ := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	model.explorer.Detail.Operation = &OperationDetail{
+		Endpoint: model.explorer.Endpoints[0].Identity,
+		Body: json.RawMessage(`{
+			"operationId":"listPets",
+			"summary":"List pets",
+			"responses":{"200":{"description":"ok"},"400":{"description":"bad request"}},
+			"servers":[{"url":"https://operation.example"}]
+		}`),
+	}
+	model.refreshExplorerDetailViewport()
+
+	endpointRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
+	if !strings.Contains(endpointRendered, "GET /pets") {
+		t.Fatalf("expected endpoint markdown content, got %q", endpointRendered)
+	}
+	selectionBefore := model.explorer.Selected
+
+	updated, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	model = updated.(*rootModel)
+	if model.explorer.Detail.ActiveTab != DetailTabServers {
+		t.Fatalf("expected active tab %q, got %q", DetailTabServers, model.explorer.Detail.ActiveTab)
+	}
+	if model.explorer.Selected != selectionBefore {
+		t.Fatalf("expected endpoint selection unchanged, got %d", model.explorer.Selected)
+	}
+	serversRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
+	if !strings.Contains(serversRendered, "Servers") {
+		t.Fatalf("expected servers markdown content, got %q", serversRendered)
+	}
+
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	model = updated.(*rootModel)
+	if model.explorer.Detail.ActiveTab != DetailTabEndpoints {
+		t.Fatalf("expected active tab %q, got %q", DetailTabEndpoints, model.explorer.Detail.ActiveTab)
+	}
+}
+
+func TestRootModelExplorerViewportScrollableWithPageDown(t *testing.T) {
+	t.Parallel()
+
+	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	lines := make([]string, 0, 80)
+	for i := 0; i < 80; i++ {
+		lines = append(lines, "line")
+	}
+	model.explorer.Detail.Operation = &OperationDetail{
+		Endpoint: selected,
+		Body: json.RawMessage(`{
+			"operationId":"listPets",
+			"description":"` + strings.Join(lines, `\n`) + `"
+		}`),
+	}
+	model.explorer.Detail.Viewport.SetHeight(8)
+	model.refreshExplorerDetailViewport()
+	if model.explorer.Detail.Viewport.YOffset() != 0 {
+		t.Fatalf("expected viewport to start at top")
+	}
+
+	updated, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	model = updated.(*rootModel)
+	if model.explorer.Detail.Viewport.YOffset() == 0 {
+		t.Fatalf("expected viewport y-offset to increase after page down")
+	}
+}
+
+func TestRootModelExplorerResizeRerendersUsingViewportWidth(t *testing.T) {
+	t.Parallel()
+
+	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	model.explorer.Detail.Operation = &OperationDetail{
+		Endpoint: selected,
+		Body: json.RawMessage(`{
+			"operationId":"listPets",
+			"description":"This is a long markdown paragraph that should wrap differently once viewport width changes significantly."
+		}`),
+	}
+
+	updated, _ := model.Update(resizeMsg{Width: 80, Height: 24})
+	model = updated.(*rootModel)
+	narrowRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
+	narrowWidth := model.explorer.Detail.Viewport.Width()
+
+	updated, _ = model.Update(resizeMsg{Width: 140, Height: 24})
+	model = updated.(*rootModel)
+	wideRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
+	wideWidth := model.explorer.Detail.Viewport.Width()
+
+	if wideWidth <= narrowWidth {
+		t.Fatalf("expected detail viewport width to increase on resize, narrow=%d wide=%d", narrowWidth, wideWidth)
+	}
+	if narrowRendered == wideRendered {
+		t.Fatalf("expected rendered markdown to change with viewport width")
+	}
+}
+
 func newExplorerModelWithSingleEndpoint(
 	service *fakeBrowserService,
 	tab DetailTab,
@@ -460,5 +551,11 @@ func newExplorerModelWithSingleEndpoint(
 	model.explorer.Endpoints = []EndpointEntry{{Identity: selected}}
 	model.refreshExplorerList()
 	model.explorer.Detail.ActiveTab = tab
+	model.refreshExplorerDetailViewport()
 	return model, selected
+}
+
+func stripANSI(value string) string {
+	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return re.ReplaceAllString(value, "")
 }
