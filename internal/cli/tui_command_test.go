@@ -105,6 +105,7 @@ func TestTUICommandRejectsUnsupportedFlags(t *testing.T) {
 	}{
 		{name: "api", args: []string{"tui", "--api", "pets"}, wantErr: "tui does not accept --api"},
 		{name: "rev", args: []string{"tui", "--rev", "42"}, wantErr: "tui does not accept --sha or --rev"},
+		{name: "rev negative", args: []string{"tui", "--rev", "-1"}, wantErr: "tui does not accept --sha or --rev"},
 		{name: "sha", args: []string{"tui", "--sha", "deadbeef"}, wantErr: "tui does not accept --sha or --rev"},
 		{name: "target", args: []string{"tui", "--via", "prod"}, wantErr: "tui does not accept --via"},
 		{name: "dry-run", args: []string{"tui", "--dry-run"}, wantErr: "tui does not accept --dry-run"},

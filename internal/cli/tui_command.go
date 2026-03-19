@@ -89,7 +89,7 @@ func validateTUIFlags(flags RootFlags) error {
 	switch {
 	case flags.API != "":
 		return &InvalidInputError{Message: "tui does not accept --api"}
-	case flags.SHA != "" || flags.RevisionID > 0:
+	case flags.SHA != "" || flags.RevisionID != 0:
 		return &InvalidInputError{Message: "tui does not accept --sha or --rev"}
 	case flags.Target != "":
 		return &InvalidInputError{Message: "tui does not accept --via"}
