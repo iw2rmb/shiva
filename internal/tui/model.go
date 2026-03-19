@@ -71,11 +71,22 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 }
 
 func (model *rootModel) Init() tea.Cmd {
-	if model.initialRoute.Kind == RouteRepoExplorer {
-		return model.initialRouteCmd()
+	switch model.initialRoute.Kind {
+	case RouteRepoExplorer:
+		return model.openRepoExplorer(model.initialRoute.Namespace, model.initialRoute.Repo)
+	case RouteRepos:
+		model.repoList.Namespace = model.initialRoute.Namespace
+		model.refreshRepoList()
+		namespaceToken := model.beginNamespaceCatalogLoad()
+		repoToken := model.beginRepoCatalogLoad()
+		return tea.Batch(
+			loadNamespaceCatalogCmd(context.Background(), model.service, model.options, namespaceToken),
+			loadRepoCatalogCmd(context.Background(), model.service, model.options, repoToken),
+		)
+	default:
+		token := model.beginNamespaceCatalogLoad()
+		return loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
 	}
-	token := model.beginNamespaceCatalogLoad()
-	return loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
 }
 
 func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -103,7 +114,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.finishLoad(loadDomainRepoCatalog, typed.Token, nil)
 		model.repos = append([]RepoEntry(nil), typed.Rows...)
 		model.refreshRepoList()
-		return model, model.initialRouteCmd()
+		return model, nil
 	case namespaceCatalogLoadedMsg:
 		if !model.accepts(loadDomainNamespaces, typed.Token) {
 			return model, nil
@@ -111,7 +122,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.finishLoad(loadDomainNamespaces, typed.Token, nil)
 		model.namespaces.Entries = append([]NamespaceEntry(nil), typed.Rows...)
 		model.refreshNamespaceList()
-		return model, model.initialRouteCmd()
+		return model, nil
 	case operationListLoadedMsg:
 		if !model.accepts(loadDomainOperationList, typed.Token) {
 			return model, nil
@@ -404,24 +415,6 @@ func (model *rootModel) resizeLists() {
 	detailWidth, detailHeight := detailPaneSize(model.width, model.height)
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
 	model.explorer.Detail.Viewport.SetHeight(detailHeight)
-}
-
-func (model *rootModel) initialRouteCmd() tea.Cmd {
-	switch model.initialRoute.Kind {
-	case RouteHome:
-		model.activeRoute = RouteHome
-		return model.ensureNamespaceCatalogLoadCmd()
-	case RouteRepos:
-		model.activeRoute = RouteRepos
-		model.repoList.Namespace = model.initialRoute.Namespace
-		model.refreshRepoList()
-		return model.ensureRepoCatalogLoadCmd()
-	case RouteRepoExplorer:
-		model.repoList.Namespace = model.initialRoute.Namespace
-		model.refreshRepoList()
-		return model.openRepoExplorer(model.initialRoute.Namespace, model.initialRoute.Repo)
-	}
-	return nil
 }
 
 func (model *rootModel) View() tea.View {

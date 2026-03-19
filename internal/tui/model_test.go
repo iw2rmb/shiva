@@ -238,6 +238,53 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 	}
 }
 
+func TestRootModelInitRouteReposStartsNamespaceAndRepoLoads(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{
+		listNamespacesBody: []byte(`[{"namespace":"acme","repo_count":1,"all_pending":false}]`),
+		listReposBody:      []byte(`[{"namespace":"acme","repo":"platform"}]`),
+	}
+
+	model := newRootModel(service, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{Offline: true})
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatalf("expected init load command")
+	}
+	if !model.async.Namespaces.Loading {
+		t.Fatalf("expected namespace catalog loading on init")
+	}
+	if !model.async.RepoCatalog.Loading {
+		t.Fatalf("expected repo catalog loading on init")
+	}
+
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("expected batch init command, got %T", msg)
+	}
+
+	var namespaceLoaded bool
+	var repoLoaded bool
+	for _, command := range batch {
+		if command == nil {
+			continue
+		}
+		switch command().(type) {
+		case namespaceCatalogLoadedMsg:
+			namespaceLoaded = true
+		case repoCatalogLoadedMsg:
+			repoLoaded = true
+		}
+	}
+	if !namespaceLoaded {
+		t.Fatalf("expected namespaceCatalogLoadedMsg from init batch")
+	}
+	if !repoLoaded {
+		t.Fatalf("expected repoCatalogLoadedMsg from init batch")
+	}
+}
+
 func TestRootModelInitRepoExplorerSkipsRepoCatalogLoad(t *testing.T) {
 	t.Parallel()
 
@@ -447,6 +494,55 @@ func TestRootModelEnterOpensSelectedNamespaceRepos(t *testing.T) {
 	}
 	if model.repoList.Selected != 0 {
 		t.Fatalf("expected first repo selected, got %d", model.repoList.Selected)
+	}
+}
+
+func TestRootModelRepoCatalogLoadAfterNamespaceEnterDoesNotResetToHome(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	namespaceToken := model.beginNamespaceCatalogLoad()
+	repoToken := model.beginRepoCatalogLoad()
+
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{
+		Token: namespaceToken,
+		Rows: []NamespaceEntry{
+			{Namespace: "acme", RepoCount: 1},
+		},
+	})
+	model = updated.(*rootModel)
+	updated, _ = model.Update(repoCatalogLoadedMsg{
+		Token: repoToken,
+		Rows: []RepoEntry{
+			{Namespace: "acme", Repo: "platform"},
+		},
+	})
+	model = updated.(*rootModel)
+
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = updated.(*rootModel)
+	if model.activeRoute != RouteNamespaces {
+		t.Fatalf("expected route %q after opening Repos section, got %q", RouteNamespaces, model.activeRoute)
+	}
+
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = updated.(*rootModel)
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected route %q after opening namespace, got %q", RouteRepos, model.activeRoute)
+	}
+
+	token := model.beginRepoCatalogLoad()
+
+	updated, _ = model.Update(repoCatalogLoadedMsg{
+		Token: token,
+		Rows: []RepoEntry{
+			{Namespace: "acme", Repo: "platform"},
+		},
+	})
+	model = updated.(*rootModel)
+
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected to stay on %q after repo catalog load, got %q", RouteRepos, model.activeRoute)
 	}
 }
 
