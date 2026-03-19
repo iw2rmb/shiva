@@ -17,7 +17,7 @@ Legend: [ ] todo, [x] done.
 4. Cache spec detail in memory by repo and API identity for the current explorer session.
 5. Add model tests for lazy spec loading, cache hits, and stale response rejection across rapid selection changes.
 
-- [ ] 2.2 Build markdown source generators for endpoint, servers, and errors
+- [x] 2.2 Build markdown source generators for endpoint, servers, and errors
   - Repository: `shiva`
   - Component: `internal/tui/markdown`
   - Verification: endpoint markdown includes method, path, params, request body, and responses; servers markdown follows operation-first precedence; errors markdown filters to non-2xx and `default`
