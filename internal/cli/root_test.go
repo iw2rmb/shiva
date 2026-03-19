@@ -282,8 +282,8 @@ func TestRootCommandListAndSyncCommands(t *testing.T) {
 		{
 			name:              "ls repo prints operations",
 			args:              []string{"ls", "acme/platform"},
-			expectedContains:  []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), total 1 ops, updated 10-03-2026 12:00:00", "GET /pets", "#listPets"},
-			expectedListRepos: 1,
+			expectedContains:  []string{"namespace acme", "platform", "main (deadbeef), total 1 ops", "GET /pets", "#listPets"},
+			expectedListRepos: 0,
 			expectedListOps:   1,
 			expectedFormat:    "json",
 			expectListTarget:  true,

@@ -113,6 +113,10 @@ func executeListCommand(
 	options RequestOptions,
 	colorize bool,
 ) ([]byte, error) {
+	if namespace, repo, ok := parseExactRepoSelection(rawSelector); ok {
+		return renderRepoOperationsDirect(ctx, service, options, namespace, repo, colorize)
+	}
+
 	repoRows, err := loadListRepoRows(ctx, service, options)
 	if err != nil {
 		return nil, err
@@ -137,6 +141,19 @@ func executeListCommand(
 	default:
 		return nil, fmt.Errorf("unsupported list selection %q", selection.Kind)
 	}
+}
+
+func parseExactRepoSelection(raw string) (string, string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || strings.HasSuffix(trimmed, "/") {
+		return "", "", false
+	}
+
+	identity, err := repoid.ParsePath(trimmed)
+	if err != nil {
+		return "", "", false
+	}
+	return identity.Namespace, identity.Repo, true
 }
 
 func loadListRepoRows(ctx context.Context, service Service, options RequestOptions) ([]clioutput.RepoRow, error) {
@@ -339,6 +356,52 @@ func renderRepoOperations(
 	writer := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
 	styles := newListStyles(colorize)
 	fmt.Fprintf(writer, "%s\t%s\n", styles.renderRepoName(row.Repo, dimmed), description)
+	_ = writer.Flush()
+
+	for _, line := range formatOperationLines(operationRows, colorize) {
+		fmt.Fprintln(buffer, line)
+	}
+
+	return buffer.Bytes(), nil
+}
+
+func renderRepoOperationsDirect(
+	ctx context.Context,
+	service Service,
+	options RequestOptions,
+	namespace string,
+	repo string,
+	colorize bool,
+) ([]byte, error) {
+	operationRows, err := loadRepoOperationRows(ctx, service, options, clioutput.RepoRow{
+		Namespace: namespace,
+		Repo:      repo,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	branch, sha := repoOperationMetadata(operationRows)
+	if branch == "" && sha == "" {
+		apiRows, apiErr := loadRepoAPIRows(ctx, service, options, clioutput.RepoRow{
+			Namespace: namespace,
+			Repo:      repo,
+		})
+		if apiErr == nil {
+			branch, sha, _ = repoAPISummary(apiRows)
+		}
+	}
+
+	buffer := &bytes.Buffer{}
+	fmt.Fprintf(buffer, "namespace %s\n", namespace)
+	writer := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
+	styles := newListStyles(colorize)
+	fmt.Fprintf(
+		writer,
+		"%s\t%s\n",
+		styles.renderRepoName(repo, len(operationRows) == 0),
+		formatRepoSummary(branch, shortSHA(sha), len(operationRows), "", true, colorize),
+	)
 	_ = writer.Flush()
 
 	for _, line := range formatOperationLines(operationRows, colorize) {

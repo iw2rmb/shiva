@@ -103,7 +103,7 @@ Rules:
     - prints matching repos inside that namespace
     - header: `namespace <namespace>, match <count> repos`
   - `shiva ls <namespace>/<repo>`
-    - prints one repo summary followed by repo-wide operations
+    - prints one repo summary followed by repo-wide operations without preloading global repo inventory
     - repo summaries use `pending`, `processing`, or `<branch> (<sha8>), <ops>, updated DD-MM-YYYY HH:mm:ss`; when writing to a terminal, zero-op repo summaries are dimmed
     - repo-wide operations are sorted by path, grouped by top-level path segment with blank separator rows, right-align HTTP methods so paths start in one column, print bold `#<operation-id>` in an aligned second column, and display path params as `:name`; when writing to a terminal, params are bold, methods are colorized by verb, and summaries render dimmed
 - `shiva sync <repo-ref>`

@@ -66,9 +66,8 @@ func TestCLIContractScenarios(t *testing.T) {
 			name:       "list repo shows operations from selector-driven ls",
 			args:       []string{"ls", "acme/platform"},
 			wantCode:   0,
-			wantStdout: []string{"namespace acme, total 1 repos", "platform", "main (deadbeef), total 1 ops", "GET /pets/:id", "#getPet"},
+			wantStdout: []string{"namespace acme", "platform", "main (deadbeef), total 1 ops", "GET /pets/:id", "#getPet"},
 			wantMinCalls: map[string]int{
-				"GET /v1/repos":      1,
 				"GET /v1/operations": 1,
 			},
 		},
