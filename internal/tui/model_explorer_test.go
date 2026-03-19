@@ -186,3 +186,279 @@ func TestRootModelExplorerRendersEmptyOperationCatalog(t *testing.T) {
 		t.Fatalf("expected empty operation catalog message, got %q", got)
 	}
 }
+
+func TestRootModelExplorerLoadsSelectedEndpointDetailUsingExactIdentity(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{
+		operationBody: []byte(`{"operationId":"listAccounts"}`),
+	}
+	model := newRootModel(service, InitialRoute{
+		Kind:      RouteRepoExplorer,
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{})
+
+	token := model.beginOperationListLoad()
+	updated, cmd := model.Update(operationListLoadedMsg{
+		Token: token,
+		Entries: []EndpointEntry{
+			{Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", API: "b.yaml", Method: "get", Path: "/pets", OperationID: "listPets"}},
+			{Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", API: "a.yaml", Method: "get", Path: "/accounts", OperationID: "listAccounts"}},
+		},
+	})
+	model = updated.(*rootModel)
+
+	if cmd == nil {
+		t.Fatalf("expected operation detail load command")
+	}
+
+	selected, ok := model.explorer.SelectedEndpoint()
+	if !ok {
+		t.Fatalf("expected selected endpoint")
+	}
+
+	msg := cmd()
+	loaded, ok := msg.(operationDetailLoadedMsg)
+	if !ok {
+		t.Fatalf("expected operationDetailLoadedMsg, got %T", msg)
+	}
+
+	if service.getOperationCall != 1 {
+		t.Fatalf("expected one operation detail call, got %d", service.getOperationCall)
+	}
+	if loaded.Detail.Endpoint != selected.Identity {
+		t.Fatalf("expected loaded endpoint %+v, got %+v", selected.Identity, loaded.Detail.Endpoint)
+	}
+	if service.lastOperationGet.Namespace != selected.Identity.Namespace ||
+		service.lastOperationGet.Repo != selected.Identity.Repo ||
+		service.lastOperationGet.API != selected.Identity.API ||
+		service.lastOperationGet.OperationID != selected.Identity.OperationID ||
+		service.lastOperationGet.Method != selected.Identity.Method ||
+		service.lastOperationGet.Path != selected.Identity.Path {
+		t.Fatalf("expected exact selected endpoint selector, got %+v", service.lastOperationGet)
+	}
+
+	updated, specCmd := model.Update(msg)
+	model = updated.(*rootModel)
+	if specCmd != nil {
+		t.Fatalf("expected endpoints tab load to skip spec command")
+	}
+	if model.explorer.Detail.Operation == nil {
+		t.Fatalf("expected operation detail to be set")
+	}
+}
+
+func TestRootModelExplorerLazySpecLoadForServersTab(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name           string
+		tab            DetailTab
+		operationBody  []byte
+		expectSpecLoad bool
+	}{
+		{
+			name:           "servers tab loads spec when operation servers missing",
+			tab:            DetailTabServers,
+			operationBody:  []byte(`{"operationId":"listPets"}`),
+			expectSpecLoad: true,
+		},
+		{
+			name:           "servers tab loads spec when operation servers empty",
+			tab:            DetailTabServers,
+			operationBody:  []byte(`{"operationId":"listPets","servers":[]}`),
+			expectSpecLoad: true,
+		},
+		{
+			name:           "servers tab skips spec when operation servers present",
+			tab:            DetailTabServers,
+			operationBody:  []byte(`{"operationId":"listPets","servers":[{"url":"https://operation.example"}]}`),
+			expectSpecLoad: false,
+		},
+		{
+			name:           "endpoints tab skips spec when operation servers missing",
+			tab:            DetailTabEndpoints,
+			operationBody:  []byte(`{"operationId":"listPets"}`),
+			expectSpecLoad: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := &fakeBrowserService{
+				operationBody: tc.operationBody,
+				specBody:      []byte(`{"openapi":"3.1.0","servers":[{"url":"https://spec.example"}]}`),
+			}
+			model, selected := newExplorerModelWithSingleEndpoint(service, tc.tab)
+
+			cmd := model.loadExplorerDetailForSelection()
+			if cmd == nil {
+				t.Fatalf("expected operation load command")
+			}
+			operationMsg := cmd()
+			updated, followCmd := model.Update(operationMsg)
+			model = updated.(*rootModel)
+
+			if tc.expectSpecLoad {
+				if followCmd == nil {
+					t.Fatalf("expected lazy spec load command")
+				}
+				specMsg := followCmd()
+				if _, ok := specMsg.(specDetailLoadedMsg); !ok {
+					t.Fatalf("expected specDetailLoadedMsg, got %T", specMsg)
+				}
+				updated, _ = model.Update(specMsg)
+				model = updated.(*rootModel)
+
+				if service.getSpecCall != 1 {
+					t.Fatalf("expected one spec call, got %d", service.getSpecCall)
+				}
+				if service.lastSpecFormat != SpecFormatJSON {
+					t.Fatalf("expected spec format %q, got %q", SpecFormatJSON, service.lastSpecFormat)
+				}
+				if service.lastSpecGet.Namespace != selected.Namespace ||
+					service.lastSpecGet.Repo != selected.Repo ||
+					service.lastSpecGet.API != selected.API {
+					t.Fatalf("unexpected spec selector %+v", service.lastSpecGet)
+				}
+				if model.explorer.Detail.Spec == nil {
+					t.Fatalf("expected spec detail to be set")
+				}
+				return
+			}
+
+			if followCmd != nil {
+				t.Fatalf("expected no spec load command")
+			}
+			if service.getSpecCall != 0 {
+				t.Fatalf("expected no spec calls, got %d", service.getSpecCall)
+			}
+			if model.explorer.Detail.Spec != nil {
+				t.Fatalf("expected no spec detail, got %+v", model.explorer.Detail.Spec)
+			}
+		})
+	}
+}
+
+func TestRootModelExplorerDetailLoadUsesSessionCaches(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{
+		operationBody: []byte(`{"operationId":"listPets","servers":[]}`),
+		specBody:      []byte(`{"openapi":"3.1.0","servers":[{"url":"https://spec.example"}]}`),
+	}
+	model, _ := newExplorerModelWithSingleEndpoint(service, DetailTabServers)
+
+	operationCmd := model.loadExplorerDetailForSelection()
+	if operationCmd == nil {
+		t.Fatalf("expected initial operation detail command")
+	}
+	operationMsg := operationCmd()
+	updated, specCmd := model.Update(operationMsg)
+	model = updated.(*rootModel)
+	if specCmd == nil {
+		t.Fatalf("expected initial spec detail command")
+	}
+
+	specMsg := specCmd()
+	updated, _ = model.Update(specMsg)
+	model = updated.(*rootModel)
+
+	if service.getOperationCall != 1 || service.getSpecCall != 1 {
+		t.Fatalf("expected one operation and one spec call, got operation=%d spec=%d", service.getOperationCall, service.getSpecCall)
+	}
+
+	model.clearExplorerDetailState()
+	reloadCmd := model.loadExplorerDetailForSelection()
+	if reloadCmd != nil {
+		t.Fatalf("expected cache hit to avoid network commands")
+	}
+	if model.explorer.Detail.Operation == nil {
+		t.Fatalf("expected cached operation detail")
+	}
+	if model.explorer.Detail.Spec == nil {
+		t.Fatalf("expected cached spec detail")
+	}
+	if service.getOperationCall != 1 || service.getSpecCall != 1 {
+		t.Fatalf("expected cache replay to avoid extra calls, got operation=%d spec=%d", service.getOperationCall, service.getSpecCall)
+	}
+}
+
+func TestRootModelExplorerIgnoresStaleOperationResponseAfterRapidSelectionChange(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{
+		operationBody: []byte(`{"operationId":"detail"}`),
+	}
+	model := newRootModel(service, InitialRoute{
+		Kind:      RouteRepoExplorer,
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{})
+	model.explorer.Endpoints = []EndpointEntry{
+		{Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", API: "pets.yaml", Method: "get", Path: "/a", OperationID: "old"}},
+		{Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", API: "pets.yaml", Method: "get", Path: "/b", OperationID: "new"}},
+	}
+	model.refreshExplorerList()
+	if model.explorer.Selected != 0 {
+		t.Fatalf("expected first endpoint selected, got %d", model.explorer.Selected)
+	}
+
+	staleCmd := model.loadExplorerDetailForSelection()
+	if staleCmd == nil {
+		t.Fatalf("expected stale candidate operation command")
+	}
+
+	model.explorer.List.Select(1)
+	currentCmd := model.syncExplorerSelection()
+	if currentCmd == nil {
+		t.Fatalf("expected current operation command after selection change")
+	}
+	if model.explorer.Selected != 1 {
+		t.Fatalf("expected selection on new endpoint, got %d", model.explorer.Selected)
+	}
+
+	staleMsg := staleCmd()
+	updated, _ := model.Update(staleMsg)
+	model = updated.(*rootModel)
+	if model.explorer.Detail.Operation != nil {
+		t.Fatalf("expected stale operation response to be ignored, got %+v", model.explorer.Detail.Operation)
+	}
+
+	currentMsg := currentCmd()
+	updated, _ = model.Update(currentMsg)
+	model = updated.(*rootModel)
+	if model.explorer.Detail.Operation == nil {
+		t.Fatalf("expected current operation response to apply")
+	}
+	if got := model.explorer.Detail.Operation.Endpoint.OperationID; got != "new" {
+		t.Fatalf("expected operation detail for new endpoint, got %q", got)
+	}
+}
+
+func newExplorerModelWithSingleEndpoint(
+	service *fakeBrowserService,
+	tab DetailTab,
+) (*rootModel, EndpointIdentity) {
+	model := newRootModel(service, InitialRoute{
+		Kind:      RouteRepoExplorer,
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{})
+	selected := EndpointIdentity{
+		Namespace:   "acme",
+		Repo:        "platform",
+		API:         "pets.yaml",
+		Method:      "get",
+		Path:        "/pets",
+		OperationID: "listPets",
+	}
+	model.explorer.Endpoints = []EndpointEntry{{Identity: selected}}
+	model.refreshExplorerList()
+	model.explorer.Detail.ActiveTab = tab
+	return model, selected
+}

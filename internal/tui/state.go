@@ -61,6 +61,12 @@ type DetailState struct {
 	Spec      *SpecDetail
 }
 
+type SpecIdentity struct {
+	Namespace string
+	Repo      string
+	API       string
+}
+
 type NamespaceRouteState struct {
 	Entries  []NamespaceEntry
 	Selected int
@@ -75,12 +81,14 @@ type RepoRouteState struct {
 }
 
 type RepoExplorerRouteState struct {
-	Namespace string
-	Repo      string
-	Endpoints []EndpointEntry
-	Selected  int
-	List      list.Model
-	Detail    DetailState
+	Namespace      string
+	Repo           string
+	Endpoints      []EndpointEntry
+	Selected       int
+	List           list.Model
+	Detail         DetailState
+	OperationCache map[EndpointIdentity]OperationDetail
+	SpecCache      map[SpecIdentity]SpecDetail
 }
 
 func (state RepoExplorerRouteState) SelectedEndpoint() (EndpointEntry, bool) {

@@ -367,6 +367,19 @@ func TestRootModelIgnoresStaleSpecDetailMessages(t *testing.T) {
 		Namespace: "acme",
 		Repo:      "platform",
 	}, RequestOptions{})
+	model.explorer.Endpoints = []EndpointEntry{
+		{
+			Identity: EndpointIdentity{
+				Namespace:   "acme",
+				Repo:        "platform",
+				API:         "new.yaml",
+				Method:      "get",
+				Path:        "/pets",
+				OperationID: "listPets",
+			},
+		},
+	}
+	model.explorer.Selected = 0
 
 	staleToken := model.beginSpecDetailLoad()
 	currentToken := model.beginSpecDetailLoad()
@@ -479,8 +492,13 @@ type fakeBrowserService struct {
 	listOperationsErr  error
 	listOperationsCall int
 	lastOperationQuery request.Envelope
+	getOperationCall   int
+	lastOperationGet   request.Envelope
 	operationBody      []byte
 	operationErr       error
+	getSpecCall        int
+	lastSpecGet        request.Envelope
+	lastSpecFormat     SpecFormat
 	specBody           []byte
 	specErr            error
 	lastContextValue   any
@@ -517,6 +535,8 @@ func (service *fakeBrowserService) GetOperation(
 	options RequestOptions,
 ) ([]byte, error) {
 	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.getOperationCall++
+	service.lastOperationGet = selector
 	_ = selector
 	_ = options
 	return service.operationBody, service.operationErr
@@ -529,9 +549,10 @@ func (service *fakeBrowserService) GetSpec(
 	format SpecFormat,
 ) ([]byte, error) {
 	service.lastContextValue = ctx.Value(contextKey("request"))
-	_ = selector
+	service.getSpecCall++
+	service.lastSpecGet = selector
+	service.lastSpecFormat = format
 	_ = options
-	_ = format
 	return service.specBody, service.specErr
 }
 

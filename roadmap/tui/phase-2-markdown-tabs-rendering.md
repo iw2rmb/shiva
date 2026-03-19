@@ -6,7 +6,7 @@ Documentation: [TUI Architecture](../../design/tui.md)
 
 Legend: [ ] todo, [x] done.
 
-- [ ] 2.1 Add endpoint and spec detail loaders for the explorer
+- [x] 2.1 Add endpoint and spec detail loaders for the explorer
   - Repository: `shiva`
   - Component: `internal/tui`
   - Verification: selected endpoint loads raw operation detail, `Servers` lazily loads spec detail only when operation-level servers are absent, stale responses are ignored

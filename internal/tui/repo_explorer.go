@@ -15,10 +15,10 @@ func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.C
 		model.syncRepoSelection()
 		return model, nil
 	default:
-		var cmd tea.Cmd
-		model.explorer.List, cmd = model.explorer.List.Update(msg)
-		model.syncExplorerSelection()
-		return model, cmd
+		var listCmd tea.Cmd
+		model.explorer.List, listCmd = model.explorer.List.Update(msg)
+		detailCmd := model.syncExplorerSelection()
+		return model, batchCmds(listCmd, detailCmd)
 	}
 }
 
@@ -29,8 +29,9 @@ func (model *rootModel) openRepoExplorer(namespace string, repo string) tea.Cmd 
 	model.explorer.Endpoints = nil
 	model.explorer.Selected = -1
 	model.explorer.Detail.ActiveTab = DetailTabEndpoints
-	model.explorer.Detail.Operation = nil
-	model.explorer.Detail.Spec = nil
+	model.explorer.OperationCache = make(map[EndpointIdentity]OperationDetail)
+	model.explorer.SpecCache = make(map[SpecIdentity]SpecDetail)
+	model.clearExplorerDetailState()
 	model.explorer.List.Title = "Endpoints"
 	model.explorer.List.SetItems(nil)
 	model.explorer.List.ResetSelected()
@@ -60,18 +61,23 @@ func (model *rootModel) refreshExplorerList() {
 	model.explorer.List.Select(model.explorer.Selected)
 }
 
-func (model *rootModel) syncExplorerSelection() {
+func (model *rootModel) syncExplorerSelection() tea.Cmd {
 	index := model.explorer.List.Index()
 	if len(model.explorer.Endpoints) == 0 || index < 0 || index >= len(model.explorer.Endpoints) {
+		previous := model.explorer.Selected
 		model.explorer.Selected = -1
-		return
+		if previous >= 0 {
+			model.clearExplorerDetailState()
+		}
+		return nil
 	}
 	previous := model.explorer.Selected
 	model.explorer.Selected = index
 	if previous != index {
-		model.explorer.Detail.Operation = nil
-		model.explorer.Detail.Spec = nil
+		model.clearExplorerDetailState()
+		return model.loadExplorerDetailForSelection()
 	}
+	return nil
 }
 
 func (model *rootModel) viewRepoExplorer() string {

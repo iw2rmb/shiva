@@ -45,6 +45,8 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 			Detail: DetailState{
 				ActiveTab: DetailTabEndpoints,
 			},
+			OperationCache: make(map[EndpointIdentity]OperationDetail),
+			SpecCache:      make(map[SpecIdentity]SpecDetail),
 		},
 	}
 	model.resizeLists()
@@ -84,21 +86,43 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainOperationList, typed.Token, nil)
+		model.clearExplorerDetailState()
 		model.explorer.Endpoints = sortedEndpointEntries(typed.Entries)
 		model.refreshExplorerList()
+		return model, model.loadExplorerDetailForSelection()
 	case operationDetailLoadedMsg:
 		if !model.accepts(loadDomainOperationDetail, typed.Token) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainOperationDetail, typed.Token, nil)
+		selected, ok := model.explorer.SelectedEndpoint()
+		if !ok || selected.Identity != typed.Detail.Endpoint {
+			return model, nil
+		}
 		detail := typed.Detail
+		model.explorer.OperationCache[detail.Endpoint] = detail
 		model.explorer.Detail.Operation = &detail
+		return model, model.loadSelectedSpecDetailIfNeeded()
 	case specDetailLoadedMsg:
 		if !model.accepts(loadDomainSpecDetail, typed.Token) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainSpecDetail, typed.Token, nil)
+		selected, ok := model.explorer.SelectedEndpoint()
+		if !ok {
+			return model, nil
+		}
+		expected := selectedSpecIdentity(selected.Identity)
+		received := selectedSpecIdentity(EndpointIdentity{
+			Namespace: typed.Detail.Namespace,
+			Repo:      typed.Detail.Repo,
+			API:       typed.Detail.API,
+		})
+		if expected != received {
+			return model, nil
+		}
 		detail := typed.Detail
+		model.explorer.SpecCache[received] = detail
 		model.explorer.Detail.Spec = &detail
 	case loadFailedMsg:
 		if !model.accepts(typed.Domain, typed.Token) {
