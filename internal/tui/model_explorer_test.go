@@ -174,7 +174,8 @@ func TestRootModelExplorerRendersEmptyOperationCatalog(t *testing.T) {
 	if model.explorer.Selected != -1 {
 		t.Fatalf("expected no selected endpoint, got %d", model.explorer.Selected)
 	}
-	if got := model.View().Content; !strings.Contains(got, "No endpoints found in repository.") {
+	got := stripANSI(model.View().Content)
+	if !strings.Contains(got, "No endpoints found in") || !strings.Contains(got, "repository.") {
 		t.Fatalf("expected empty operation catalog message, got %q", got)
 	}
 }
@@ -470,6 +471,24 @@ func TestRootModelExplorerTabSwitchesReplaceViewportContent(t *testing.T) {
 	model = updated.(*rootModel)
 	if model.explorer.Detail.ActiveTab != DetailTabEndpoints {
 		t.Fatalf("expected active tab %q, got %q", DetailTabEndpoints, model.explorer.Detail.ActiveTab)
+	}
+}
+
+func TestRenderExplorerPanesSwitchesBetweenStackedAndSplitLayouts(t *testing.T) {
+	t.Parallel()
+
+	styles := newTUIStyles()
+	stacked := stripANSI(renderExplorerPanes(styles, "left-content", "right-content", 60))
+	split := stripANSI(renderExplorerPanes(styles, "left-content", "right-content", 120))
+
+	if !strings.Contains(stacked, "left-content") || !strings.Contains(stacked, "right-content") {
+		t.Fatalf("expected stacked layout to include both pane contents, got %q", stacked)
+	}
+	if !strings.Contains(stacked, "\n\nDetails\n") {
+		t.Fatalf("expected stacked layout to place details pane below endpoints pane, got %q", stacked)
+	}
+	if strings.Contains(split, "\n\nDetails\n") {
+		t.Fatalf("expected split layout to avoid stacked separator, got %q", split)
 	}
 }
 

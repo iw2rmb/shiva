@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -14,6 +15,8 @@ type rootModel struct {
 	activeRoute  RouteKind
 	options      RequestOptions
 	markdown     markdownRenderer
+	help         help.Model
+	styles       tuiStyles
 	repos        []RepoEntry
 	namespaces   NamespaceRouteState
 	repoList     RepoRouteState
@@ -30,6 +33,8 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 		activeRoute:  route.Kind,
 		options:      options,
 		markdown:     newMarkdownRenderer(),
+		help:         newRouteHelpModel(),
+		styles:       newTUIStyles(),
 		namespaces: NamespaceRouteState{
 			Selected: -1,
 			List:     newNamespaceList(),
@@ -271,6 +276,7 @@ func (model *rootModel) resizeLists() {
 	width, height := listSize(model.width, model.height)
 	model.namespaces.List.SetSize(width, height)
 	model.repoList.List.SetSize(width, height)
+	model.help.SetWidth(width)
 	explorerWidth, explorerHeight := endpointListSize(model.width, model.height)
 	model.explorer.List.SetSize(explorerWidth, explorerHeight)
 	detailWidth, detailHeight := detailPaneSize(model.width, model.height)
@@ -311,61 +317,89 @@ func (model *rootModel) View() tea.View {
 
 func (model *rootModel) viewNamespaces() string {
 	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
-		return "Shiva TUI\n\nLoading repositories..."
+		return strings.Join([]string{
+			model.styles.Header("Shiva TUI"),
+			"",
+			model.styles.EmptyBlock("Loading repositories..."),
+			"",
+			model.routeHelpView(),
+		}, "\n")
 	}
 	if model.async.RepoCatalog.LastError != nil {
 		return strings.Join([]string{
-			"Shiva TUI",
+			model.styles.Header("Shiva TUI"),
 			"",
-			"Namespaces",
+			model.styles.Subtle("Namespaces"),
 			"",
-			"Failed to load repositories.",
-			model.async.RepoCatalog.LastError.Error(),
+			model.styles.ErrorBlock(
+				"Failed to load repositories.",
+				model.async.RepoCatalog.LastError.Error(),
+			),
+			"",
+			model.routeHelpView(),
 		}, "\n")
 	}
 	if len(model.namespaces.Entries) == 0 {
-		return "Shiva TUI\n\nNamespaces\n\nNo namespaces found."
+		return strings.Join([]string{
+			model.styles.Header("Shiva TUI"),
+			"",
+			model.styles.Subtle("Namespaces"),
+			"",
+			model.styles.EmptyBlock("No namespaces found."),
+			"",
+			model.routeHelpView(),
+		}, "\n")
 	}
 	return strings.Join([]string{
-		"Shiva TUI",
+		model.styles.Header("Shiva TUI"),
 		"",
 		model.namespaces.List.View(),
 		"",
-		"enter: open namespace  q: quit",
+		model.routeHelpView(),
 	}, "\n")
 }
 
 func (model *rootModel) viewRepos() string {
 	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
-		return "Shiva TUI\n\nLoading repositories..."
+		return strings.Join([]string{
+			model.styles.Header("Shiva TUI"),
+			"",
+			model.styles.EmptyBlock("Loading repositories..."),
+			"",
+			model.routeHelpView(),
+		}, "\n")
 	}
 	if model.async.RepoCatalog.LastError != nil {
 		return strings.Join([]string{
-			"Shiva TUI",
+			model.styles.Header("Shiva TUI"),
 			"",
-			"Repositories",
+			model.styles.Subtle("Repositories"),
 			"",
-			"Failed to load repositories.",
-			model.async.RepoCatalog.LastError.Error(),
+			model.styles.ErrorBlock(
+				"Failed to load repositories.",
+				model.async.RepoCatalog.LastError.Error(),
+			),
+			"",
+			model.routeHelpView(),
 		}, "\n")
 	}
 	if len(model.repoList.Entries) == 0 {
 		return strings.Join([]string{
-			"Shiva TUI",
+			model.styles.Header("Shiva TUI"),
 			"",
-			"Repositories: " + model.repoList.Namespace,
+			model.styles.Subtle("Repositories: " + model.repoList.Namespace),
 			"",
-			"No repositories found in namespace.",
+			model.styles.EmptyBlock("No repositories found in namespace."),
 			"",
-			"esc: back  q: quit",
+			model.routeHelpView(),
 		}, "\n")
 	}
 	return strings.Join([]string{
-		"Shiva TUI",
+		model.styles.Header("Shiva TUI"),
 		"",
 		model.repoList.List.View(),
 		"",
-		"enter: open repo  esc: back  q: quit",
+		model.routeHelpView(),
 	}, "\n")
 }
 

@@ -97,28 +97,28 @@ func (model *rootModel) viewRepoExplorer() string {
 	leftPane := model.explorerListPane()
 	rightPane := model.explorerDetailPane()
 	return strings.Join([]string{
-		"Shiva TUI",
+		model.styles.Header("Shiva TUI"),
 		"",
-		"Repository: " + repoLabel,
+		model.styles.Subtle("Repository: " + repoLabel),
 		model.explorerTabRow(),
 		"",
-		renderExplorerPanes(leftPane, rightPane, model.width),
+		renderExplorerPanes(model.styles, leftPane, rightPane, model.width),
 		"",
-		"up/down: select endpoint  tab/shift+tab: switch tab  pgup/pgdown: scroll details  esc: back  q: quit",
+		model.routeHelpView(),
 	}, "\n")
 }
 
 func (model *rootModel) explorerListPane() string {
 	switch {
 	case model.async.OperationList.Loading && len(model.explorer.Endpoints) == 0:
-		return "Loading endpoints..."
+		return model.styles.EmptyBlock("Loading endpoints...")
 	case model.async.OperationList.LastError != nil:
-		return strings.Join([]string{
+		return model.styles.ErrorBlock(
 			"Failed to load endpoints.",
 			model.async.OperationList.LastError.Error(),
-		}, "\n")
+		)
 	case len(model.explorer.Endpoints) == 0:
-		return "No endpoints found in repository."
+		return model.styles.EmptyBlock("No endpoints found in repository.")
 	default:
 		return model.explorer.List.View()
 	}
@@ -132,10 +132,7 @@ func (model *rootModel) explorerTabRow() string {
 	labels := make([]string, 0, 3)
 	for _, tab := range []DetailTab{DetailTabEndpoints, DetailTabServers, DetailTabErrors} {
 		label := detailTabLabel(tab)
-		if tab == model.explorer.Detail.ActiveTab {
-			label = "[" + label + "]"
-		}
-		labels = append(labels, label)
+		labels = append(labels, model.styles.Tab(label, tab == model.explorer.Detail.ActiveTab))
 	}
 	return strings.Join(labels, "  ")
 }
@@ -182,19 +179,17 @@ func shouldRouteKeyToDetailViewport(msg tea.KeyPressMsg) bool {
 	}
 }
 
-func renderExplorerPanes(left string, right string, width int) string {
+func renderExplorerPanes(styles tuiStyles, left string, right string, width int) string {
 	leftWidth, rightWidth, _, stacked := explorerPaneLayout(width, defaultListHeight)
+	leftPane := styles.Pane("Endpoints", left, leftWidth)
+	rightPane := styles.Pane("Details", right, rightWidth)
 	if stacked {
 		return strings.Join([]string{
-			"Endpoints",
-			left,
+			leftPane,
 			"",
-			"Details",
-			right,
+			rightPane,
 		}, "\n")
 	}
 
-	leftPane := lipgloss.NewStyle().Width(leftWidth).Render(left)
-	rightPane := lipgloss.NewStyle().Width(rightWidth).Render(right)
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftPane, "  |  ", rightPane)
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftPane, "  ", rightPane)
 }

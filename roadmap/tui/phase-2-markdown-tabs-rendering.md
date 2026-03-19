@@ -39,7 +39,7 @@ Legend: [ ] todo, [x] done.
 4. Recompute renderer width and viewport content when the terminal size changes.
 5. Add model tests for tab switching, viewport content replacement, and resize-triggered rerendering.
 
-- [ ] 2.4 Finalize TUI layout and route-local help
+- [x] 2.4 Finalize TUI layout and route-local help
   - Repository: `shiva`
   - Component: `internal/tui`
   - Verification: wide terminals use side-by-side layout, narrow terminals stack panes, route-local help reflects active keys only

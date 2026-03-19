@@ -307,6 +307,39 @@ func TestRootModelRendersStartupLoadFailure(t *testing.T) {
 	}
 }
 
+func TestRootModelRouteLocalHelpShowsOnlyActiveRouteBindings(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+
+	model.activeRoute = RouteNamespaces
+	namespaceHelp := model.routeHelpView()
+	if !strings.Contains(namespaceHelp, "open namespace") {
+		t.Fatalf("expected namespace help to include namespace action, got %q", namespaceHelp)
+	}
+	if strings.Contains(namespaceHelp, "open repo") || strings.Contains(namespaceHelp, "switch tab") {
+		t.Fatalf("expected namespace help to exclude repo/explorer actions, got %q", namespaceHelp)
+	}
+
+	model.activeRoute = RouteRepos
+	repoHelp := model.routeHelpView()
+	if !strings.Contains(repoHelp, "open repo") {
+		t.Fatalf("expected repos help to include repo action, got %q", repoHelp)
+	}
+	if strings.Contains(repoHelp, "open namespace") || strings.Contains(repoHelp, "switch tab") {
+		t.Fatalf("expected repos help to exclude namespace/explorer actions, got %q", repoHelp)
+	}
+
+	model.activeRoute = RouteRepoExplorer
+	explorerHelp := model.routeHelpView()
+	if !strings.Contains(explorerHelp, "switch tab") || !strings.Contains(explorerHelp, "scroll details") {
+		t.Fatalf("expected explorer help to include explorer actions, got %q", explorerHelp)
+	}
+	if strings.Contains(explorerHelp, "open namespace") || strings.Contains(explorerHelp, "open repo") {
+		t.Fatalf("expected explorer help to exclude namespace/repo actions, got %q", explorerHelp)
+	}
+}
+
 func TestRootModelIgnoresStaleOperationDetailMessages(t *testing.T) {
 	t.Parallel()
 
