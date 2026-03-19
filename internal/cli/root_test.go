@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -256,14 +257,14 @@ func TestRootCommandListAndSyncCommands(t *testing.T) {
 			name:              "ls without selector lists namespaces",
 			args:              []string{"ls"},
 			expectedContains:  []string{"total: 1", "acme", "1 repo"},
-			expectedListRepos: 1,
+			expectedListRepos: 0,
 			expectedFormat:    "json",
 		},
 		{
 			name:              "ls namespace prefix filters namespaces",
 			args:              []string{"ls", "ac"},
 			expectedContains:  []string{"match: 1", "acme", "1 repo"},
-			expectedListRepos: 1,
+			expectedListRepos: 0,
 			expectedFormat:    "json",
 		},
 		{
@@ -483,34 +484,36 @@ targets:
 }
 
 type fakeService struct {
-	specBody        []byte
-	operationBody   []byte
-	callBody        []byte
-	listReposBody   []byte
-	listAPIsBody    []byte
-	listOpsBody     []byte
-	emitReposBody   []byte
-	emitAPIsBody    []byte
-	emitOpsBody     []byte
-	syncBody        []byte
-	healthBody      []byte
-	specCalls       int
-	operationCalls  int
-	callCalls       int
-	listReposCalls  int
-	listAPIsCalls   int
-	listOpsCalls    int
-	emitReposCalls  int
-	emitAPIsCalls   int
-	emitOpsCalls    int
-	syncCalls       int
-	healthCalls     int
-	lastRequest     request.Envelope
-	lastListRequest request.Envelope
-	lastFormat      SpecFormat
-	lastCallFormat  CallFormat
-	lastListFormat  string
-	lastOptions     RequestOptions
+	specBody            []byte
+	operationBody       []byte
+	callBody            []byte
+	listNamespacesBody  []byte
+	listReposBody       []byte
+	listAPIsBody        []byte
+	listOpsBody         []byte
+	emitReposBody       []byte
+	emitAPIsBody        []byte
+	emitOpsBody         []byte
+	syncBody            []byte
+	healthBody          []byte
+	specCalls           int
+	operationCalls      int
+	callCalls           int
+	listNamespacesCalls int
+	listReposCalls      int
+	listAPIsCalls       int
+	listOpsCalls        int
+	emitReposCalls      int
+	emitAPIsCalls       int
+	emitOpsCalls        int
+	syncCalls           int
+	healthCalls         int
+	lastRequest         request.Envelope
+	lastListRequest     request.Envelope
+	lastFormat          SpecFormat
+	lastCallFormat      CallFormat
+	lastListFormat      string
+	lastOptions         RequestOptions
 }
 
 func (s *fakeService) GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error) {
@@ -541,6 +544,40 @@ func (s *fakeService) ListRepos(ctx context.Context, options RequestOptions, for
 	s.lastListFormat = string(format)
 	s.lastOptions = options
 	return s.listReposBody, nil
+}
+
+func (s *fakeService) ListNamespaces(ctx context.Context, options RequestOptions, format output.ListFormat) ([]byte, error) {
+	s.listNamespacesCalls++
+	s.lastListFormat = string(format)
+	s.lastOptions = options
+	if len(s.listNamespacesBody) > 0 {
+		return s.listNamespacesBody, nil
+	}
+	type repoRow struct {
+		Namespace string `json:"namespace"`
+	}
+	var repos []repoRow
+	if len(s.listReposBody) == 0 || json.Unmarshal(s.listReposBody, &repos) != nil {
+		return []byte("[]"), nil
+	}
+	type namespaceRow struct {
+		Namespace  string `json:"namespace"`
+		RepoCount  int64  `json:"repo_count"`
+		AllPending bool   `json:"all_pending"`
+	}
+	counts := map[string]int64{}
+	for _, row := range repos {
+		counts[row.Namespace]++
+	}
+	rows := make([]namespaceRow, 0, len(counts))
+	for namespace, count := range counts {
+		rows = append(rows, namespaceRow{Namespace: namespace, RepoCount: count})
+	}
+	body, err := json.Marshal(rows)
+	if err != nil {
+		return []byte("[]"), nil
+	}
+	return body, nil
 }
 
 func (s *fakeService) ListAPIs(ctx context.Context, selector request.Envelope, options RequestOptions, format output.ListFormat) ([]byte, error) {

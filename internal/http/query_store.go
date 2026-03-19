@@ -41,6 +41,7 @@ type queryReadStore interface {
 		api string,
 		snapshotRevisionID int64,
 	) ([]store.OperationSnapshot, error)
+	ListNamespaceCatalogInventory(ctx context.Context) ([]store.NamespaceCatalogEntry, error)
 	ListRepoCatalogInventory(ctx context.Context) ([]store.RepoCatalogEntry, error)
 	GetRepoCatalogFreshness(ctx context.Context, namespace string, repo string) (store.RepoCatalogFreshness, error)
 }

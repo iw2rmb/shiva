@@ -20,6 +20,7 @@ const (
 )
 
 type BrowserService interface {
+	ListNamespaces(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListOperations(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)

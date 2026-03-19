@@ -136,6 +136,10 @@ func parseReposQuery(c *fiber.Ctx) error {
 	return rejectUnsupportedQueryParams(c, "repo", "api", "revision_id", "sha", "operation_id", "method", "path", "format")
 }
 
+func parseNamespacesQuery(c *fiber.Ctx) error {
+	return rejectUnsupportedQueryParams(c, "namespace", "repo", "api", "revision_id", "sha", "operation_id", "method", "path", "format")
+}
+
 type snapshotQueryOptions struct {
 	allowAPI bool
 }

@@ -117,30 +117,58 @@ func executeListCommand(
 		return renderRepoOperationsDirect(ctx, service, options, namespace, repo, colorize)
 	}
 
-	repoRows, err := loadListRepoRows(ctx, service, options)
+	namespaceRows, err := loadListNamespaceRows(ctx, service, options)
 	if err != nil {
 		return nil, err
 	}
 
-	selection, err := resolveListSelection(rawSelector, repoRows)
+	selection, err := resolveListSelection(rawSelector, namespaceRows)
 	if err != nil {
 		return nil, err
 	}
 
 	switch selection.Kind {
 	case listSelectionNamespacesAll:
-		return renderNamespaceEntries(namespaceEntriesFromRows(repoRows), false, colorize), nil
+		return renderNamespaceEntries(namespaceEntriesFromNamespaceRows(namespaceRows), false, colorize), nil
 	case listSelectionNamespacesMatch:
-		return renderNamespaceEntries(filterNamespaceEntries(namespaceEntriesFromRows(repoRows), selection.Prefix), true, colorize), nil
+		return renderNamespaceEntries(filterNamespaceEntries(namespaceEntriesFromNamespaceRows(namespaceRows), selection.Prefix), true, colorize), nil
 	case listSelectionNamespaceRepos:
+		repoRows, err := loadListRepoRows(ctx, service, options)
+		if err != nil {
+			return nil, err
+		}
 		return renderNamespaceRepos(ctx, service, options, selection.Namespace, "", repoRows, colorize), nil
 	case listSelectionRepoMatch:
+		repoRows, err := loadListRepoRows(ctx, service, options)
+		if err != nil {
+			return nil, err
+		}
 		return renderNamespaceRepos(ctx, service, options, selection.Namespace, selection.RepoPrefix, repoRows, colorize), nil
 	case listSelectionRepoOperations:
+		repoRows, err := loadListRepoRows(ctx, service, options)
+		if err != nil {
+			return nil, err
+		}
 		return renderRepoOperations(ctx, service, options, selection.Namespace, selection.Repo, repoRows, colorize)
 	default:
 		return nil, fmt.Errorf("unsupported list selection %q", selection.Kind)
 	}
+}
+
+func loadListNamespaceRows(ctx context.Context, service Service, options RequestOptions) ([]clioutput.NamespaceRow, error) {
+	body, err := service.ListNamespaces(ctx, options, clioutput.ListFormatJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []clioutput.NamespaceRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("decode namespace list: %w", err)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].Namespace < rows[j].Namespace
+	})
+	return rows, nil
 }
 
 func parseExactRepoSelection(raw string) (string, string, bool) {
@@ -174,7 +202,7 @@ func loadListRepoRows(ctx context.Context, service Service, options RequestOptio
 	return rows, nil
 }
 
-func resolveListSelection(raw string, repoRows []clioutput.RepoRow) (listSelection, error) {
+func resolveListSelection(raw string, namespaceRows []clioutput.NamespaceRow) (listSelection, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return listSelection{Kind: listSelectionNamespacesAll}, nil
@@ -185,7 +213,23 @@ func resolveListSelection(raw string, repoRows []clioutput.RepoRow) (listSelecti
 			Namespace: strings.TrimSuffix(raw, "/"),
 		}, nil
 	}
-	if repoRowByPath(repoRows, raw) != nil {
+	if hasNamespacePrefixFromRows(namespaceRows, raw) {
+		return listSelection{
+			Kind:   listSelectionNamespacesMatch,
+			Prefix: raw,
+		}, nil
+	}
+	identity, err := repoid.ParsePath(raw)
+	if err != nil {
+		return listSelection{}, &InvalidInputError{Message: err.Error()}
+	}
+	if namespaceExists(namespaceRows, identity.Namespace) && identity.Repo == "" {
+		return listSelection{
+			Kind:      listSelectionNamespaceRepos,
+			Namespace: identity.Namespace,
+		}, nil
+	}
+	if namespaceExists(namespaceRows, identity.Namespace) && identity.Repo != "" {
 		identity, err := repoid.ParsePath(raw)
 		if err != nil {
 			return listSelection{}, &InvalidInputError{Message: err.Error()}
@@ -196,16 +240,6 @@ func resolveListSelection(raw string, repoRows []clioutput.RepoRow) (listSelecti
 			Repo:      identity.Repo,
 		}, nil
 	}
-	if hasNamespacePrefix(repoRows, raw) {
-		return listSelection{
-			Kind:   listSelectionNamespacesMatch,
-			Prefix: raw,
-		}, nil
-	}
-	identity, err := repoid.ParsePath(raw)
-	if err != nil {
-		return listSelection{}, &InvalidInputError{Message: err.Error()}
-	}
 	return listSelection{
 		Kind:       listSelectionRepoMatch,
 		Namespace:  identity.Namespace,
@@ -213,31 +247,19 @@ func resolveListSelection(raw string, repoRows []clioutput.RepoRow) (listSelecti
 	}, nil
 }
 
-func namespaceEntriesFromRows(rows []clioutput.RepoRow) []namespaceEntry {
+func namespaceEntriesFromNamespaceRows(rows []clioutput.NamespaceRow) []namespaceEntry {
 	if len(rows) == 0 {
 		return nil
 	}
 
-	summaries := make(map[string]namespaceEntry)
+	out := make([]namespaceEntry, 0, len(rows))
 	for _, row := range rows {
-		entry := summaries[row.Namespace]
-		entry.Namespace = row.Namespace
-		entry.RepoCount++
-		if entry.RepoCount == 1 {
-			entry.AllPending = repoRowIsPending(row)
-		} else {
-			entry.AllPending = entry.AllPending && repoRowIsPending(row)
-		}
-		summaries[row.Namespace] = entry
+		out = append(out, namespaceEntry{
+			Namespace:  row.Namespace,
+			RepoCount:  int(row.RepoCount),
+			AllPending: row.AllPending,
+		})
 	}
-
-	out := make([]namespaceEntry, 0, len(summaries))
-	for _, entry := range summaries {
-		out = append(out, entry)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Namespace < out[j].Namespace
-	})
 	return out
 }
 
@@ -251,9 +273,18 @@ func filterNamespaceEntries(entries []namespaceEntry, prefix string) []namespace
 	return filtered
 }
 
-func hasNamespacePrefix(rows []clioutput.RepoRow, prefix string) bool {
+func hasNamespacePrefixFromRows(rows []clioutput.NamespaceRow, prefix string) bool {
 	for _, row := range rows {
 		if strings.HasPrefix(row.Namespace, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func namespaceExists(rows []clioutput.NamespaceRow, namespace string) bool {
+	for _, row := range rows {
+		if row.Namespace == namespace {
 			return true
 		}
 	}

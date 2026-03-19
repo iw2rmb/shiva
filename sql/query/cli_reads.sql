@@ -1,8 +1,26 @@
+-- name: ListNamespaceCatalogInventory :many
+SELECT
+    namespaces.namespace,
+    COUNT(*)::BIGINT AS repo_count,
+    COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
+FROM namespaces
+JOIN repos ON repos.namespace_id = namespaces.id
+LEFT JOIN LATERAL (
+    SELECT status
+    FROM ingest_events
+    WHERE ingest_events.repo_id = repos.id
+      AND ingest_events.branch = repos.default_branch
+    ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+    LIMIT 1
+) AS head ON TRUE
+GROUP BY namespaces.namespace
+ORDER BY namespaces.namespace ASC;
+
 -- name: ListRepoCatalogInventory :many
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.namespace,
+    namespaces.namespace,
     repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
@@ -19,6 +37,7 @@ SELECT
     COALESCE(latest_openapi.sha, '')::TEXT AS snapshot_revision_sha,
     latest_openapi.processed_at AS snapshot_revision_processed_at
 FROM repos
+JOIN namespaces ON namespaces.id = repos.namespace_id
 LEFT JOIN LATERAL (
     SELECT COUNT(*)::BIGINT AS active_api_count
     FROM api_specs
@@ -43,13 +62,13 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-ORDER BY repos.namespace ASC, repos.repo ASC;
+ORDER BY namespaces.namespace ASC, repos.repo ASC;
 
 -- name: GetRepoCatalogFreshness :one
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.namespace,
+    namespaces.namespace,
     repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
@@ -66,6 +85,7 @@ SELECT
     COALESCE(latest_openapi.sha, '')::TEXT AS snapshot_revision_sha,
     latest_openapi.processed_at AS snapshot_revision_processed_at
 FROM repos
+JOIN namespaces ON namespaces.id = repos.namespace_id
 LEFT JOIN LATERAL (
     SELECT COUNT(*)::BIGINT AS active_api_count
     FROM api_specs
@@ -90,7 +110,7 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-WHERE repos.namespace = sqlc.arg(namespace)
+WHERE namespaces.namespace = sqlc.arg(namespace)
   AND repos.repo = sqlc.arg(repo);
 
 -- name: ListAPISnapshotInventoryByRepoRevision :many

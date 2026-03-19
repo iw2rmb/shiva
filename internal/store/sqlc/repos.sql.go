@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const clearRepoForceRescan = `-- name: ClearRepoForceRescan :exec
@@ -22,40 +24,74 @@ func (q *Queries) ClearRepoForceRescan(ctx context.Context, repoID int64) error 
 }
 
 const createRepo = `-- name: CreateRepo :one
-INSERT INTO repos (
-    gitlab_project_id,
-    namespace,
-    repo,
-    default_branch
+WITH resolved_namespace AS (
+    INSERT INTO namespaces (namespace)
+    VALUES ($1)
+    ON CONFLICT (namespace) DO UPDATE
+    SET updated_at = NOW()
+    RETURNING id
+),
+inserted_repo AS (
+    INSERT INTO repos (
+        gitlab_project_id,
+        namespace_id,
+        repo,
+        default_branch
+    )
+    SELECT
+        $2,
+        resolved_namespace.id,
+        $3,
+        $4
+    FROM resolved_namespace
+    RETURNING id, gitlab_project_id, namespace_id, repo, default_branch, openapi_force_rescan, created_at, updated_at
 )
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4
-)
-RETURNING id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT
+    inserted_repo.id,
+    inserted_repo.gitlab_project_id,
+    namespaces.namespace,
+    inserted_repo.namespace_id,
+    inserted_repo.repo,
+    inserted_repo.default_branch,
+    inserted_repo.openapi_force_rescan,
+    inserted_repo.created_at,
+    inserted_repo.updated_at
+FROM inserted_repo
+JOIN namespaces ON namespaces.id = inserted_repo.namespace_id
 `
 
 type CreateRepoParams struct {
-	GitlabProjectID int64  `json:"gitlab_project_id"`
 	Namespace       string `json:"namespace"`
+	GitlabProjectID int64  `json:"gitlab_project_id"`
 	Repo            string `json:"repo"`
 	DefaultBranch   string `json:"default_branch"`
 }
 
-func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Repo, error) {
+type CreateRepoRow struct {
+	ID                 int64              `json:"id"`
+	GitlabProjectID    int64              `json:"gitlab_project_id"`
+	Namespace          string             `json:"namespace"`
+	NamespaceID        int64              `json:"namespace_id"`
+	Repo               string             `json:"repo"`
+	DefaultBranch      string             `json:"default_branch"`
+	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (CreateRepoRow, error) {
 	row := q.db.QueryRow(ctx, createRepo,
-		arg.GitlabProjectID,
 		arg.Namespace,
+		arg.GitlabProjectID,
 		arg.Repo,
 		arg.DefaultBranch,
 	)
-	var i Repo
+	var i CreateRepoRow
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
 		&i.Namespace,
+		&i.NamespaceID,
 		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
@@ -91,18 +127,41 @@ func (q *Queries) GetRepoBootstrapState(ctx context.Context, repoID int64) (GetR
 }
 
 const getRepoByID = `-- name: GetRepoByID :one
-SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT
+    repos.id,
+    repos.gitlab_project_id,
+    namespaces.namespace,
+    repos.namespace_id,
+    repos.repo,
+    repos.default_branch,
+    repos.openapi_force_rescan,
+    repos.created_at,
+    repos.updated_at
 FROM repos
-WHERE id = $1
+JOIN namespaces ON namespaces.id = repos.namespace_id
+WHERE repos.id = $1
 `
 
-func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repo, error) {
+type GetRepoByIDRow struct {
+	ID                 int64              `json:"id"`
+	GitlabProjectID    int64              `json:"gitlab_project_id"`
+	Namespace          string             `json:"namespace"`
+	NamespaceID        int64              `json:"namespace_id"`
+	Repo               string             `json:"repo"`
+	DefaultBranch      string             `json:"default_branch"`
+	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetRepoByID(ctx context.Context, id int64) (GetRepoByIDRow, error) {
 	row := q.db.QueryRow(ctx, getRepoByID, id)
-	var i Repo
+	var i GetRepoByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
 		&i.Namespace,
+		&i.NamespaceID,
 		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
@@ -113,10 +172,20 @@ func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repo, error) {
 }
 
 const getRepoByNamespaceAndRepo = `-- name: GetRepoByNamespaceAndRepo :one
-SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT
+    repos.id,
+    repos.gitlab_project_id,
+    namespaces.namespace,
+    repos.namespace_id,
+    repos.repo,
+    repos.default_branch,
+    repos.openapi_force_rescan,
+    repos.created_at,
+    repos.updated_at
 FROM repos
-WHERE namespace = $1
-  AND repo = $2
+JOIN namespaces ON namespaces.id = repos.namespace_id
+WHERE namespaces.namespace = $1
+  AND repos.repo = $2
 `
 
 type GetRepoByNamespaceAndRepoParams struct {
@@ -124,13 +193,26 @@ type GetRepoByNamespaceAndRepoParams struct {
 	Repo      string `json:"repo"`
 }
 
-func (q *Queries) GetRepoByNamespaceAndRepo(ctx context.Context, arg GetRepoByNamespaceAndRepoParams) (Repo, error) {
+type GetRepoByNamespaceAndRepoRow struct {
+	ID                 int64              `json:"id"`
+	GitlabProjectID    int64              `json:"gitlab_project_id"`
+	Namespace          string             `json:"namespace"`
+	NamespaceID        int64              `json:"namespace_id"`
+	Repo               string             `json:"repo"`
+	DefaultBranch      string             `json:"default_branch"`
+	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetRepoByNamespaceAndRepo(ctx context.Context, arg GetRepoByNamespaceAndRepoParams) (GetRepoByNamespaceAndRepoRow, error) {
 	row := q.db.QueryRow(ctx, getRepoByNamespaceAndRepo, arg.Namespace, arg.Repo)
-	var i Repo
+	var i GetRepoByNamespaceAndRepoRow
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
 		&i.Namespace,
+		&i.NamespaceID,
 		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
@@ -141,18 +223,41 @@ func (q *Queries) GetRepoByNamespaceAndRepo(ctx context.Context, arg GetRepoByNa
 }
 
 const getRepoByProjectID = `-- name: GetRepoByProjectID :one
-SELECT id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
+SELECT
+    repos.id,
+    repos.gitlab_project_id,
+    namespaces.namespace,
+    repos.namespace_id,
+    repos.repo,
+    repos.default_branch,
+    repos.openapi_force_rescan,
+    repos.created_at,
+    repos.updated_at
 FROM repos
-WHERE gitlab_project_id = $1
+JOIN namespaces ON namespaces.id = repos.namespace_id
+WHERE repos.gitlab_project_id = $1
 `
 
-func (q *Queries) GetRepoByProjectID(ctx context.Context, gitlabProjectID int64) (Repo, error) {
+type GetRepoByProjectIDRow struct {
+	ID                 int64              `json:"id"`
+	GitlabProjectID    int64              `json:"gitlab_project_id"`
+	Namespace          string             `json:"namespace"`
+	NamespaceID        int64              `json:"namespace_id"`
+	Repo               string             `json:"repo"`
+	DefaultBranch      string             `json:"default_branch"`
+	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetRepoByProjectID(ctx context.Context, gitlabProjectID int64) (GetRepoByProjectIDRow, error) {
 	row := q.db.QueryRow(ctx, getRepoByProjectID, gitlabProjectID)
-	var i Repo
+	var i GetRepoByProjectIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
 		&i.Namespace,
+		&i.NamespaceID,
 		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,
@@ -163,13 +268,35 @@ func (q *Queries) GetRepoByProjectID(ctx context.Context, gitlabProjectID int64)
 }
 
 const updateRepoMetadata = `-- name: UpdateRepoMetadata :one
+WITH resolved_namespace AS (
+    INSERT INTO namespaces (namespace)
+    VALUES ($1)
+    ON CONFLICT (namespace) DO UPDATE
+    SET updated_at = NOW()
+    RETURNING id
+),
+updated_repo AS (
 UPDATE repos
-SET namespace = $1,
+SET namespace_id = resolved_namespace.id,
     repo = $2,
     default_branch = $3,
     updated_at = NOW()
-WHERE id = $4
-RETURNING id, gitlab_project_id, namespace, repo, default_branch, openapi_force_rescan, created_at, updated_at
+FROM resolved_namespace
+WHERE repos.id = $4
+RETURNING repos.id, repos.gitlab_project_id, repos.namespace_id, repos.repo, repos.default_branch, repos.openapi_force_rescan, repos.created_at, repos.updated_at
+)
+SELECT
+    updated_repo.id,
+    updated_repo.gitlab_project_id,
+    namespaces.namespace,
+    updated_repo.namespace_id,
+    updated_repo.repo,
+    updated_repo.default_branch,
+    updated_repo.openapi_force_rescan,
+    updated_repo.created_at,
+    updated_repo.updated_at
+FROM updated_repo
+JOIN namespaces ON namespaces.id = updated_repo.namespace_id
 `
 
 type UpdateRepoMetadataParams struct {
@@ -179,18 +306,31 @@ type UpdateRepoMetadataParams struct {
 	ID            int64  `json:"id"`
 }
 
-func (q *Queries) UpdateRepoMetadata(ctx context.Context, arg UpdateRepoMetadataParams) (Repo, error) {
+type UpdateRepoMetadataRow struct {
+	ID                 int64              `json:"id"`
+	GitlabProjectID    int64              `json:"gitlab_project_id"`
+	Namespace          string             `json:"namespace"`
+	NamespaceID        int64              `json:"namespace_id"`
+	Repo               string             `json:"repo"`
+	DefaultBranch      string             `json:"default_branch"`
+	OpenapiForceRescan bool               `json:"openapi_force_rescan"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateRepoMetadata(ctx context.Context, arg UpdateRepoMetadataParams) (UpdateRepoMetadataRow, error) {
 	row := q.db.QueryRow(ctx, updateRepoMetadata,
 		arg.Namespace,
 		arg.Repo,
 		arg.DefaultBranch,
 		arg.ID,
 	)
-	var i Repo
+	var i UpdateRepoMetadataRow
 	err := row.Scan(
 		&i.ID,
 		&i.GitlabProjectID,
 		&i.Namespace,
+		&i.NamespaceID,
 		&i.Repo,
 		&i.DefaultBranch,
 		&i.OpenapiForceRescan,

@@ -120,7 +120,7 @@ type normalizedResolveReadSnapshotInput struct {
 }
 
 type readSnapshotQueries interface {
-	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error)
+	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.GetRepoByNamespaceAndRepoRow, error)
 	GetRevisionStateByID(ctx context.Context, id int64) (sqlc.GetRevisionStateByIDRow, error)
 	GetRevisionStateByRepoSHAPrefix(
 		ctx context.Context,
@@ -193,7 +193,7 @@ func resolveReadSnapshot(
 func resolveReadSnapshotByRevisionID(
 	ctx context.Context,
 	queries readSnapshotQueries,
-	repo sqlc.Repo,
+	repo sqlc.GetRepoByNamespaceAndRepoRow,
 	input normalizedResolveReadSnapshotInput,
 ) (ResolvedReadSnapshot, error) {
 	revisionRow, err := queries.GetRevisionStateByID(ctx, input.revisionID)
@@ -227,7 +227,7 @@ func resolveReadSnapshotByRevisionID(
 func resolveReadSnapshotBySHA(
 	ctx context.Context,
 	queries readSnapshotQueries,
-	repo sqlc.Repo,
+	repo sqlc.GetRepoByNamespaceAndRepoRow,
 	input normalizedResolveReadSnapshotInput,
 ) (ResolvedReadSnapshot, error) {
 	revisionRow, err := queries.GetRevisionStateByRepoSHAPrefix(ctx, sqlc.GetRevisionStateByRepoSHAPrefixParams{
@@ -257,7 +257,7 @@ func resolveReadSnapshotBySHA(
 func resolveReadSnapshotByDefaultBranchLatest(
 	ctx context.Context,
 	queries readSnapshotQueries,
-	repo sqlc.Repo,
+	repo sqlc.GetRepoByNamespaceAndRepoRow,
 	input normalizedResolveReadSnapshotInput,
 ) (ResolvedReadSnapshot, error) {
 	headRevisionRow, err := queries.GetLatestRevisionStateByBranch(ctx, sqlc.GetLatestRevisionStateByBranchParams{
@@ -337,7 +337,7 @@ func resolveReadSnapshotByDefaultBranchLatest(
 }
 
 func buildResolvedReadSnapshot(
-	repo sqlc.Repo,
+	repo sqlc.GetRepoByNamespaceAndRepoRow,
 	input normalizedResolveReadSnapshotInput,
 	revision Revision,
 ) (ResolvedReadSnapshot, error) {

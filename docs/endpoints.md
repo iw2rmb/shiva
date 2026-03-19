@@ -171,7 +171,7 @@ Current state:
 
 ## Query and Call-Planning Endpoints (`/v1/*`)
 Current state:
-- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/repos`, and `/v1/catalog/status` are shipped query/read endpoints
+- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, and `/v1/catalog/status` are shipped query/read endpoints
 - `/v1/call` is shipped as a planning endpoint only; it does not dispatch outbound traffic
 
 ### Registered Surface
@@ -180,6 +180,7 @@ Current state:
 - `POST /v1/call`
 - `GET /v1/apis`
 - `GET /v1/operations`
+- `GET /v1/namespaces`
 - `GET /v1/repos`
 - `GET /v1/catalog/status`
 
@@ -206,7 +207,7 @@ Legacy path-segment endpoints were removed:
 - invalid query combinations return `400`
 
 ### Snapshot Resolution
-- repo lookup uses `(repos.namespace, repos.repo)`
+- repo lookup uses `(namespaces.namespace, repos.repo)` through `repos.namespace_id`
 - `revision_id` resolves the exact ingest-event row and rejects repo mismatches
 - `sha` resolves one repo-scoped short SHA prefix
 - no selector resolves the latest processed OpenAPI snapshot on the repo default branch
@@ -321,6 +322,14 @@ Legacy path-segment endpoints were removed:
   - `deprecated`
   - `operation` (raw canonical operation object)
 - explicit `api` selection is validated before listing so `404` is reserved for missing API snapshots, not empty inventories
+
+### `GET /v1/namespaces`
+- takes no repo/snapshot selector parameters
+- response body is an array of namespace catalog rows
+- rows include:
+  - `namespace`
+  - `repo_count`
+  - `all_pending`
 
 ### `GET /v1/repos`
 - takes no repo/snapshot selector parameters

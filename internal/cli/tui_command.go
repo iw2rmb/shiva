@@ -114,6 +114,14 @@ func (adapter tuiServiceAdapter) ListRepos(
 	return adapter.service.ListRepos(ctx, fromTUIRequestOptions(options), format)
 }
 
+func (adapter tuiServiceAdapter) ListNamespaces(
+	ctx context.Context,
+	options tui.RequestOptions,
+	format clioutput.ListFormat,
+) ([]byte, error) {
+	return adapter.service.ListNamespaces(ctx, fromTUIRequestOptions(options), format)
+}
+
 func (adapter tuiServiceAdapter) ListOperations(
 	ctx context.Context,
 	selector request.Envelope,

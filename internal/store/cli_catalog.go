@@ -32,6 +32,12 @@ type RepoCatalogEntry struct {
 
 type RepoCatalogFreshness = RepoCatalogEntry
 
+type NamespaceCatalogEntry struct {
+	Namespace  string
+	RepoCount  int64
+	AllPending bool
+}
+
 type APISnapshot struct {
 	APISpecID int64
 	API       string
@@ -88,6 +94,10 @@ type ResolvedOperationCandidates struct {
 
 type repoCatalogInventoryQueries interface {
 	ListRepoCatalogInventory(ctx context.Context) ([]sqlc.ListRepoCatalogInventoryRow, error)
+}
+
+type namespaceCatalogInventoryQueries interface {
+	ListNamespaceCatalogInventory(ctx context.Context) ([]sqlc.ListNamespaceCatalogInventoryRow, error)
 }
 
 type repoCatalogFreshnessQueries interface {
@@ -151,6 +161,34 @@ type operationResolutionByIDQueries interface {
 type operationResolutionByMethodPathQueries interface {
 	readSnapshotQueries
 	operationLookupByMethodPathQueries
+}
+
+func (s *Store) ListNamespaceCatalogInventory(ctx context.Context) ([]NamespaceCatalogEntry, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+
+	return listNamespaceCatalogInventory(ctx, sqlc.New(s.pool))
+}
+
+func listNamespaceCatalogInventory(
+	ctx context.Context,
+	queries namespaceCatalogInventoryQueries,
+) ([]NamespaceCatalogEntry, error) {
+	rows, err := queries.ListNamespaceCatalogInventory(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list namespace catalog inventory: %w", err)
+	}
+
+	items := make([]NamespaceCatalogEntry, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, NamespaceCatalogEntry{
+			Namespace:  row.Namespace,
+			RepoCount:  row.RepoCount,
+			AllPending: scanBool(row.AllPending),
+		})
+	}
+	return items, nil
 }
 
 func (s *Store) ListRepoCatalogInventory(ctx context.Context) ([]RepoCatalogEntry, error) {

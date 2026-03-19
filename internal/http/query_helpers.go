@@ -72,6 +72,12 @@ type repoCatalogResponse struct {
 	SnapshotRevision   *catalogRevisionStateResponse `json:"snapshot_revision,omitempty"`
 }
 
+type namespaceCatalogResponse struct {
+	Namespace  string `json:"namespace"`
+	RepoCount  int64  `json:"repo_count"`
+	AllPending bool   `json:"all_pending"`
+}
+
 type catalogRevisionStateResponse struct {
 	ID             int64      `json:"id"`
 	SHA            string     `json:"sha"`
@@ -242,6 +248,18 @@ func mapRepoCatalogEntries(items []store.RepoCatalogEntry) []repoCatalogResponse
 	response := make([]repoCatalogResponse, 0, len(items))
 	for _, item := range items {
 		response = append(response, mapRepoCatalogEntry(item))
+	}
+	return response
+}
+
+func mapNamespaceCatalogEntries(items []store.NamespaceCatalogEntry) []namespaceCatalogResponse {
+	response := make([]namespaceCatalogResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, namespaceCatalogResponse{
+			Namespace:  item.Namespace,
+			RepoCount:  item.RepoCount,
+			AllPending: item.AllPending,
+		})
 	}
 	return response
 }

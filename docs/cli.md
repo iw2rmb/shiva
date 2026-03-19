@@ -119,7 +119,7 @@ Rules:
     - no selector starts in the `SHIVA` home list
     - `<namespace>/` starts in that namespace's repo view
     - `<namespace>/<repo>` starts in that repo's explorer view
-  - startup for home/namespace routes loads repo catalog and derives namespace/repo lists in memory
+  - startup for home/namespace routes loads namespace catalog from `/v1/namespaces`; repo rows are loaded when entering a namespace
   - startup for direct repo route (`shiva tui <namespace>/<repo>`) skips repo catalog preload and loads repo operations immediately
   - home mode:
     - list title: `SHIVA`
@@ -178,7 +178,7 @@ Success writes to stdout. Errors write to stderr.
   - default: `10`
 
 ## Local Catalog Cache
-- Runtime CLI requests use live query endpoints (`/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/repos`) and do not use the local catalog cache.
+- Runtime CLI requests use live query endpoints (`/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`) and do not use the local catalog cache.
 - Local catalog cache remains for completion provider flows under `$XDG_CACHE_HOME/shiva/catalog/v1` or `~/.cache/shiva/catalog/v1`.
 - `--offline` no longer provides cached inspect/call behavior; inspect and call flows require live connectivity.
 - `shiva sync <repo-ref>` performs live refresh checks via `/v1/apis` and per-API `/v1/operations` and returns a JSON summary.

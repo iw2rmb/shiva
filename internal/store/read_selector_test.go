@@ -207,7 +207,7 @@ func TestNormalizeResolveReadSelectorInput(t *testing.T) {
 
 func newSelectorTestQueries() *fakeSelectorResolutionQueries {
 	return &fakeSelectorResolutionQueries{
-		repo: sqlc.Repo{
+		repo: sqlc.GetRepoByNamespaceAndRepoRow{
 			ID:        44,
 			Namespace: "acme", Repo: "platform-api",
 			DefaultBranch: "main",
@@ -226,7 +226,7 @@ func newSelectorTestInput(kind SelectorKind, selector string) normalizedResolveR
 }
 
 type fakeSelectorResolutionQueries struct {
-	repo sqlc.Repo
+	repo sqlc.GetRepoByNamespaceAndRepoRow
 
 	bySHAPrefix     map[string]sqlc.GetRevisionStateByRepoSHAPrefixRow
 	latestByBranch  map[string]sqlc.GetLatestRevisionStateByBranchRow
@@ -235,9 +235,12 @@ type fakeSelectorResolutionQueries struct {
 	lastHeadBranch string
 }
 
-func (f *fakeSelectorResolutionQueries) GetRepoByNamespaceAndRepo(_ context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error) {
+func (f *fakeSelectorResolutionQueries) GetRepoByNamespaceAndRepo(
+	_ context.Context,
+	arg sqlc.GetRepoByNamespaceAndRepoParams,
+) (sqlc.GetRepoByNamespaceAndRepoRow, error) {
 	if f.repo.ID == 0 || f.repo.Namespace != arg.Namespace || f.repo.Repo != arg.Repo {
-		return sqlc.Repo{}, pgx.ErrNoRows
+		return sqlc.GetRepoByNamespaceAndRepoRow{}, pgx.ErrNoRows
 	}
 	return f.repo, nil
 }

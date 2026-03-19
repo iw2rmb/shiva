@@ -38,6 +38,12 @@ type RepoRow struct {
 	SnapshotRevision   *RevisionState `json:"snapshot_revision,omitempty"`
 }
 
+type NamespaceRow struct {
+	Namespace  string `json:"namespace"`
+	RepoCount  int64  `json:"repo_count"`
+	AllPending bool   `json:"all_pending"`
+}
+
 type APIRow struct {
 	Namespace         string `json:"namespace,omitempty"`
 	Repo              string `json:"repo,omitempty"`
@@ -77,6 +83,21 @@ func RenderRepos(rows []RepoRow, format ListFormat) ([]byte, error) {
 		return renderRepoTable(rows), nil
 	case ListFormatTSV:
 		return renderRepoTSV(rows), nil
+	case ListFormatJSON:
+		return renderJSON(rows)
+	case ListFormatNDJSON:
+		return renderNDJSON(rows)
+	default:
+		return nil, fmt.Errorf("unsupported list format %q", format)
+	}
+}
+
+func RenderNamespaces(rows []NamespaceRow, format ListFormat) ([]byte, error) {
+	switch format {
+	case ListFormatTable:
+		return renderNamespaceTable(rows), nil
+	case ListFormatTSV:
+		return renderNamespaceTSV(rows), nil
 	case ListFormatJSON:
 		return renderJSON(rows)
 	case ListFormatNDJSON:
@@ -136,6 +157,23 @@ func renderRepoTable(rows []RepoRow) []byte {
 	return buffer.Bytes()
 }
 
+func renderNamespaceTable(rows []NamespaceRow) []byte {
+	buffer := &bytes.Buffer{}
+	writer := tabwriter.NewWriter(buffer, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(writer, "NAMESPACE\tREPOS\tALL_PENDING")
+	for _, row := range rows {
+		fmt.Fprintf(
+			writer,
+			"%s\t%d\t%t\n",
+			sanitizeCell(row.Namespace),
+			row.RepoCount,
+			row.AllPending,
+		)
+	}
+	_ = writer.Flush()
+	return buffer.Bytes()
+}
+
 func renderRepoTSV(rows []RepoRow) []byte {
 	buffer := &bytes.Buffer{}
 	fmt.Fprintln(buffer, "namespace\trepo\tdefault_branch\tactive_api_count\tsnapshot_revision\thead_revision")
@@ -149,6 +187,21 @@ func renderRepoTSV(rows []RepoRow) []byte {
 			row.ActiveAPICount,
 			sanitizeCell(renderRevisionSummary(row.SnapshotRevision)),
 			sanitizeCell(renderRevisionSummary(row.HeadRevision)),
+		)
+	}
+	return buffer.Bytes()
+}
+
+func renderNamespaceTSV(rows []NamespaceRow) []byte {
+	buffer := &bytes.Buffer{}
+	fmt.Fprintln(buffer, "namespace\trepo_count\tall_pending")
+	for _, row := range rows {
+		fmt.Fprintf(
+			buffer,
+			"%s\t%d\t%t\n",
+			sanitizeCell(row.Namespace),
+			row.RepoCount,
+			row.AllPending,
 		)
 	}
 	return buffer.Bytes()

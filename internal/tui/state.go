@@ -115,6 +115,7 @@ func (state RepoExplorerRouteState) SelectedEndpoint() (EndpointEntry, bool) {
 type loadDomain string
 
 const (
+	loadDomainNamespaces      loadDomain = "namespaces"
 	loadDomainRepoCatalog     loadDomain = "repo_catalog"
 	loadDomainOperationList   loadDomain = "operation_list"
 	loadDomainOperationDetail loadDomain = "operation_detail"
@@ -129,6 +130,7 @@ type asyncLoadState struct {
 
 type AsyncState struct {
 	nextToken       RequestToken
+	Namespaces      asyncLoadState
 	RepoCatalog     asyncLoadState
 	OperationList   asyncLoadState
 	OperationDetail asyncLoadState

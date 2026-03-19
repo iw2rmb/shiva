@@ -106,6 +106,19 @@ func (s *Server) handleListRepos(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(mapRepoCatalogEntries(items))
 }
 
+func (s *Server) handleListNamespaces(c *fiber.Ctx) error {
+	if err := parseNamespacesQuery(c); err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	items, err := s.readStore.ListNamespaceCatalogInventory(c.Context())
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(mapNamespaceCatalogEntries(items))
+}
+
 func (s *Server) handleGetCatalogStatus(c *fiber.Ctx) error {
 	repoPath, err := parseCatalogStatusQuery(c)
 	if err != nil {

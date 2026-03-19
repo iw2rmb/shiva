@@ -559,7 +559,7 @@ const getRepoCatalogFreshness = `-- name: GetRepoCatalogFreshness :one
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.namespace,
+    namespaces.namespace,
     repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
@@ -576,6 +576,7 @@ SELECT
     COALESCE(latest_openapi.sha, '')::TEXT AS snapshot_revision_sha,
     latest_openapi.processed_at AS snapshot_revision_processed_at
 FROM repos
+JOIN namespaces ON namespaces.id = repos.namespace_id
 LEFT JOIN LATERAL (
     SELECT COUNT(*)::BIGINT AS active_api_count
     FROM api_specs
@@ -600,7 +601,7 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-WHERE repos.namespace = $1
+WHERE namespaces.namespace = $1
   AND repos.repo = $2
 `
 
@@ -750,6 +751,51 @@ func (q *Queries) ListAPISnapshotInventoryByRepoRevision(ctx context.Context, ar
 			&i.SpecSizeBytes,
 			&i.OperationCount,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNamespaceCatalogInventory = `-- name: ListNamespaceCatalogInventory :many
+SELECT
+    namespaces.namespace,
+    COUNT(*)::BIGINT AS repo_count,
+    COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
+FROM namespaces
+JOIN repos ON repos.namespace_id = namespaces.id
+LEFT JOIN LATERAL (
+    SELECT status
+    FROM ingest_events
+    WHERE ingest_events.repo_id = repos.id
+      AND ingest_events.branch = repos.default_branch
+    ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+    LIMIT 1
+) AS head ON TRUE
+GROUP BY namespaces.namespace
+ORDER BY namespaces.namespace ASC
+`
+
+type ListNamespaceCatalogInventoryRow struct {
+	Namespace  string      `json:"namespace"`
+	RepoCount  int64       `json:"repo_count"`
+	AllPending interface{} `json:"all_pending"`
+}
+
+func (q *Queries) ListNamespaceCatalogInventory(ctx context.Context) ([]ListNamespaceCatalogInventoryRow, error) {
+	rows, err := q.db.Query(ctx, listNamespaceCatalogInventory)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNamespaceCatalogInventoryRow{}
+	for rows.Next() {
+		var i ListNamespaceCatalogInventoryRow
+		if err := rows.Scan(&i.Namespace, &i.RepoCount, &i.AllPending); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -976,7 +1022,7 @@ const listRepoCatalogInventory = `-- name: ListRepoCatalogInventory :many
 SELECT
     repos.id,
     repos.gitlab_project_id,
-    repos.namespace,
+    namespaces.namespace,
     repos.repo,
     repos.default_branch,
     repos.openapi_force_rescan,
@@ -993,6 +1039,7 @@ SELECT
     COALESCE(latest_openapi.sha, '')::TEXT AS snapshot_revision_sha,
     latest_openapi.processed_at AS snapshot_revision_processed_at
 FROM repos
+JOIN namespaces ON namespaces.id = repos.namespace_id
 LEFT JOIN LATERAL (
     SELECT COUNT(*)::BIGINT AS active_api_count
     FROM api_specs
@@ -1017,7 +1064,7 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
-ORDER BY repos.namespace ASC, repos.repo ASC
+ORDER BY namespaces.namespace ASC, repos.repo ASC
 `
 
 type ListRepoCatalogInventoryRow struct {

@@ -21,6 +21,49 @@ func loadRepoCatalogCmd(
 	}
 }
 
+func loadNamespaceCatalogCmd(
+	ctx context.Context,
+	service BrowserService,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		return loadNamespaceCatalogMsg(ctx, service, options, token)
+	}
+}
+
+func loadNamespaceCatalogMsg(
+	ctx context.Context,
+	service BrowserService,
+	options RequestOptions,
+	token RequestToken,
+) tea.Msg {
+	body, err := service.ListNamespaces(ctx, options, clioutput.ListFormatJSON)
+	if err != nil {
+		return loadFailedMsg{Domain: loadDomainNamespaces, Token: token, Err: err}
+	}
+
+	var rows []clioutput.NamespaceRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return loadFailedMsg{
+			Domain: loadDomainNamespaces,
+			Token:  token,
+			Err:    fmt.Errorf("decode namespace catalog: %w", err),
+		}
+	}
+
+	entries := make([]NamespaceEntry, 0, len(rows))
+	for _, row := range rows {
+		entries = append(entries, NamespaceEntry{
+			Namespace:  row.Namespace,
+			RepoCount:  int(row.RepoCount),
+			AllPending: row.AllPending,
+		})
+	}
+
+	return namespaceCatalogLoadedMsg{Token: token, Rows: entries}
+}
+
 func loadRepoCatalogMsg(
 	ctx context.Context,
 	service BrowserService,

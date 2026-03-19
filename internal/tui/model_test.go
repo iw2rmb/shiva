@@ -95,13 +95,13 @@ func TestRootModelNamespacesFilterInputReducesVisibleItems(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
-	token := model.beginRepoCatalogLoad()
+	token := model.beginNamespaceCatalogLoad()
 
-	updated, _ := model.Update(repoCatalogLoadedMsg{
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{
 		Token: token,
-		Rows: []RepoEntry{
-			{Namespace: "acme", Repo: "gateway"},
-			{Namespace: "beta", Repo: "platform"},
+		Rows: []NamespaceEntry{
+			{Namespace: "acme", RepoCount: 1},
+			{Namespace: "beta", RepoCount: 1},
 		},
 	})
 	model = updated.(*rootModel)
@@ -153,10 +153,19 @@ func TestRootModelEnterFilteredNamespaceOpensSelectedNamespaceRepos(t *testing.T
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
-	token := model.beginRepoCatalogLoad()
+	namespaceToken := model.beginNamespaceCatalogLoad()
+	repoToken := model.beginRepoCatalogLoad()
 
-	updated, _ := model.Update(repoCatalogLoadedMsg{
-		Token: token,
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{
+		Token: namespaceToken,
+		Rows: []NamespaceEntry{
+			{Namespace: "acme", RepoCount: 1},
+			{Namespace: "beta", RepoCount: 1},
+		},
+	})
+	model = updated.(*rootModel)
+	updated, _ = model.Update(repoCatalogLoadedMsg{
+		Token: repoToken,
 		Rows: []RepoEntry{
 			{Namespace: "acme", Repo: "gateway"},
 			{Namespace: "beta", Repo: "payments"},
@@ -207,7 +216,7 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeBrowserService{
-		listReposBody: []byte(`[{"namespace":"acme","repo":"platform"}]`),
+		listNamespacesBody: []byte(`[{"namespace":"acme","repo_count":1,"all_pending":false}]`),
 	}
 
 	model := newRootModel(service, InitialRoute{Kind: RouteNamespaces}, RequestOptions{Offline: true})
@@ -215,17 +224,17 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("expected init load command")
 	}
-	if !model.async.RepoCatalog.Loading {
-		t.Fatalf("expected init to mark repo catalog loading")
+	if !model.async.Namespaces.Loading {
+		t.Fatalf("expected init to mark namespace catalog loading")
 	}
 
 	msg := cmd()
-	loaded, ok := msg.(repoCatalogLoadedMsg)
+	loaded, ok := msg.(namespaceCatalogLoadedMsg)
 	if !ok {
-		t.Fatalf("expected repoCatalogLoadedMsg, got %T", msg)
+		t.Fatalf("expected namespaceCatalogLoadedMsg, got %T", msg)
 	}
-	if loaded.Token != model.async.RepoCatalog.ActiveToken {
-		t.Fatalf("expected token %d, got %d", model.async.RepoCatalog.ActiveToken, loaded.Token)
+	if loaded.Token != model.async.Namespaces.ActiveToken {
+		t.Fatalf("expected token %d, got %d", model.async.Namespaces.ActiveToken, loaded.Token)
 	}
 }
 
@@ -369,14 +378,13 @@ func TestRootModelBuildsNamespaceEntriesFromCatalog(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
-	token := model.beginRepoCatalogLoad()
+	token := model.beginNamespaceCatalogLoad()
 
-	updated, _ := model.Update(repoCatalogLoadedMsg{
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{
 		Token: token,
-		Rows: []RepoEntry{
-			{Namespace: "beta", Repo: "payments"},
-			{Namespace: "acme", Repo: "gateway"},
-			{Namespace: "acme", Repo: "platform"},
+		Rows: []NamespaceEntry{
+			{Namespace: "acme", RepoCount: 2},
+			{Namespace: "beta", RepoCount: 1},
 		},
 	})
 	model = updated.(*rootModel)
@@ -397,10 +405,19 @@ func TestRootModelEnterOpensSelectedNamespaceRepos(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
-	token := model.beginRepoCatalogLoad()
+	namespaceToken := model.beginNamespaceCatalogLoad()
+	repoToken := model.beginRepoCatalogLoad()
 
-	updated, _ := model.Update(repoCatalogLoadedMsg{
-		Token: token,
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{
+		Token: namespaceToken,
+		Rows: []NamespaceEntry{
+			{Namespace: "acme", RepoCount: 2},
+			{Namespace: "beta", RepoCount: 1},
+		},
+	})
+	model = updated.(*rootModel)
+	updated, _ = model.Update(repoCatalogLoadedMsg{
+		Token: repoToken,
 		Rows: []RepoEntry{
 			{Namespace: "acme", Repo: "gateway"},
 			{Namespace: "acme", Repo: "platform"},
@@ -437,9 +454,17 @@ func TestRootModelEscReturnsFromReposToNamespaces(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
+	namespaceToken := model.beginNamespaceCatalogLoad()
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{
+		Token: namespaceToken,
+		Rows: []NamespaceEntry{
+			{Namespace: "acme", RepoCount: 2},
+		},
+	})
+	model = updated.(*rootModel)
 	token := model.beginRepoCatalogLoad()
 
-	updated, _ := model.Update(repoCatalogLoadedMsg{
+	updated, _ = model.Update(repoCatalogLoadedMsg{
 		Token: token,
 		Rows: []RepoEntry{
 			{Namespace: "acme", Repo: "gateway"},
@@ -467,9 +492,9 @@ func TestRootModelRendersEmptyCatalogState(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
-	token := model.beginRepoCatalogLoad()
+	token := model.beginNamespaceCatalogLoad()
 
-	updated, _ := model.Update(repoCatalogLoadedMsg{Token: token})
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{Token: token})
 	model = updated.(*rootModel)
 
 	if got := model.View().Content; !strings.Contains(got, "No namespaces found.") {
@@ -481,17 +506,17 @@ func TestRootModelRendersStartupLoadFailure(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
-	token := model.beginRepoCatalogLoad()
+	token := model.beginNamespaceCatalogLoad()
 
 	updated, _ := model.Update(loadFailedMsg{
-		Domain: loadDomainRepoCatalog,
+		Domain: loadDomainNamespaces,
 		Token:  token,
 		Err:    errors.New("catalog unavailable"),
 	})
 	model = updated.(*rootModel)
 
 	view := model.View().Content
-	if !strings.Contains(view, "Failed to load repositories.") {
+	if !strings.Contains(view, "Failed to load namespaces.") {
 		t.Fatalf("expected failure heading, got %q", view)
 	}
 	if !strings.Contains(view, "catalog unavailable") {
@@ -711,6 +736,9 @@ func TestRootModelConvertsWindowSizeIntoTypedResizeMessage(t *testing.T) {
 }
 
 type fakeBrowserService struct {
+	listNamespacesBody []byte
+	listNamespacesErr  error
+	listNamespacesCall int
 	listReposBody      []byte
 	listReposErr       error
 	listReposCall      int
@@ -728,6 +756,18 @@ type fakeBrowserService struct {
 	specBody           []byte
 	specErr            error
 	lastContextValue   any
+}
+
+func (service *fakeBrowserService) ListNamespaces(
+	ctx context.Context,
+	options RequestOptions,
+	format clioutput.ListFormat,
+) ([]byte, error) {
+	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.listNamespacesCall++
+	_ = options
+	_ = format
+	return service.listNamespacesBody, service.listNamespacesErr
 }
 
 func (service *fakeBrowserService) ListRepos(

@@ -56,7 +56,7 @@ Current baseline should be validated by running `go test ./...`.
   - `/v1/spec` format and `ETag` behavior,
   - `/v1/operation` operation-id vs method/path resolution rules,
   - `/v1/call` request-envelope validation, ambiguity reporting, and resolved planning payloads,
-  - `/v1/apis`, `/v1/operations`, `/v1/repos`, and `/v1/catalog/status` response shapes,
+  - `/v1/apis`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, and `/v1/catalog/status` response shapes,
   - removal of legacy `/v1/specs` and `/v1/routes` read surfaces.
 - Internal CI validation service tests cover no-spec compare responses, impacted-root validation, fallback discovery, and repository discovery without `parent_sha`.
 - Source-layout vacuum tests cover repo-relative file remapping from temp workspaces and input validation.

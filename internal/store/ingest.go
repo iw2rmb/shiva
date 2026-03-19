@@ -53,13 +53,13 @@ func (s *Store) PersistGitLabWebhook(ctx context.Context, input GitLabIngestInpu
 
 	queries := sqlc.New(tx)
 
-	repo, err := ensureRepo(ctx, queries, normalized)
+	repoID, err := ensureRepo(ctx, queries, normalized)
 	if err != nil {
 		return GitLabIngestResult{}, err
 	}
 
 	event, err := queries.CreateIngestEvent(ctx, sqlc.CreateIngestEventParams{
-		RepoID:      repo.ID,
+		RepoID:      repoID,
 		Sha:         normalized.Sha,
 		Branch:      normalized.Branch,
 		ParentSha:   nullableText(normalized.ParentSha),
@@ -69,7 +69,7 @@ func (s *Store) PersistGitLabWebhook(ctx context.Context, input GitLabIngestInpu
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
-			existing, getErr := loadDuplicateIngestEvent(ctx, queries, repo.ID, normalized.DeliveryID, normalized.Sha)
+			existing, getErr := loadDuplicateIngestEvent(ctx, queries, repoID, normalized.DeliveryID, normalized.Sha)
 			if getErr != nil {
 				return GitLabIngestResult{}, fmt.Errorf("load duplicate ingest event: %w", getErr)
 			}
@@ -123,57 +123,59 @@ func normalizeGitLabIngestInput(input GitLabIngestInput) (GitLabIngestInput, err
 	return normalized, nil
 }
 
-func ensureRepo(ctx context.Context, queries *sqlc.Queries, input GitLabIngestInput) (sqlc.Repo, error) {
+func ensureRepo(ctx context.Context, queries *sqlc.Queries, input GitLabIngestInput) (int64, error) {
 	repo, err := queries.GetRepoByProjectID(ctx, input.GitLabProjectID)
 	if err == nil {
 		if repo.Namespace != input.Namespace || repo.Repo != input.Repo || repo.DefaultBranch != input.DefaultBranch {
-			repo, err = queries.UpdateRepoMetadata(ctx, sqlc.UpdateRepoMetadataParams{
+			updatedRepo, err := queries.UpdateRepoMetadata(ctx, sqlc.UpdateRepoMetadataParams{
 				Namespace:     input.Namespace,
 				Repo:          input.Repo,
 				DefaultBranch: input.DefaultBranch,
 				ID:            repo.ID,
 			})
 			if err != nil {
-				return sqlc.Repo{}, fmt.Errorf("update metadata for repo %d: %w", repo.ID, err)
+				return 0, fmt.Errorf("update metadata for repo %d: %w", repo.ID, err)
 			}
+			repo.ID = updatedRepo.ID
 		}
-		return repo, nil
+		return repo.ID, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return sqlc.Repo{}, fmt.Errorf("load repo for project %d: %w", input.GitLabProjectID, err)
+		return 0, fmt.Errorf("load repo for project %d: %w", input.GitLabProjectID, err)
 	}
 
-	repo, err = queries.CreateRepo(ctx, sqlc.CreateRepoParams{
+	createdRepo, err := queries.CreateRepo(ctx, sqlc.CreateRepoParams{
 		GitlabProjectID: input.GitLabProjectID,
 		Namespace:       input.Namespace,
 		Repo:            input.Repo,
 		DefaultBranch:   input.DefaultBranch,
 	})
 	if err == nil {
-		return repo, nil
+		return createdRepo.ID, nil
 	}
 	if !isUniqueViolation(err) {
-		return sqlc.Repo{}, fmt.Errorf("create repo for project %d: %w", input.GitLabProjectID, err)
+		return 0, fmt.Errorf("create repo for project %d: %w", input.GitLabProjectID, err)
 	}
 
 	repo, err = queries.GetRepoByProjectID(ctx, input.GitLabProjectID)
 	if err != nil {
-		return sqlc.Repo{}, fmt.Errorf("load repo for project %d after conflict: %w", input.GitLabProjectID, err)
+		return 0, fmt.Errorf("load repo for project %d after conflict: %w", input.GitLabProjectID, err)
 	}
 
 	if repo.Namespace != input.Namespace || repo.Repo != input.Repo || repo.DefaultBranch != input.DefaultBranch {
-		repo, err = queries.UpdateRepoMetadata(ctx, sqlc.UpdateRepoMetadataParams{
+		updatedRepo, err := queries.UpdateRepoMetadata(ctx, sqlc.UpdateRepoMetadataParams{
 			Namespace:     input.Namespace,
 			Repo:          input.Repo,
 			DefaultBranch: input.DefaultBranch,
 			ID:            repo.ID,
 		})
 		if err != nil {
-			return sqlc.Repo{}, fmt.Errorf("update metadata for repo %d after conflict: %w", repo.ID, err)
+			return 0, fmt.Errorf("update metadata for repo %d after conflict: %w", repo.ID, err)
 		}
+		repo.ID = updatedRepo.ID
 	}
 
-	return repo, nil
+	return repo.ID, nil
 }
 
 func isUniqueViolation(err error) bool {

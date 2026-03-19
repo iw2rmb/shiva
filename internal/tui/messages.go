@@ -7,6 +7,11 @@ type repoCatalogLoadedMsg struct {
 	Rows  []RepoEntry
 }
 
+type namespaceCatalogLoadedMsg struct {
+	Token RequestToken
+	Rows  []NamespaceEntry
+}
+
 type operationListLoadedMsg struct {
 	Token   RequestToken
 	Entries []EndpointEntry

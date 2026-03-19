@@ -82,10 +82,17 @@ type IngestEvent struct {
 	Error          string             `json:"error"`
 }
 
+type Namespace struct {
+	ID        int64              `json:"id"`
+	Namespace string             `json:"namespace"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Repo struct {
 	ID                 int64              `json:"id"`
 	GitlabProjectID    int64              `json:"gitlab_project_id"`
-	Namespace          string             `json:"namespace"`
+	NamespaceID        int64              `json:"namespace_id"`
 	Repo               string             `json:"repo"`
 	DefaultBranch      string             `json:"default_branch"`
 	OpenapiForceRescan bool               `json:"openapi_force_rescan"`

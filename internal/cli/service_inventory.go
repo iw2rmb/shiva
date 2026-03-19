@@ -20,6 +20,36 @@ type SyncResult struct {
 	APIs                  []string                 `json:"apis,omitempty"`
 }
 
+func (s *RuntimeService) ListNamespaces(
+	ctx context.Context,
+	options RequestOptions,
+	format clioutput.ListFormat,
+) ([]byte, error) {
+	if s == nil || s.newClient == nil {
+		return nil, fmt.Errorf("CLI service is not configured")
+	}
+
+	source, err := s.resolveSource(options.Profile, "")
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.newTransportClient(source)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []clioutput.NamespaceRow
+	body, err := client.ListNamespaces(ctx)
+	if err != nil {
+		return nil, normalizeServiceError(err)
+	}
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("decode namespace inventory: %w", err)
+	}
+	return clioutput.RenderNamespaces(rows, format)
+}
+
 func (s *RuntimeService) ListRepos(
 	ctx context.Context,
 	options RequestOptions,

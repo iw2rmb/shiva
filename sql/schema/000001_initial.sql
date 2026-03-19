@@ -4,18 +4,27 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS namespaces (
+    id BIGSERIAL PRIMARY KEY,
+    namespace TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS repos (
     id BIGSERIAL PRIMARY KEY,
     gitlab_project_id BIGINT NOT NULL,
-    namespace TEXT NOT NULL,
+    namespace_id BIGINT NOT NULL REFERENCES namespaces(id) ON DELETE RESTRICT,
     repo TEXT NOT NULL,
     default_branch TEXT NOT NULL,
     openapi_force_rescan BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (gitlab_project_id),
-    UNIQUE (namespace, repo)
+    UNIQUE (namespace_id, repo)
 );
+
+CREATE INDEX IF NOT EXISTS repos_namespace_id_idx ON repos(namespace_id);
 
 CREATE TABLE IF NOT EXISTS startup_index_state (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),

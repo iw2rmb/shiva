@@ -456,6 +456,9 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 	openAPIChanged := true
 
 	readStore := &fakeQueryReadStore{
+		namespaceInventoryResult: []store.NamespaceCatalogEntry{
+			{Namespace: "acme", RepoCount: 1, AllPending: false},
+		},
 		repoInventoryResult: []store.RepoCatalogEntry{
 			{
 				Repo: store.Repo{
@@ -510,6 +513,15 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 		},
 	}
 	server := newQueryTestServer(readStore)
+
+	namespacesResp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/namespaces", nil), -1)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer namespacesResp.Body.Close()
+	if namespacesResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 for namespaces, got %d", namespacesResp.StatusCode)
+	}
 
 	reposResp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/repos", nil), -1)
 	if err != nil {
@@ -640,8 +652,10 @@ type fakeQueryReadStore struct {
 	operationInventoryByAPIResult []store.OperationSnapshot
 	operationInventoryByAPIErr    error
 
-	repoInventoryResult []store.RepoCatalogEntry
-	repoInventoryErr    error
+	repoInventoryResult      []store.RepoCatalogEntry
+	repoInventoryErr         error
+	namespaceInventoryResult []store.NamespaceCatalogEntry
+	namespaceInventoryErr    error
 
 	catalogStatusInputs []string
 	catalogStatusResult store.RepoCatalogFreshness
@@ -816,6 +830,15 @@ func (f *fakeQueryReadStore) ListRepoCatalogInventory(_ context.Context) ([]stor
 	}
 	result := make([]store.RepoCatalogEntry, len(f.repoInventoryResult))
 	copy(result, f.repoInventoryResult)
+	return result, nil
+}
+
+func (f *fakeQueryReadStore) ListNamespaceCatalogInventory(_ context.Context) ([]store.NamespaceCatalogEntry, error) {
+	if f.namespaceInventoryErr != nil {
+		return nil, f.namespaceInventoryErr
+	}
+	result := make([]store.NamespaceCatalogEntry, len(f.namespaceInventoryResult))
+	copy(result, f.namespaceInventoryResult)
 	return result, nil
 }
 

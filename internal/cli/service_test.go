@@ -125,7 +125,7 @@ func TestRuntimeServicePinsFloatingRequestsToPreparedSnapshot(t *testing.T) {
 				}
 			},
 		},
-		}
+	}
 
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -508,6 +508,7 @@ func TestRuntimeServiceNormalizesAPIAmbiguityIntoAPIError(t *testing.T) {
 }
 
 type recordingTransportClient struct {
+	namespacesBody        []byte
 	reposBody             []byte
 	statusBody            []byte
 	apisBody              []byte
@@ -517,10 +518,12 @@ type recordingTransportClient struct {
 	healthBody            []byte
 	specErr               error
 	operationErr          error
+	namespacesErr         error
 	reposErr              error
 	statusErr             error
 	apisErr               error
 	operationsErr         error
+	namespacesCalls       int
 	reposCalls            int
 	statusCalls           int
 	apisCalls             int
@@ -549,6 +552,14 @@ func (c *recordingTransportClient) GetOperation(ctx context.Context, selector re
 		return nil, c.operationErr
 	}
 	return c.operationBody, nil
+}
+
+func (c *recordingTransportClient) ListNamespaces(ctx context.Context) ([]byte, error) {
+	c.namespacesCalls++
+	if c.namespacesErr != nil {
+		return nil, c.namespacesErr
+	}
+	return c.namespacesBody, nil
 }
 
 func (c *recordingTransportClient) ListRepos(ctx context.Context) ([]byte, error) {

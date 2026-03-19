@@ -114,7 +114,7 @@ type normalizedResolveReadSelectorInput struct {
 }
 
 type selectorResolutionQueries interface {
-	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error)
+	GetRepoByNamespaceAndRepo(ctx context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.GetRepoByNamespaceAndRepoRow, error)
 	GetRevisionStateByRepoSHAPrefix(
 		ctx context.Context,
 		arg sqlc.GetRevisionStateByRepoSHAPrefixParams,
@@ -184,7 +184,7 @@ func resolveReadSelector(
 func resolveReadSelectorBySHA(
 	ctx context.Context,
 	queries selectorResolutionQueries,
-	repo sqlc.Repo,
+	repo sqlc.GetRepoByNamespaceAndRepoRow,
 	input normalizedResolveReadSelectorInput,
 ) (ResolvedReadSelector, error) {
 	revisionRow, err := queries.GetRevisionStateByRepoSHAPrefix(ctx, sqlc.GetRevisionStateByRepoSHAPrefixParams{
@@ -241,7 +241,7 @@ func resolveReadSelectorBySHA(
 func resolveReadSelectorByBranch(
 	ctx context.Context,
 	queries selectorResolutionQueries,
-	repo sqlc.Repo,
+	repo sqlc.GetRepoByNamespaceAndRepoRow,
 	input normalizedResolveReadSelectorInput,
 	branch string,
 ) (ResolvedReadSelector, error) {

@@ -197,7 +197,7 @@ func TestNormalizeResolveReadSnapshotInput(t *testing.T) {
 
 func newReadSnapshotTestQueries() *fakeReadSnapshotQueries {
 	return &fakeReadSnapshotQueries{
-		repo: sqlc.Repo{
+		repo: sqlc.GetRepoByNamespaceAndRepoRow{
 			ID:              44,
 			GitlabProjectID: 444,
 			Namespace:       "acme", Repo: "platform-api",
@@ -207,7 +207,7 @@ func newReadSnapshotTestQueries() *fakeReadSnapshotQueries {
 }
 
 type fakeReadSnapshotQueries struct {
-	repo sqlc.Repo
+	repo sqlc.GetRepoByNamespaceAndRepoRow
 
 	byID            map[int64]sqlc.GetRevisionStateByIDRow
 	bySHAPrefix     map[string]sqlc.GetRevisionStateByRepoSHAPrefixRow
@@ -217,9 +217,12 @@ type fakeReadSnapshotQueries struct {
 	lastHeadBranch string
 }
 
-func (f *fakeReadSnapshotQueries) GetRepoByNamespaceAndRepo(_ context.Context, arg sqlc.GetRepoByNamespaceAndRepoParams) (sqlc.Repo, error) {
+func (f *fakeReadSnapshotQueries) GetRepoByNamespaceAndRepo(
+	_ context.Context,
+	arg sqlc.GetRepoByNamespaceAndRepoParams,
+) (sqlc.GetRepoByNamespaceAndRepoRow, error) {
 	if f.repo.ID == 0 || f.repo.Namespace != arg.Namespace || f.repo.Repo != arg.Repo {
-		return sqlc.Repo{}, pgx.ErrNoRows
+		return sqlc.GetRepoByNamespaceAndRepoRow{}, pgx.ErrNoRows
 	}
 	return f.repo, nil
 }

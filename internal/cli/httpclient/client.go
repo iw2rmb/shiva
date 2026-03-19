@@ -95,6 +95,10 @@ func (c *Client) ListRepos(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/v1/repos")
 }
 
+func (c *Client) ListNamespaces(ctx context.Context) ([]byte, error) {
+	return c.get(ctx, "/v1/namespaces")
+}
+
 func (c *Client) GetCatalogStatus(ctx context.Context, repo string) ([]byte, error) {
 	identity, err := repoid.ParsePath(repo)
 	if err != nil {

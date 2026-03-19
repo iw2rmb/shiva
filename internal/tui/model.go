@@ -74,8 +74,8 @@ func (model *rootModel) Init() tea.Cmd {
 	if model.initialRoute.Kind == RouteRepoExplorer {
 		return model.initialRouteCmd()
 	}
-	token := model.beginRepoCatalogLoad()
-	return loadRepoCatalogCmd(context.Background(), model.service, model.options, token)
+	token := model.beginNamespaceCatalogLoad()
+	return loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
 }
 
 func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -102,7 +102,15 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(loadDomainRepoCatalog, typed.Token, nil)
 		model.repos = append([]RepoEntry(nil), typed.Rows...)
-		model.refreshCatalogViews()
+		model.refreshRepoList()
+		return model, model.initialRouteCmd()
+	case namespaceCatalogLoadedMsg:
+		if !model.accepts(loadDomainNamespaces, typed.Token) {
+			return model, nil
+		}
+		model.finishLoad(loadDomainNamespaces, typed.Token, nil)
+		model.namespaces.Entries = append([]NamespaceEntry(nil), typed.Rows...)
+		model.refreshNamespaceList()
 		return model, model.initialRouteCmd()
 	case operationListLoadedMsg:
 		if !model.accepts(loadDomainOperationList, typed.Token) {
@@ -156,7 +164,9 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(typed.Domain, typed.Token, typed.Err)
 		if typed.Domain == loadDomainRepoCatalog {
-			model.refreshCatalogViews()
+			model.refreshRepoList()
+		} else if typed.Domain == loadDomainNamespaces {
+			model.refreshNamespaceList()
 		} else if typed.Domain == loadDomainOperationDetail || typed.Domain == loadDomainSpecDetail {
 			model.refreshExplorerDetailViewport()
 		}
@@ -242,7 +252,7 @@ func (model *rootModel) updateHomeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		if target == RouteNamespaces {
 			model.activeRoute = RouteNamespaces
 			model.syncNamespaceSelection()
-			return model, model.ensureRepoCatalogLoadCmd()
+			return model, model.ensureNamespaceCatalogLoadCmd()
 		}
 		return model, nil
 	default:
@@ -325,13 +335,7 @@ func (model *rootModel) refreshHomeList() {
 	model.home.List.Select(model.home.Selected)
 }
 
-func (model *rootModel) refreshCatalogViews() {
-	model.refreshNamespaceList()
-	model.refreshRepoList()
-}
-
 func (model *rootModel) refreshNamespaceList() {
-	model.namespaces.Entries = namespaceEntriesFromRepos(model.repos)
 	model.namespaces.List.SetItems(namespaceItems(model.namespaces.Entries))
 	if len(model.namespaces.Entries) == 0 {
 		model.namespaces.Selected = -1
@@ -406,7 +410,7 @@ func (model *rootModel) initialRouteCmd() tea.Cmd {
 	switch model.initialRoute.Kind {
 	case RouteHome:
 		model.activeRoute = RouteHome
-		return model.ensureRepoCatalogLoadCmd()
+		return model.ensureNamespaceCatalogLoadCmd()
 	case RouteRepos:
 		model.activeRoute = RouteRepos
 		model.repoList.Namespace = model.initialRoute.Namespace
@@ -455,20 +459,20 @@ func (model *rootModel) viewHome() string {
 }
 
 func (model *rootModel) viewNamespaces() string {
-	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
+	if model.async.Namespaces.Loading && len(model.namespaces.Entries) == 0 {
 		return strings.Join([]string{
-			model.styles.EmptyBlock("Loading repositories..."),
+			model.styles.EmptyBlock("Loading namespaces..."),
 			"",
 			model.routeHelpView(),
 		}, "\n")
 	}
-	if model.async.RepoCatalog.LastError != nil {
+	if model.async.Namespaces.LastError != nil {
 		return strings.Join([]string{
 			model.styles.Subtle("Namespaces"),
 			"",
 			model.styles.ErrorBlock(
-				"Failed to load repositories.",
-				model.async.RepoCatalog.LastError.Error(),
+				"Failed to load namespaces.",
+				model.async.Namespaces.LastError.Error(),
 			),
 			"",
 			model.routeHelpView(),
@@ -562,6 +566,18 @@ func (model *rootModel) beginRepoCatalogLoad() RequestToken {
 	return model.beginLoad(loadDomainRepoCatalog)
 }
 
+func (model *rootModel) beginNamespaceCatalogLoad() RequestToken {
+	return model.beginLoad(loadDomainNamespaces)
+}
+
+func (model *rootModel) ensureNamespaceCatalogLoadCmd() tea.Cmd {
+	if model.async.Namespaces.Loading || model.async.Namespaces.ActiveToken > 0 {
+		return nil
+	}
+	token := model.beginNamespaceCatalogLoad()
+	return loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
+}
+
 func (model *rootModel) ensureRepoCatalogLoadCmd() tea.Cmd {
 	if model.async.RepoCatalog.Loading || model.async.RepoCatalog.ActiveToken > 0 {
 		return nil
@@ -607,6 +623,8 @@ func (model *rootModel) finishLoad(domain loadDomain, token RequestToken, err er
 
 func (model *rootModel) loadState(domain loadDomain) *asyncLoadState {
 	switch domain {
+	case loadDomainNamespaces:
+		return &model.async.Namespaces
 	case loadDomainRepoCatalog:
 		return &model.async.RepoCatalog
 	case loadDomainOperationList:
