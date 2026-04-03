@@ -1,20 +1,60 @@
+-- name: CountNamespaceCatalogInventory :one
+WITH namespace_rows AS (
+    SELECT
+        namespaces.namespace,
+        COUNT(*)::BIGINT AS repo_count,
+        COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
+    FROM namespaces
+    JOIN repos ON repos.namespace_id = namespaces.id
+    LEFT JOIN LATERAL (
+        SELECT status
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos.id
+          AND ingest_events.branch = repos.default_branch
+        ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+        LIMIT 1
+    ) AS head ON TRUE
+    GROUP BY namespaces.namespace
+),
+filtered_rows AS (
+    SELECT *
+    FROM namespace_rows
+    WHERE (sqlc.arg(query_prefix)::TEXT = '' OR namespace_rows.namespace ILIKE sqlc.arg(query_prefix)::TEXT || '%')
+)
+SELECT COUNT(*)::BIGINT AS total_count
+FROM filtered_rows;
+
 -- name: ListNamespaceCatalogInventory :many
+WITH namespace_rows AS (
+    SELECT
+        namespaces.namespace,
+        COUNT(*)::BIGINT AS repo_count,
+        COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
+    FROM namespaces
+    JOIN repos ON repos.namespace_id = namespaces.id
+    LEFT JOIN LATERAL (
+        SELECT status
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos.id
+          AND ingest_events.branch = repos.default_branch
+        ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+        LIMIT 1
+    ) AS head ON TRUE
+    GROUP BY namespaces.namespace
+),
+filtered_rows AS (
+    SELECT *
+    FROM namespace_rows
+    WHERE (sqlc.arg(query_prefix)::TEXT = '' OR namespace_rows.namespace ILIKE sqlc.arg(query_prefix)::TEXT || '%')
+)
 SELECT
-    namespaces.namespace,
-    COUNT(*)::BIGINT AS repo_count,
-    COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
-FROM namespaces
-JOIN repos ON repos.namespace_id = namespaces.id
-LEFT JOIN LATERAL (
-    SELECT status
-    FROM ingest_events
-    WHERE ingest_events.repo_id = repos.id
-      AND ingest_events.branch = repos.default_branch
-    ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
-    LIMIT 1
-) AS head ON TRUE
-GROUP BY namespaces.namespace
-ORDER BY namespaces.namespace ASC;
+    namespace,
+    repo_count,
+    all_pending
+FROM filtered_rows
+ORDER BY namespace ASC
+LIMIT sqlc.arg(page_limit)
+OFFSET sqlc.arg(page_offset);
 
 -- name: ListRepoCatalogInventory :many
 SELECT

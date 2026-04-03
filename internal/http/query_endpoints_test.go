@@ -456,8 +456,11 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 	openAPIChanged := true
 
 	readStore := &fakeQueryReadStore{
-		namespaceInventoryResult: []store.NamespaceCatalogEntry{
-			{Namespace: "acme", RepoCount: 1, AllPending: false},
+		namespaceInventoryResult: store.NamespaceCatalogListResult{
+			Items: []store.NamespaceCatalogEntry{
+				{Namespace: "acme", RepoCount: 1, AllPending: false},
+			},
+			TotalCount: 1,
 		},
 		repoInventoryResult: []store.RepoCatalogEntry{
 			{
@@ -521,6 +524,16 @@ func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing
 	defer namespacesResp.Body.Close()
 	if namespacesResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 for namespaces, got %d", namespacesResp.StatusCode)
+	}
+	if !reflect.DeepEqual(readStore.namespaceInventoryInputs, []store.NamespaceCatalogListInput{{
+		QueryPrefix: "",
+		Limit:       100,
+		Offset:      0,
+	}}) {
+		t.Fatalf("unexpected namespace inventory inputs: %+v", readStore.namespaceInventoryInputs)
+	}
+	if namespacesResp.Header.Get("X-Total-Count") != "1" {
+		t.Fatalf("expected X-Total-Count=1, got %q", namespacesResp.Header.Get("X-Total-Count"))
 	}
 
 	reposResp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/repos", nil), -1)
@@ -605,6 +618,43 @@ func TestQueryEndpoints_StatusMapping(t *testing.T) {
 	}
 }
 
+func TestQueryEndpoints_ListNamespaces_UsesQueryAndPaginationInputs(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeQueryReadStore{
+		namespaceInventoryResult: store.NamespaceCatalogListResult{
+			Items: []store.NamespaceCatalogEntry{
+				{Namespace: "acme", RepoCount: 3, AllPending: false},
+			},
+			TotalCount: 11,
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(
+		httptest.NewRequest(http.MethodGet, "/v1/namespaces?query=ac&limit=5&offset=10", nil),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if !reflect.DeepEqual(readStore.namespaceInventoryInputs, []store.NamespaceCatalogListInput{{
+		QueryPrefix: "ac",
+		Limit:       5,
+		Offset:      10,
+	}}) {
+		t.Fatalf("unexpected namespace inventory inputs: %+v", readStore.namespaceInventoryInputs)
+	}
+	if resp.Header.Get("X-Total-Count") != "11" {
+		t.Fatalf("expected X-Total-Count=11, got %q", resp.Header.Get("X-Total-Count"))
+	}
+}
+
 func newQueryTestServer(readStore queryReadStore) *Server {
 	cfg := config.Config{HTTPAddr: ":8080"}
 	server := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), &store.Store{})
@@ -654,7 +704,8 @@ type fakeQueryReadStore struct {
 
 	repoInventoryResult      []store.RepoCatalogEntry
 	repoInventoryErr         error
-	namespaceInventoryResult []store.NamespaceCatalogEntry
+	namespaceInventoryInputs []store.NamespaceCatalogListInput
+	namespaceInventoryResult store.NamespaceCatalogListResult
 	namespaceInventoryErr    error
 
 	catalogStatusInputs []string
@@ -833,12 +884,19 @@ func (f *fakeQueryReadStore) ListRepoCatalogInventory(_ context.Context) ([]stor
 	return result, nil
 }
 
-func (f *fakeQueryReadStore) ListNamespaceCatalogInventory(_ context.Context) ([]store.NamespaceCatalogEntry, error) {
+func (f *fakeQueryReadStore) ListNamespaceCatalogInventory(
+	_ context.Context,
+	input store.NamespaceCatalogListInput,
+) (store.NamespaceCatalogListResult, error) {
+	f.namespaceInventoryInputs = append(f.namespaceInventoryInputs, input)
 	if f.namespaceInventoryErr != nil {
-		return nil, f.namespaceInventoryErr
+		return store.NamespaceCatalogListResult{}, f.namespaceInventoryErr
 	}
-	result := make([]store.NamespaceCatalogEntry, len(f.namespaceInventoryResult))
-	copy(result, f.namespaceInventoryResult)
+	result := store.NamespaceCatalogListResult{
+		Items:      make([]store.NamespaceCatalogEntry, len(f.namespaceInventoryResult.Items)),
+		TotalCount: f.namespaceInventoryResult.TotalCount,
+	}
+	copy(result.Items, f.namespaceInventoryResult.Items)
 	return result, nil
 }
 

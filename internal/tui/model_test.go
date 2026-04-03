@@ -266,6 +266,25 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 	}
 }
 
+func TestRootModelInitRouteHomeDefersNamespaceLoad(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatalf("expected init command")
+	}
+	if model.async.Namespaces.Loading {
+		t.Fatalf("expected namespaces load to be deferred on home route")
+	}
+
+	for _, msg := range collectCmdMessages(cmd) {
+		if _, ok := msg.(namespaceCatalogLoadedMsg); ok {
+			t.Fatalf("did not expect namespace catalog load on home route init")
+		}
+	}
+}
+
 func TestRootModelInitRouteReposStartsNamespaceAndRepoLoads(t *testing.T) {
 	t.Parallel()
 

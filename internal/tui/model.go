@@ -85,6 +85,11 @@ func (model *rootModel) Init() tea.Cmd {
 			loadNamespaceCatalogCmd(context.Background(), model.service, model.options, namespaceToken),
 			loadRepoCatalogCmd(context.Background(), model.service, model.options, repoToken),
 		)
+	case RouteNamespaces:
+		token := model.beginNamespaceCatalogLoad()
+		initCmd = loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
+	case RouteHome:
+		initCmd = nil
 	default:
 		token := model.beginNamespaceCatalogLoad()
 		initCmd = loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)

@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/iw2rmb/shiva/internal/repoid"
+	"github.com/iw2rmb/shiva/internal/store"
 )
 
 func (s *Server) handleListAPIs(c *fiber.Ctx) error {
@@ -107,16 +108,24 @@ func (s *Server) handleListRepos(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleListNamespaces(c *fiber.Ctx) error {
-	if err := parseNamespacesQuery(c); err != nil {
-		return s.writeQueryError(c, err)
-	}
-
-	items, err := s.readStore.ListNamespaceCatalogInventory(c.Context())
+	query, err := parseNamespacesQuery(c)
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(mapNamespaceCatalogEntries(items))
+	result, err := s.readStore.ListNamespaceCatalogInventory(c.Context(), store.NamespaceCatalogListInput{
+		QueryPrefix: query.QueryPrefix,
+		Limit:       query.Limit,
+		Offset:      query.Offset,
+	})
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	c.Set("X-Total-Count", fmt.Sprintf("%d", result.TotalCount))
+	c.Set("X-Limit", fmt.Sprintf("%d", query.Limit))
+	c.Set("X-Offset", fmt.Sprintf("%d", query.Offset))
+	return c.Status(fiber.StatusOK).JSON(mapNamespaceCatalogEntries(result.Items))
 }
 
 func (s *Server) handleGetCatalogStatus(c *fiber.Ctx) error {

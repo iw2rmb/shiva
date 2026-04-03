@@ -11,6 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countNamespaceCatalogInventory = `-- name: CountNamespaceCatalogInventory :one
+WITH namespace_rows AS (
+    SELECT
+        namespaces.namespace,
+        COUNT(*)::BIGINT AS repo_count,
+        COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
+    FROM namespaces
+    JOIN repos ON repos.namespace_id = namespaces.id
+    LEFT JOIN LATERAL (
+        SELECT status
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos.id
+          AND ingest_events.branch = repos.default_branch
+        ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+        LIMIT 1
+    ) AS head ON TRUE
+    GROUP BY namespaces.namespace
+),
+filtered_rows AS (
+    SELECT namespace, repo_count, all_pending
+    FROM namespace_rows
+    WHERE ($1::TEXT = '' OR namespace_rows.namespace ILIKE $1::TEXT || '%')
+)
+SELECT COUNT(*)::BIGINT AS total_count
+FROM filtered_rows
+`
+
+func (q *Queries) CountNamespaceCatalogInventory(ctx context.Context, queryPrefix string) (int64, error) {
+	row := q.db.QueryRow(ctx, countNamespaceCatalogInventory, queryPrefix)
+	var total_count int64
+	err := row.Scan(&total_count)
+	return total_count, err
+}
+
 const findOperationCandidatesByRepoRevisionAndAPIAndMethodPath = `-- name: FindOperationCandidatesByRepoRevisionAndAPIAndMethodPath :many
 WITH RECURSIVE snapshot_ancestors AS (
     SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
@@ -762,23 +796,43 @@ func (q *Queries) ListAPISnapshotInventoryByRepoRevision(ctx context.Context, ar
 }
 
 const listNamespaceCatalogInventory = `-- name: ListNamespaceCatalogInventory :many
+WITH namespace_rows AS (
+    SELECT
+        namespaces.namespace,
+        COUNT(*)::BIGINT AS repo_count,
+        COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
+    FROM namespaces
+    JOIN repos ON repos.namespace_id = namespaces.id
+    LEFT JOIN LATERAL (
+        SELECT status
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos.id
+          AND ingest_events.branch = repos.default_branch
+        ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+        LIMIT 1
+    ) AS head ON TRUE
+    GROUP BY namespaces.namespace
+),
+filtered_rows AS (
+    SELECT namespace, repo_count, all_pending
+    FROM namespace_rows
+    WHERE ($3::TEXT = '' OR namespace_rows.namespace ILIKE $3::TEXT || '%')
+)
 SELECT
-    namespaces.namespace,
-    COUNT(*)::BIGINT AS repo_count,
-    COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
-FROM namespaces
-JOIN repos ON repos.namespace_id = namespaces.id
-LEFT JOIN LATERAL (
-    SELECT status
-    FROM ingest_events
-    WHERE ingest_events.repo_id = repos.id
-      AND ingest_events.branch = repos.default_branch
-    ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
-    LIMIT 1
-) AS head ON TRUE
-GROUP BY namespaces.namespace
-ORDER BY namespaces.namespace ASC
+    namespace,
+    repo_count,
+    all_pending
+FROM filtered_rows
+ORDER BY namespace ASC
+LIMIT $2
+OFFSET $1
 `
+
+type ListNamespaceCatalogInventoryParams struct {
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
+	QueryPrefix string `json:"query_prefix"`
+}
 
 type ListNamespaceCatalogInventoryRow struct {
 	Namespace  string      `json:"namespace"`
@@ -786,8 +840,8 @@ type ListNamespaceCatalogInventoryRow struct {
 	AllPending interface{} `json:"all_pending"`
 }
 
-func (q *Queries) ListNamespaceCatalogInventory(ctx context.Context) ([]ListNamespaceCatalogInventoryRow, error) {
-	rows, err := q.db.Query(ctx, listNamespaceCatalogInventory)
+func (q *Queries) ListNamespaceCatalogInventory(ctx context.Context, arg ListNamespaceCatalogInventoryParams) ([]ListNamespaceCatalogInventoryRow, error) {
+	rows, err := q.db.Query(ctx, listNamespaceCatalogInventory, arg.PageOffset, arg.PageLimit, arg.QueryPrefix)
 	if err != nil {
 		return nil, err
 	}

@@ -324,12 +324,20 @@ Legacy path-segment endpoints were removed:
 - explicit `api` selection is validated before listing so `404` is reserved for missing API snapshots, not empty inventories
 
 ### `GET /v1/namespaces`
-- takes no repo/snapshot selector parameters
+- supported query parameters:
+  - optional `query` (prefix match; server applies `query%`)
+  - optional `limit` (default `100`, max `1000`)
+  - optional `offset` (default `0`)
+- this endpoint does not accept repo/snapshot selector parameters
 - response body is an array of namespace catalog rows
 - rows include:
   - `namespace`
   - `repo_count`
   - `all_pending`
+- response headers include pagination metadata:
+  - `X-Total-Count`
+  - `X-Limit`
+  - `X-Offset`
 
 ### `GET /v1/repos`
 - takes no repo/snapshot selector parameters
