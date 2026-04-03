@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 	"github.com/iw2rmb/shiva/internal/cli/request"
 )
@@ -828,6 +829,34 @@ func TestRootModelConvertsWindowSizeIntoTypedResizeMessage(t *testing.T) {
 	model = updated.(*rootModel)
 	if model.width != 120 || model.height != 40 {
 		t.Fatalf("expected model size to update, got %dx%d", model.width, model.height)
+	}
+}
+
+func TestLayoutScreenWithoutKnownHeightKeepsDefaultSpacing(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	model.height = 0
+
+	rendered := model.layoutScreen("body", "footer")
+	if rendered != "body\n\nfooter" {
+		t.Fatalf("unexpected layout output %q", rendered)
+	}
+}
+
+func TestLayoutScreenPinsFooterToLastTerminalRow(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	model.height = 7
+
+	rendered := model.layoutScreen("line-1\nline-2", "footer")
+	if lipgloss.Height(rendered) != 7 {
+		t.Fatalf("expected layout height 7, got %d", lipgloss.Height(rendered))
+	}
+	lines := strings.Split(rendered, "\n")
+	if lines[len(lines)-1] != "footer" {
+		t.Fatalf("expected footer on final line, got %q", lines[len(lines)-1])
 	}
 }
 

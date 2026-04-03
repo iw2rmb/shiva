@@ -110,14 +110,13 @@ func (model *rootModel) viewRepoExplorer() string {
 	repoLabel := model.explorer.Namespace + "/" + model.explorer.Repo
 	leftPane := model.explorerListPane()
 	rightPane := model.explorerDetailPane()
-	return strings.Join([]string{
+	body := strings.Join([]string{
 		model.styles.Subtle("Repository: " + repoLabel),
 		model.explorerTabRow(),
 		"",
 		renderExplorerPanes(model.styles, leftPane, rightPane, model.width),
-		"",
-		model.routeHelpView(),
 	}, "\n")
+	return model.layoutScreen(body, model.routeHelpView())
 }
 
 func (model *rootModel) explorerListPane() string {

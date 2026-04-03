@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type rootModel struct {
@@ -437,90 +438,70 @@ func (model *rootModel) View() tea.View {
 }
 
 func (model *rootModel) viewHome() string {
+	body := model.styles.EmptyBlock("No sections found.")
 	if len(model.home.Entries) == 0 {
-		return strings.Join([]string{
-			model.styles.EmptyBlock("No sections found."),
-			"",
-			model.routeHelpView(),
-		}, "\n")
+		return model.layoutScreen(body, model.routeHelpView())
 	}
-	return strings.Join([]string{
-		model.home.List.View(),
-		"",
-		model.routeHelpView(),
-	}, "\n")
+	body = model.home.List.View()
+	return model.layoutScreen(body, model.routeHelpView())
 }
 
 func (model *rootModel) viewNamespaces() string {
+	var body string
 	if model.async.Namespaces.Loading && len(model.namespaces.Entries) == 0 {
-		return strings.Join([]string{
-			model.styles.EmptyBlock("Loading namespaces..."),
-			"",
-			model.routeHelpView(),
-		}, "\n")
+		body = model.styles.EmptyBlock("Loading namespaces...")
+		return model.layoutScreen(body, model.routeHelpView())
 	}
 	if model.async.Namespaces.LastError != nil {
-		return strings.Join([]string{
+		body = strings.Join([]string{
 			model.styles.Subtle("Namespaces"),
 			"",
 			model.styles.ErrorBlock(
 				"Failed to load namespaces.",
 				model.async.Namespaces.LastError.Error(),
 			),
-			"",
-			model.routeHelpView(),
 		}, "\n")
+		return model.layoutScreen(body, model.routeHelpView())
 	}
 	if len(model.namespaces.Entries) == 0 {
-		return strings.Join([]string{
+		body = strings.Join([]string{
 			model.styles.Subtle("Namespaces"),
 			"",
 			model.styles.EmptyBlock("No namespaces found."),
-			"",
-			model.routeHelpView(),
 		}, "\n")
+		return model.layoutScreen(body, model.routeHelpView())
 	}
-	return strings.Join([]string{
-		model.namespaces.List.View(),
-		"",
-		model.routeHelpView(),
-	}, "\n")
+	body = model.namespaces.List.View()
+	return model.layoutScreen(body, model.routeHelpView())
 }
 
 func (model *rootModel) viewRepos() string {
+	var body string
 	if model.async.RepoCatalog.Loading && len(model.repos) == 0 {
-		return strings.Join([]string{
-			model.styles.EmptyBlock("Loading repositories..."),
-			"",
-			model.routeHelpView(),
-		}, "\n")
+		body = model.styles.EmptyBlock("Loading repositories...")
+		return model.layoutScreen(body, model.routeHelpView())
 	}
 	if model.async.RepoCatalog.LastError != nil {
-		return strings.Join([]string{
+		body = strings.Join([]string{
 			model.styles.Subtle("Repositories"),
 			"",
 			model.styles.ErrorBlock(
 				"Failed to load repositories.",
 				model.async.RepoCatalog.LastError.Error(),
 			),
-			"",
-			model.routeHelpView(),
 		}, "\n")
+		return model.layoutScreen(body, model.routeHelpView())
 	}
 	if len(model.repoList.Entries) == 0 {
-		return strings.Join([]string{
+		body = strings.Join([]string{
 			model.styles.Subtle("Repositories: " + model.repoList.Namespace),
 			"",
 			model.styles.EmptyBlock("No repositories found in namespace."),
-			"",
-			model.routeHelpView(),
 		}, "\n")
+		return model.layoutScreen(body, model.routeHelpView())
 	}
-	return strings.Join([]string{
-		model.repoList.List.View(),
-		"",
-		model.routeHelpView(),
-	}, "\n")
+	body = model.repoList.List.View()
+	return model.layoutScreen(body, model.routeHelpView())
 }
 
 func (model *rootModel) viewPlaceholder() string {
@@ -553,6 +534,25 @@ func routeLabel(route RouteKind, repoNamespace string, explorerNamespace string,
 	default:
 		return "start: unknown"
 	}
+}
+
+func (model *rootModel) layoutScreen(body string, footer string) string {
+	if model.height <= 0 {
+		return strings.Join([]string{
+			body,
+			"",
+			footer,
+		}, "\n")
+	}
+
+	bodyHeight := lipgloss.Height(body)
+	footerHeight := lipgloss.Height(footer)
+	separatorNewlines := model.height - bodyHeight - footerHeight + 1
+	if separatorNewlines < 1 {
+		separatorNewlines = 1
+	}
+
+	return body + strings.Repeat("\n", separatorNewlines) + footer
 }
 
 func (model *rootModel) beginRepoCatalogLoad() RequestToken {
