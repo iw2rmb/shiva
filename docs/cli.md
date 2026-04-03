@@ -91,13 +91,13 @@ Rules:
 - `shiva ls`
   - output is always plain text
   - `shiva ls`
-    - prints all namespaces as `<namespace>\t<repo-count> repos{, all pending}`
+    - prints namespaces that have at least one repo with an active spec as `<namespace>\t<repo-count> repos{, all pending}`
     - header: `total: <count>`
   - `shiva ls <namespace-prefix>`
     - prints matching namespaces
     - header: `match: <count>`
   - `shiva ls <namespace>/`
-    - prints repos for that exact namespace
+    - prints repos for that exact namespace that have at least one active spec
     - header: `namespace <namespace>, total <count> repos`
   - `shiva ls <namespace>/<repo-prefix>`
     - prints matching repos inside that namespace

@@ -329,6 +329,7 @@ Legacy path-segment endpoints were removed:
   - optional `limit` (default `100`, max `1000`)
   - optional `offset` (default `0`)
 - this endpoint does not accept repo/snapshot selector parameters
+- inventory includes only namespaces that have at least one repo with an active spec
 - response body is an array of namespace catalog rows
 - rows include:
   - `namespace`
@@ -341,6 +342,7 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/repos`
 - takes no repo/snapshot selector parameters
+- inventory includes only repos with at least one active spec
 - response body is an array of repo catalog rows
 - rows include:
   - `namespace`

@@ -7,6 +7,12 @@ WITH namespace_rows AS (
     FROM namespaces
     JOIN repos ON repos.namespace_id = namespaces.id
     LEFT JOIN LATERAL (
+        SELECT COUNT(*)::BIGINT AS active_api_count
+        FROM api_specs
+        WHERE api_specs.repo_id = repos.id
+          AND api_specs.status = 'active'
+    ) AS active_api_counts ON TRUE
+    LEFT JOIN LATERAL (
         SELECT status
         FROM ingest_events
         WHERE ingest_events.repo_id = repos.id
@@ -14,6 +20,7 @@ WITH namespace_rows AS (
         ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
         LIMIT 1
     ) AS head ON TRUE
+    WHERE COALESCE(active_api_counts.active_api_count, 0) > 0
     GROUP BY namespaces.namespace
 ),
 filtered_rows AS (
@@ -33,6 +40,12 @@ WITH namespace_rows AS (
     FROM namespaces
     JOIN repos ON repos.namespace_id = namespaces.id
     LEFT JOIN LATERAL (
+        SELECT COUNT(*)::BIGINT AS active_api_count
+        FROM api_specs
+        WHERE api_specs.repo_id = repos.id
+          AND api_specs.status = 'active'
+    ) AS active_api_counts ON TRUE
+    LEFT JOIN LATERAL (
         SELECT status
         FROM ingest_events
         WHERE ingest_events.repo_id = repos.id
@@ -40,6 +53,7 @@ WITH namespace_rows AS (
         ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
         LIMIT 1
     ) AS head ON TRUE
+    WHERE COALESCE(active_api_counts.active_api_count, 0) > 0
     GROUP BY namespaces.namespace
 ),
 filtered_rows AS (
@@ -102,6 +116,7 @@ LEFT JOIN LATERAL (
     ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
     LIMIT 1
 ) AS latest_openapi ON TRUE
+WHERE COALESCE(active_api_counts.active_api_count, 0) > 0
 ORDER BY namespaces.namespace ASC, repos.repo ASC;
 
 -- name: GetRepoCatalogFreshness :one
