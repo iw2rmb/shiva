@@ -72,21 +72,30 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 }
 
 func (model *rootModel) Init() tea.Cmd {
+	var initCmd tea.Cmd
 	switch model.initialRoute.Kind {
 	case RouteRepoExplorer:
-		return model.openRepoExplorer(model.initialRoute.Namespace, model.initialRoute.Repo)
+		initCmd = model.openRepoExplorer(model.initialRoute.Namespace, model.initialRoute.Repo)
 	case RouteRepos:
 		model.repoList.Namespace = model.initialRoute.Namespace
 		model.refreshRepoList()
 		namespaceToken := model.beginNamespaceCatalogLoad()
 		repoToken := model.beginRepoCatalogLoad()
-		return tea.Batch(
+		initCmd = tea.Batch(
 			loadNamespaceCatalogCmd(context.Background(), model.service, model.options, namespaceToken),
 			loadRepoCatalogCmd(context.Background(), model.service, model.options, repoToken),
 		)
 	default:
 		token := model.beginNamespaceCatalogLoad()
-		return loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
+		initCmd = loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
+	}
+
+	return tea.Batch(initCmd, requestWindowSizeCmd())
+}
+
+func requestWindowSizeCmd() tea.Cmd {
+	return func() tea.Msg {
+		return tea.RequestWindowSize()
 	}
 }
 

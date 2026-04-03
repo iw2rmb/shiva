@@ -213,6 +213,24 @@ func applyListCmd(model *rootModel, cmd tea.Cmd) *rootModel {
 	return model
 }
 
+func collectCmdMessages(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return []tea.Msg{msg}
+	}
+
+	collected := make([]tea.Msg, 0, len(batch))
+	for _, command := range batch {
+		collected = append(collected, collectCmdMessages(command)...)
+	}
+	return collected
+}
+
 func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 	t.Parallel()
 
@@ -229,10 +247,19 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 		t.Fatalf("expected init to mark namespace catalog loading")
 	}
 
-	msg := cmd()
-	loaded, ok := msg.(namespaceCatalogLoadedMsg)
-	if !ok {
-		t.Fatalf("expected namespaceCatalogLoadedMsg, got %T", msg)
+	var loaded namespaceCatalogLoadedMsg
+	var namespaceLoaded bool
+	for _, msg := range collectCmdMessages(cmd) {
+		typed, ok := msg.(namespaceCatalogLoadedMsg)
+		if !ok {
+			continue
+		}
+		loaded = typed
+		namespaceLoaded = true
+		break
+	}
+	if !namespaceLoaded {
+		t.Fatalf("expected namespaceCatalogLoadedMsg in init batch")
 	}
 	if loaded.Token != model.async.Namespaces.ActiveToken {
 		t.Fatalf("expected token %d, got %d", model.async.Namespaces.ActiveToken, loaded.Token)
@@ -259,19 +286,10 @@ func TestRootModelInitRouteReposStartsNamespaceAndRepoLoads(t *testing.T) {
 		t.Fatalf("expected repo catalog loading on init")
 	}
 
-	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("expected batch init command, got %T", msg)
-	}
-
 	var namespaceLoaded bool
 	var repoLoaded bool
-	for _, command := range batch {
-		if command == nil {
-			continue
-		}
-		switch command().(type) {
+	for _, msg := range collectCmdMessages(cmd) {
+		switch msg.(type) {
 		case namespaceCatalogLoadedMsg:
 			namespaceLoaded = true
 		case repoCatalogLoadedMsg:
@@ -310,10 +328,15 @@ func TestRootModelInitRepoExplorerSkipsRepoCatalogLoad(t *testing.T) {
 		t.Fatalf("expected operation list load to start for direct repo route")
 	}
 
-	msg := cmd()
-	_, ok := msg.(operationListLoadedMsg)
-	if !ok {
-		t.Fatalf("expected operationListLoadedMsg, got %T", msg)
+	var operationLoaded bool
+	for _, msg := range collectCmdMessages(cmd) {
+		if _, ok := msg.(operationListLoadedMsg); ok {
+			operationLoaded = true
+			break
+		}
+	}
+	if !operationLoaded {
+		t.Fatalf("expected operationListLoadedMsg in init batch")
 	}
 	if service.listReposCall != 0 {
 		t.Fatalf("expected no repo list calls on direct repo route init, got %d", service.listReposCall)
