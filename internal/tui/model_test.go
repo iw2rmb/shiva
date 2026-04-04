@@ -923,6 +923,21 @@ func TestRootModelConvertsWindowSizeIntoTypedResizeMessage(t *testing.T) {
 	}
 }
 
+func TestRootModelHomeResizeDoesNotRenderExplorerDetail(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	renderer := &countingMarkdownRenderer{}
+	model.markdown = renderer
+
+	updated, _ := model.Update(resizeMsg{Width: 120, Height: 40})
+	model = updated.(*rootModel)
+
+	if renderer.callCount != 0 {
+		t.Fatalf("expected no explorer markdown render on home resize, got %d", renderer.callCount)
+	}
+}
+
 func TestLayoutScreenWithoutKnownHeightKeepsDefaultSpacing(t *testing.T) {
 	t.Parallel()
 
@@ -1053,3 +1068,12 @@ func (service *fakeBrowserService) GetSpec(
 }
 
 type contextKey string
+
+type countingMarkdownRenderer struct {
+	callCount int
+}
+
+func (renderer *countingMarkdownRenderer) Render(markdown string, width int) string {
+	renderer.callCount++
+	return markdown
+}

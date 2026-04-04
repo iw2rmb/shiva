@@ -67,7 +67,7 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 	}
 	model.refreshHomeList()
 	model.resizeLists()
-	model.refreshExplorerDetailViewport()
+	model.refreshExplorerDetailViewportIfVisible()
 	return model
 }
 
@@ -122,7 +122,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.width = typed.Width
 		model.height = typed.Height
 		model.resizeLists()
-		model.refreshExplorerDetailViewport()
+		model.refreshExplorerDetailViewportIfVisible()
 	case repoCatalogLoadedMsg:
 		if !model.accepts(loadDomainRepoCatalog, typed.Token) {
 			return model, nil
@@ -442,6 +442,13 @@ func (model *rootModel) resizeLists() {
 	detailWidth, detailHeight := detailPaneSize(model.width, model.height)
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
 	model.explorer.Detail.Viewport.SetHeight(detailHeight)
+}
+
+func (model *rootModel) refreshExplorerDetailViewportIfVisible() {
+	if model.activeRoute != RouteRepoExplorer {
+		return
+	}
+	model.refreshExplorerDetailViewport()
 }
 
 func (model *rootModel) View() tea.View {

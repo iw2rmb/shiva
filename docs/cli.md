@@ -141,6 +141,7 @@ Rules:
   - repo explorer mode:
     - left pane lists repo endpoints (sorted deterministically by path, method, operation id, and API)
     - right pane renders markdown details in tabs: `Endpoints`, `Servers`, `Errors`
+    - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)
     - `tab` and `shift+tab` switch detail tabs
     - `pgup`, `pgdown`, `home`, `end`, `ctrl+u`, and `ctrl+d` scroll the detail viewport
     - `esc` returns to repo mode

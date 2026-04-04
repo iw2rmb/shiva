@@ -12,36 +12,16 @@ import (
 )
 
 const countNamespaceCatalogInventory = `-- name: CountNamespaceCatalogInventory :one
-WITH namespace_rows AS (
-    SELECT
-        namespaces.namespace,
-        COUNT(*)::BIGINT AS repo_count,
-        COALESCE(BOOL_AND(COALESCE(head.status IN ('pending', 'processing'), FALSE)), FALSE) AS all_pending
-    FROM namespaces
-    JOIN repos ON repos.namespace_id = namespaces.id
-    LEFT JOIN LATERAL (
-        SELECT status
-        FROM ingest_events
-        WHERE ingest_events.repo_id = repos.id
-          AND ingest_events.branch = repos.default_branch
-        ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
-        LIMIT 1
-    ) AS head ON TRUE
-    WHERE EXISTS (
-        SELECT 1
-        FROM api_specs
-        WHERE api_specs.repo_id = repos.id
-          AND api_specs.status = 'active'
-    )
-    GROUP BY namespaces.namespace
-),
-filtered_rows AS (
-    SELECT namespace, repo_count, all_pending
-    FROM namespace_rows
-    WHERE ($1::TEXT = '' OR namespace_rows.namespace ILIKE $1::TEXT || '%')
+SELECT COUNT(DISTINCT namespaces.namespace)::BIGINT AS total_count
+FROM namespaces
+JOIN repos ON repos.namespace_id = namespaces.id
+WHERE EXISTS (
+    SELECT 1
+    FROM api_specs
+    WHERE api_specs.repo_id = repos.id
+      AND api_specs.status = 'active'
 )
-SELECT COUNT(*)::BIGINT AS total_count
-FROM filtered_rows
+  AND ($1::TEXT = '' OR namespaces.namespace ILIKE $1::TEXT || '%')
 `
 
 func (q *Queries) CountNamespaceCatalogInventory(ctx context.Context, queryPrefix string) (int64, error) {

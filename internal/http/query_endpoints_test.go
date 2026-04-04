@@ -659,10 +659,7 @@ func TestQueryEndpoints_CountNamespaces_UsesQueryPrefixOnly(t *testing.T) {
 	t.Parallel()
 
 	readStore := &fakeQueryReadStore{
-		namespaceInventoryResult: store.NamespaceCatalogListResult{
-			Items:      []store.NamespaceCatalogEntry{},
-			TotalCount: 9,
-		},
+		namespaceCountResult: 9,
 	}
 	server := newQueryTestServer(readStore)
 
@@ -678,12 +675,10 @@ func TestQueryEndpoints_CountNamespaces_UsesQueryPrefixOnly(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
-	if !reflect.DeepEqual(readStore.namespaceInventoryInputs, []store.NamespaceCatalogListInput{{
+	if !reflect.DeepEqual(readStore.namespaceCountInputs, []store.NamespaceCatalogCountInput{{
 		QueryPrefix: "ac",
-		Limit:       1,
-		Offset:      0,
 	}}) {
-		t.Fatalf("unexpected namespace count inputs: %+v", readStore.namespaceInventoryInputs)
+		t.Fatalf("unexpected namespace count inputs: %+v", readStore.namespaceCountInputs)
 	}
 	var body struct {
 		TotalCount int64 `json:"total_count"`
@@ -748,6 +743,9 @@ type fakeQueryReadStore struct {
 	namespaceInventoryInputs []store.NamespaceCatalogListInput
 	namespaceInventoryResult store.NamespaceCatalogListResult
 	namespaceInventoryErr    error
+	namespaceCountInputs     []store.NamespaceCatalogCountInput
+	namespaceCountResult     int64
+	namespaceCountErr        error
 
 	catalogStatusInputs []string
 	catalogStatusResult store.RepoCatalogFreshness
@@ -939,6 +937,17 @@ func (f *fakeQueryReadStore) ListNamespaceCatalogInventory(
 	}
 	copy(result.Items, f.namespaceInventoryResult.Items)
 	return result, nil
+}
+
+func (f *fakeQueryReadStore) CountNamespaceCatalogInventory(
+	_ context.Context,
+	input store.NamespaceCatalogCountInput,
+) (int64, error) {
+	f.namespaceCountInputs = append(f.namespaceCountInputs, input)
+	if f.namespaceCountErr != nil {
+		return 0, f.namespaceCountErr
+	}
+	return f.namespaceCountResult, nil
 }
 
 func (f *fakeQueryReadStore) GetRepoCatalogFreshness(_ context.Context, namespace string, repo string) (store.RepoCatalogFreshness, error) {

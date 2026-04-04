@@ -44,6 +44,10 @@ type NamespaceCatalogListInput struct {
 	Offset      int32
 }
 
+type NamespaceCatalogCountInput struct {
+	QueryPrefix string
+}
+
 type NamespaceCatalogListResult struct {
 	Items      []NamespaceCatalogEntry
 	TotalCount int64
@@ -113,6 +117,10 @@ type namespaceCatalogInventoryQueries interface {
 		ctx context.Context,
 		arg sqlc.ListNamespaceCatalogInventoryParams,
 	) ([]sqlc.ListNamespaceCatalogInventoryRow, error)
+}
+
+type namespaceCatalogCountQueries interface {
+	CountNamespaceCatalogInventory(ctx context.Context, queryPrefix string) (int64, error)
 }
 
 type repoCatalogFreshnessQueries interface {
@@ -189,6 +197,17 @@ func (s *Store) ListNamespaceCatalogInventory(
 	return listNamespaceCatalogInventory(ctx, sqlc.New(s.pool), input)
 }
 
+func (s *Store) CountNamespaceCatalogInventory(
+	ctx context.Context,
+	input NamespaceCatalogCountInput,
+) (int64, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return 0, ErrStoreNotConfigured
+	}
+
+	return countNamespaceCatalogInventory(ctx, sqlc.New(s.pool), input)
+}
+
 func listNamespaceCatalogInventory(
 	ctx context.Context,
 	queries namespaceCatalogInventoryQueries,
@@ -227,6 +246,18 @@ func listNamespaceCatalogInventory(
 		Items:      items,
 		TotalCount: totalCount,
 	}, nil
+}
+
+func countNamespaceCatalogInventory(
+	ctx context.Context,
+	queries namespaceCatalogCountQueries,
+	input NamespaceCatalogCountInput,
+) (int64, error) {
+	totalCount, err := queries.CountNamespaceCatalogInventory(ctx, strings.TrimSpace(input.QueryPrefix))
+	if err != nil {
+		return 0, fmt.Errorf("count namespace catalog inventory: %w", err)
+	}
+	return totalCount, nil
 }
 
 func (s *Store) ListRepoCatalogInventory(ctx context.Context) ([]RepoCatalogEntry, error) {

@@ -134,16 +134,14 @@ func (s *Server) handleCountNamespaces(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	result, err := s.readStore.ListNamespaceCatalogInventory(c.Context(), store.NamespaceCatalogListInput{
+	totalCount, err := s.readStore.CountNamespaceCatalogInventory(c.Context(), store.NamespaceCatalogCountInput{
 		QueryPrefix: query.QueryPrefix,
-		Limit:       1,
-		Offset:      0,
 	})
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{"total_count": result.TotalCount})
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"total_count": totalCount})
 }
 
 func (s *Server) handleGetCatalogStatus(c *fiber.Ctx) error {

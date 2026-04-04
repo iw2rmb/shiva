@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +80,45 @@ func TestGetRepoCatalogFreshness_NotFound(t *testing.T) {
 	}
 	if !errors.Is(err, ErrRepoNotFound) {
 		t.Fatalf("expected ErrRepoNotFound, got %v", err)
+	}
+}
+
+func TestCountNamespaceCatalogInventory_TrimsPrefix(t *testing.T) {
+	t.Parallel()
+
+	queries := &fakeCLICatalogQueries{
+		namespaceCountResult: 17,
+	}
+
+	total, err := countNamespaceCatalogInventory(context.Background(), queries, NamespaceCatalogCountInput{
+		QueryPrefix: "  ac  ",
+	})
+	if err != nil {
+		t.Fatalf("countNamespaceCatalogInventory() unexpected error: %v", err)
+	}
+	if total != 17 {
+		t.Fatalf("expected total=17, got %d", total)
+	}
+	if queries.namespaceCountPrefix != "ac" {
+		t.Fatalf("expected trimmed prefix %q, got %q", "ac", queries.namespaceCountPrefix)
+	}
+}
+
+func TestCountNamespaceCatalogInventory_WrapsQueryError(t *testing.T) {
+	t.Parallel()
+
+	queries := &fakeCLICatalogQueries{
+		namespaceCountErr: errors.New("boom"),
+	}
+
+	_, err := countNamespaceCatalogInventory(context.Background(), queries, NamespaceCatalogCountInput{
+		QueryPrefix: "ac",
+	})
+	if err == nil {
+		t.Fatalf("expected wrapped error")
+	}
+	if !strings.Contains(err.Error(), "count namespace catalog inventory") {
+		t.Fatalf("expected wrapped error, got %v", err)
 	}
 }
 
@@ -250,6 +290,11 @@ type fakeCLICatalogQueries struct {
 	freshnessRow      sqlc.GetRepoCatalogFreshnessRow
 	freshnessErr      error
 
+	namespaceCountPrefix string
+	namespaceCountResult int64
+	namespaceCountErr    error
+	namespaceRows        []sqlc.ListNamespaceCatalogInventoryRow
+
 	apiInventoryRows []sqlc.ListAPISnapshotInventoryByRepoRevisionRow
 	apiSelectionRow  sqlc.GetAPISnapshotByRepoRevisionAndAPIRow
 	apiSelectionErr  error
@@ -278,6 +323,21 @@ func (f *fakeCLICatalogQueries) GetRepoCatalogFreshness(_ context.Context, _ sql
 		return sqlc.GetRepoCatalogFreshnessRow{}, f.freshnessErr
 	}
 	return f.freshnessRow, nil
+}
+
+func (f *fakeCLICatalogQueries) CountNamespaceCatalogInventory(_ context.Context, queryPrefix string) (int64, error) {
+	f.namespaceCountPrefix = queryPrefix
+	if f.namespaceCountErr != nil {
+		return 0, f.namespaceCountErr
+	}
+	return f.namespaceCountResult, nil
+}
+
+func (f *fakeCLICatalogQueries) ListNamespaceCatalogInventory(
+	_ context.Context,
+	_ sqlc.ListNamespaceCatalogInventoryParams,
+) ([]sqlc.ListNamespaceCatalogInventoryRow, error) {
+	return f.namespaceRows, nil
 }
 
 func (f *fakeCLICatalogQueries) ListAPISnapshotInventoryByRepoRevision(

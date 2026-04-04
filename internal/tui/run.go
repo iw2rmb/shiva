@@ -43,7 +43,7 @@ func Run(
 		model.width = width
 		model.height = height
 		model.resizeLists()
-		model.refreshExplorerDetailViewport()
+		model.refreshExplorerDetailViewportIfVisible()
 		programOptions = append(programOptions, tea.WithWindowSize(width, height))
 	}
 

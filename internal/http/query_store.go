@@ -45,6 +45,10 @@ type queryReadStore interface {
 		ctx context.Context,
 		input store.NamespaceCatalogListInput,
 	) (store.NamespaceCatalogListResult, error)
+	CountNamespaceCatalogInventory(
+		ctx context.Context,
+		input store.NamespaceCatalogCountInput,
+	) (int64, error)
 	ListRepoCatalogInventory(ctx context.Context) ([]store.RepoCatalogEntry, error)
 	GetRepoCatalogFreshness(ctx context.Context, namespace string, repo string) (store.RepoCatalogFreshness, error)
 }
