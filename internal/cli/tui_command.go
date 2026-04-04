@@ -106,6 +106,13 @@ type tuiServiceAdapter struct {
 	service Service
 }
 
+func (adapter tuiServiceAdapter) CountNamespaces(
+	ctx context.Context,
+	options tui.RequestOptions,
+) (int64, error) {
+	return adapter.service.CountNamespaces(ctx, fromTUIRequestOptions(options))
+}
+
 func (adapter tuiServiceAdapter) ListRepos(
 	ctx context.Context,
 	options tui.RequestOptions,

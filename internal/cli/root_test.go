@@ -539,6 +539,20 @@ func (s *fakeService) ExecuteCall(ctx context.Context, selector request.Envelope
 	return s.callBody, nil
 }
 
+func (s *fakeService) CountNamespaces(ctx context.Context, options RequestOptions) (int64, error) {
+	s.lastOptions = options
+	if len(s.listNamespacesBody) == 0 {
+		return 0, nil
+	}
+	var rows []struct {
+		Namespace string `json:"namespace"`
+	}
+	if err := json.Unmarshal(s.listNamespacesBody, &rows); err != nil {
+		return 0, err
+	}
+	return int64(len(rows)), nil
+}
+
 func (s *fakeService) ListRepos(ctx context.Context, options RequestOptions, format output.ListFormat) ([]byte, error) {
 	s.listReposCalls++
 	s.lastListFormat = string(format)

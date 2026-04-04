@@ -21,6 +21,30 @@ func loadRepoCatalogCmd(
 	}
 }
 
+func loadNamespaceCountCmd(
+	ctx context.Context,
+	service BrowserService,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		return loadNamespaceCountMsg(ctx, service, options, token)
+	}
+}
+
+func loadNamespaceCountMsg(
+	ctx context.Context,
+	service BrowserService,
+	options RequestOptions,
+	token RequestToken,
+) tea.Msg {
+	count, err := service.CountNamespaces(ctx, options)
+	if err != nil {
+		return loadFailedMsg{Domain: loadDomainNamespaceCount, Token: token, Err: err}
+	}
+	return namespaceCountLoadedMsg{Token: token, Count: count}
+}
+
 func loadNamespaceCatalogCmd(
 	ctx context.Context,
 	service BrowserService,

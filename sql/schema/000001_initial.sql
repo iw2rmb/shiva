@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS api_specs (
 );
 
 CREATE INDEX IF NOT EXISTS api_specs_repo_status_idx ON api_specs(repo_id, status);
+CREATE INDEX IF NOT EXISTS api_specs_active_repo_idx ON api_specs(repo_id) WHERE status = 'active';
 
 CREATE TABLE IF NOT EXISTS api_spec_revisions (
     id BIGSERIAL PRIMARY KEY,
@@ -191,7 +192,15 @@ INSERT INTO vacuum_rules (rule_id, severity, type, category_id, category_name, d
     ('post-response-success', 'warn', 'validation', 'operations', 'Operations', 'POST Operations should have a success response defined', 'Make sure your POST operations return a ''success'' response via 2xx or 3xx response code. ', '$.paths.*.post.responses', '{"category":{"description":"Operations are the core of the contract, they define paths and HTTP methods. These rules check operations have been well constructed, looks for operationId, parameter, schema and return types in depth.","id":"operations","name":"Operations"},"description":"POST Operations should have a success response defined","given":"$.paths.*.post.responses","howToFix":"Make sure your POST operations return a ''success'' response via 2xx or 3xx response code. ","id":"post-response-success","severity":"warn","then":{"function":"postResponseSuccess","functionOptions":{"properties":["2XX","3XX","200","201","202","204","205","206","207","208","226","300","301","302","303","304","305","306","307","308"]}},"type":"validation"}'::jsonb),
     ('tag-description', 'warn', 'validation', 'tags', 'Tags', 'Tag must have a description defined', 'Tags are used to group operations into meaningful domains. Without a description, how is anyone supposed to understand what the grouping means? Add a description to your global tag.', '$', '{"category":{"description":"Tags are used as meta-data for operations. They are mainly used by tooling as a taxonomy mechanism to build navigation, search and more. Tags are important as they help consumers navigate the contract when using documentation, testing, code generation or analysis tools.","id":"tags","name":"Tags"},"description":"Tag must have a description defined","given":"$","howToFix":"Tags are used to group operations into meaningful domains. Without a description, how is anyone supposed to understand what the grouping means? Add a description to your global tag.","id":"tag-description","resolved":true,"severity":"warn","then":{"function":"tagDescription"},"type":"validation"}'::jsonb),
     ('typed-enum', 'warn', 'validation', 'schemas', 'Schemas', 'Enum values must respect the specified type', 'Enum values lock down the number of variable inputs a parameter or schema can have. The problem here is that the Enum defined, does not match the specified type. Fix the type!', '$', '{"category":{"description":"Schemas are how request bodies and response payloads are defined. They define the data going in and the data flowing out of an operation. These rules check for structural validity, checking types, checking required fields and validating correct use of structures.","id":"schemas","name":"Schemas"},"description":"Enum values must respect the specified type","given":"$","howToFix":"Enum values lock down the number of variable inputs a parameter or schema can have. The problem here is that the Enum defined, does not match the specified type. Fix the type!","id":"typed-enum","resolved":true,"severity":"warn","then":{"function":"typedEnum"},"type":"validation"}'::jsonb)
-;
+ON CONFLICT (rule_id) DO UPDATE
+SET severity = EXCLUDED.severity,
+    type = EXCLUDED.type,
+    category_id = EXCLUDED.category_id,
+    category_name = EXCLUDED.category_name,
+    description = EXCLUDED.description,
+    how_to_fix = EXCLUDED.how_to_fix,
+    given_path = EXCLUDED.given_path,
+    rule_json = EXCLUDED.rule_json;
 -- vacuum_rules seed end
 
 CREATE TABLE IF NOT EXISTS vacuum_issues (

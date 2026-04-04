@@ -98,7 +98,7 @@ func defaultHomeEntries() []HomeEntry {
 	return []HomeEntry{
 		{
 			Title:       "Repos",
-			Description: "Browse namespaces and repositories",
+			Description: "Total: ...",
 			Route:       RouteNamespaces,
 		},
 		{
@@ -106,6 +106,28 @@ func defaultHomeEntries() []HomeEntry {
 			Description: "Coming soon",
 		},
 	}
+}
+
+func withHomeNamespaceCount(entries []HomeEntry, total int64) []HomeEntry {
+	updated := append([]HomeEntry(nil), entries...)
+	for index := range updated {
+		if updated[index].Route != RouteNamespaces {
+			continue
+		}
+		updated[index].Description = fmt.Sprintf("Total: %d", total)
+	}
+	return updated
+}
+
+func withHomeNamespaceCountUnavailable(entries []HomeEntry) []HomeEntry {
+	updated := append([]HomeEntry(nil), entries...)
+	for index := range updated {
+		if updated[index].Route != RouteNamespaces {
+			continue
+		}
+		updated[index].Description = "Total: unavailable"
+	}
+	return updated
 }
 
 func namespaceEntriesFromRepos(rows []RepoEntry) []NamespaceEntry {

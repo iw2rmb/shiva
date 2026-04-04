@@ -42,6 +42,13 @@ VALUES ($1, $2)
 ON CONFLICT (version) DO NOTHING;
 `
 
+const updateSchemaMigrationChecksumSQL = `
+UPDATE schema_migrations
+SET checksum = $2,
+    applied_at = NOW()
+WHERE version = $1;
+`
+
 type migrationDB interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	QueryRow(ctx context.Context, sql string, arguments ...any) pgx.Row
@@ -70,12 +77,9 @@ func applyCurrentSchema(ctx context.Context, db migrationPool) error {
 	switch {
 	case err == nil:
 		if recordedChecksum != checksum {
-			return fmt.Errorf(
-				"schema migration %s checksum mismatch: recorded=%s current=%s",
-				currentSchemaVersion,
-				recordedChecksum,
-				checksum,
-			)
+			if err := reconcileCurrentSchema(ctx, db, schemaSQL, checksum); err != nil {
+				return err
+			}
 		}
 		return nil
 	case !errors.Is(err, pgx.ErrNoRows):
@@ -121,6 +125,25 @@ func applyCurrentSchema(ctx context.Context, db migrationPool) error {
 			recordedChecksum,
 			checksum,
 		)
+	}
+	return nil
+}
+
+func reconcileCurrentSchema(ctx context.Context, db migrationPool, schemaSQL string, checksum string) error {
+	tx, err := beginMigrationTx(ctx, db)
+	if err != nil {
+		return fmt.Errorf("begin schema reconciliation %s transaction: %w", currentSchemaVersion, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if err := execMigrationSQL(ctx, tx, schemaSQL); err != nil {
+		return fmt.Errorf("reconcile schema migration %s: %w", currentSchemaVersion, err)
+	}
+	if _, err := tx.Exec(ctx, updateSchemaMigrationChecksumSQL, currentSchemaVersion, checksum); err != nil {
+		return fmt.Errorf("update schema migration %s checksum: %w", currentSchemaVersion, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit schema reconciliation %s: %w", currentSchemaVersion, err)
 	}
 	return nil
 }

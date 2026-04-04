@@ -89,7 +89,8 @@ func (model *rootModel) Init() tea.Cmd {
 		token := model.beginNamespaceCatalogLoad()
 		initCmd = loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
 	case RouteHome:
-		initCmd = nil
+		token := model.beginNamespaceCountLoad()
+		initCmd = loadNamespaceCountCmd(context.Background(), model.service, model.options, token)
 	default:
 		token := model.beginNamespaceCatalogLoad()
 		initCmd = loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
@@ -137,6 +138,14 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.finishLoad(loadDomainNamespaces, typed.Token, nil)
 		model.namespaces.Entries = append([]NamespaceEntry(nil), typed.Rows...)
 		model.refreshNamespaceList()
+		return model, nil
+	case namespaceCountLoadedMsg:
+		if !model.accepts(loadDomainNamespaceCount, typed.Token) {
+			return model, nil
+		}
+		model.finishLoad(loadDomainNamespaceCount, typed.Token, nil)
+		model.home.Entries = withHomeNamespaceCount(model.home.Entries, typed.Count)
+		model.refreshHomeList()
 		return model, nil
 	case operationListLoadedMsg:
 		if !model.accepts(loadDomainOperationList, typed.Token) {
@@ -193,6 +202,9 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model.refreshRepoList()
 		} else if typed.Domain == loadDomainNamespaces {
 			model.refreshNamespaceList()
+		} else if typed.Domain == loadDomainNamespaceCount {
+			model.home.Entries = withHomeNamespaceCountUnavailable(model.home.Entries)
+			model.refreshHomeList()
 		} else if typed.Domain == loadDomainOperationDetail || typed.Domain == loadDomainSpecDetail {
 			model.refreshExplorerDetailViewport()
 		}
@@ -457,6 +469,16 @@ func (model *rootModel) viewHome() string {
 		return model.layoutScreen(body, model.routeHelpView())
 	}
 	body = model.home.List.View()
+	if model.async.NamespaceCount.LastError != nil {
+		body = strings.Join([]string{
+			body,
+			"",
+			model.styles.ErrorBlock(
+				"Failed to load namespace total.",
+				model.async.NamespaceCount.LastError.Error(),
+			),
+		}, "\n")
+	}
 	return model.layoutScreen(body, model.routeHelpView())
 }
 
@@ -573,6 +595,10 @@ func (model *rootModel) beginRepoCatalogLoad() RequestToken {
 	return model.beginLoad(loadDomainRepoCatalog)
 }
 
+func (model *rootModel) beginNamespaceCountLoad() RequestToken {
+	return model.beginLoad(loadDomainNamespaceCount)
+}
+
 func (model *rootModel) beginNamespaceCatalogLoad() RequestToken {
 	return model.beginLoad(loadDomainNamespaces)
 }
@@ -630,6 +656,8 @@ func (model *rootModel) finishLoad(domain loadDomain, token RequestToken, err er
 
 func (model *rootModel) loadState(domain loadDomain) *asyncLoadState {
 	switch domain {
+	case loadDomainNamespaceCount:
+		return &model.async.NamespaceCount
 	case loadDomainNamespaces:
 		return &model.async.Namespaces
 	case loadDomainRepoCatalog:

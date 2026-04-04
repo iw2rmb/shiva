@@ -20,6 +20,34 @@ type SyncResult struct {
 	APIs                  []string                 `json:"apis,omitempty"`
 }
 
+func (s *RuntimeService) CountNamespaces(ctx context.Context, options RequestOptions) (int64, error) {
+	if s == nil || s.newClient == nil {
+		return 0, fmt.Errorf("CLI service is not configured")
+	}
+
+	source, err := s.resolveSource(options.Profile, "")
+	if err != nil {
+		return 0, err
+	}
+
+	client, err := s.newTransportClient(source)
+	if err != nil {
+		return 0, err
+	}
+
+	var payload struct {
+		TotalCount int64 `json:"total_count"`
+	}
+	body, err := client.CountNamespaces(ctx)
+	if err != nil {
+		return 0, normalizeServiceError(err)
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return 0, fmt.Errorf("decode namespace count: %w", err)
+	}
+	return payload.TotalCount, nil
+}
+
 func (s *RuntimeService) ListNamespaces(
 	ctx context.Context,
 	options RequestOptions,

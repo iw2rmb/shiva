@@ -47,6 +47,7 @@ func TestServer_QueryReadSurfaceIsRegistered(t *testing.T) {
 		{name: "call endpoint", method: http.MethodPost, path: "/v1/call"},
 		{name: "apis query endpoint", method: http.MethodGet, path: "/v1/apis?namespace=acme&repo=platform"},
 		{name: "operations query endpoint", method: http.MethodGet, path: "/v1/operations?namespace=acme&repo=platform"},
+		{name: "namespaces count endpoint", method: http.MethodGet, path: "/v1/namespaces/count"},
 		{name: "repos query endpoint", method: http.MethodGet, path: "/v1/repos"},
 		{name: "catalog status endpoint", method: http.MethodGet, path: "/v1/catalog/status?namespace=acme&repo=platform"},
 	}

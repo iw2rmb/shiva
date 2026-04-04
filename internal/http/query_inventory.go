@@ -128,6 +128,24 @@ func (s *Server) handleListNamespaces(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(mapNamespaceCatalogEntries(result.Items))
 }
 
+func (s *Server) handleCountNamespaces(c *fiber.Ctx) error {
+	query, err := parseNamespacesCountQuery(c)
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	result, err := s.readStore.ListNamespaceCatalogInventory(c.Context(), store.NamespaceCatalogListInput{
+		QueryPrefix: query.QueryPrefix,
+		Limit:       1,
+		Offset:      0,
+	})
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"total_count": result.TotalCount})
+}
+
 func (s *Server) handleGetCatalogStatus(c *fiber.Ctx) error {
 	repoPath, err := parseCatalogStatusQuery(c)
 	if err != nil {

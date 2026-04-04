@@ -26,6 +26,7 @@ type Service interface {
 	GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
 	ExecuteCall(ctx context.Context, selector request.Envelope, options RequestOptions, format CallFormat) ([]byte, error)
+	CountNamespaces(ctx context.Context, options RequestOptions) (int64, error)
 	ListNamespaces(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListAPIs(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
@@ -40,6 +41,7 @@ type Service interface {
 type transportClient interface {
 	GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error)
+	CountNamespaces(ctx context.Context) ([]byte, error)
 	ListNamespaces(ctx context.Context) ([]byte, error)
 	ListRepos(ctx context.Context) ([]byte, error)
 	GetCatalogStatus(ctx context.Context, repo string) ([]byte, error)

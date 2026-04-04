@@ -230,6 +230,45 @@ func TestRuntimeServiceGetOperationOfflineUsesCachedResponseOnly(t *testing.T) {
 	}
 }
 
+func TestRuntimeServiceCountNamespacesUsesCountEndpointOnly(t *testing.T) {
+	t.Parallel()
+
+	client := &recordingTransportClient{
+		namespaceCountErr: &httpclient.HTTPError{
+			StatusCode: 404,
+			Message:    "not found",
+		},
+		namespacesBody: []byte(`[{"namespace":"acme","repo_count":1}]`),
+	}
+
+	service := &RuntimeService{
+		document: config.Document{
+			ActiveProfile: "default",
+			Profiles: map[string]profile.Source{
+				"default": {Name: "default", BaseURL: "http://default.example", Timeout: 5 * time.Second},
+			},
+			Targets: map[string]target.Entry{
+				target.BuiltinShivaName: target.BuiltinShiva(),
+			},
+		},
+		newClient: func(source profile.Source) (transportClient, error) {
+			_ = source
+			return client, nil
+		},
+	}
+
+	_, err := service.CountNamespaces(context.Background(), RequestOptions{})
+	if err == nil {
+		t.Fatalf("expected count namespaces error")
+	}
+	if client.namespaceCountCalls != 1 {
+		t.Fatalf("expected one count endpoint call, got %d", client.namespaceCountCalls)
+	}
+	if client.namespacesCalls != 0 {
+		t.Fatalf("expected no namespaces list fallback calls, got %d", client.namespacesCalls)
+	}
+}
+
 func TestRuntimeServiceGetOperationOfflineUsesExplicitCacheWithoutCatalogSlices(t *testing.T) {
 	t.Parallel()
 
@@ -508,6 +547,7 @@ func TestRuntimeServiceNormalizesAPIAmbiguityIntoAPIError(t *testing.T) {
 }
 
 type recordingTransportClient struct {
+	namespaceCountBody    []byte
 	namespacesBody        []byte
 	reposBody             []byte
 	statusBody            []byte
@@ -518,12 +558,14 @@ type recordingTransportClient struct {
 	healthBody            []byte
 	specErr               error
 	operationErr          error
+	namespaceCountErr     error
 	namespacesErr         error
 	reposErr              error
 	statusErr             error
 	apisErr               error
 	operationsErr         error
 	namespacesCalls       int
+	namespaceCountCalls   int
 	reposCalls            int
 	statusCalls           int
 	apisCalls             int
@@ -533,6 +575,14 @@ type recordingTransportClient struct {
 	lastSpecSelector      request.Envelope
 	lastOperationSelector request.Envelope
 	lastCatalogRepo       string
+}
+
+func (c *recordingTransportClient) CountNamespaces(ctx context.Context) ([]byte, error) {
+	c.namespaceCountCalls++
+	if c.namespaceCountErr != nil {
+		return nil, c.namespaceCountErr
+	}
+	return c.namespaceCountBody, nil
 }
 
 func (c *recordingTransportClient) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {

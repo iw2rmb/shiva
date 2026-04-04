@@ -34,6 +34,10 @@ type namespacesCatalogQuery struct {
 	Offset      int32
 }
 
+type namespacesCatalogCountQuery struct {
+	QueryPrefix string
+}
+
 const (
 	defaultNamespacesPageLimit int32 = 100
 	maxNamespacesPageLimit     int32 = 1000
@@ -183,6 +187,32 @@ func parseNamespacesQuery(c *fiber.Ctx) (namespacesCatalogQuery, error) {
 		Limit:       limit,
 		Offset:      offset,
 	}, nil
+}
+
+func parseNamespacesCountQuery(c *fiber.Ctx) (namespacesCatalogCountQuery, error) {
+	if err := rejectUnsupportedQueryParams(
+		c,
+		"namespace",
+		"repo",
+		"api",
+		"revision_id",
+		"sha",
+		"operation_id",
+		"method",
+		"path",
+		"format",
+		"limit",
+		"offset",
+	); err != nil {
+		return namespacesCatalogCountQuery{}, err
+	}
+
+	queryPrefix := strings.TrimSpace(c.Query("query"))
+	if hasQueryParam(c, "query") && queryPrefix == "" {
+		return namespacesCatalogCountQuery{}, invalidQuery("query must not be empty")
+	}
+
+	return namespacesCatalogCountQuery{QueryPrefix: queryPrefix}, nil
 }
 
 type snapshotQueryOptions struct {

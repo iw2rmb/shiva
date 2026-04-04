@@ -655,6 +655,47 @@ func TestQueryEndpoints_ListNamespaces_UsesQueryAndPaginationInputs(t *testing.T
 	}
 }
 
+func TestQueryEndpoints_CountNamespaces_UsesQueryPrefixOnly(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeQueryReadStore{
+		namespaceInventoryResult: store.NamespaceCatalogListResult{
+			Items:      []store.NamespaceCatalogEntry{},
+			TotalCount: 9,
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(
+		httptest.NewRequest(http.MethodGet, "/v1/namespaces/count?query=ac", nil),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if !reflect.DeepEqual(readStore.namespaceInventoryInputs, []store.NamespaceCatalogListInput{{
+		QueryPrefix: "ac",
+		Limit:       1,
+		Offset:      0,
+	}}) {
+		t.Fatalf("unexpected namespace count inputs: %+v", readStore.namespaceInventoryInputs)
+	}
+	var body struct {
+		TotalCount int64 `json:"total_count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode count response: %v", err)
+	}
+	if body.TotalCount != 9 {
+		t.Fatalf("expected total_count=9, got %d", body.TotalCount)
+	}
+}
+
 func newQueryTestServer(readStore queryReadStore) *Server {
 	cfg := config.Config{HTTPAddr: ":8080"}
 	server := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), &store.Store{})

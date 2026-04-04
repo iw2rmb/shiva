@@ -78,21 +78,35 @@ func TestApplyCurrentSchema_SkipsWhenChecksumMatches(t *testing.T) {
 	}
 }
 
-func TestApplyCurrentSchema_FailsOnChecksumMismatch(t *testing.T) {
+func TestApplyCurrentSchema_ReconcilesChecksumMismatch(t *testing.T) {
 	t.Parallel()
 
+	checksum := schemaChecksum(currentSchemaSQLForTest())
 	db := &fakeMigrationDB{
 		queryResults: []fakeMigrationQueryResult{
 			{checksum: "different"},
 		},
 	}
 
-	err := applyCurrentSchema(context.Background(), db)
-	if err == nil {
-		t.Fatal("expected error")
+	if err := applyCurrentSchema(context.Background(), db); err != nil {
+		t.Fatalf("applyCurrentSchema() unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "checksum mismatch") {
-		t.Fatalf("expected checksum mismatch error, got %v", err)
+
+	if db.tx == nil {
+		t.Fatal("expected reconciliation transaction")
+	}
+	if !db.tx.committed {
+		t.Fatal("expected reconciliation transaction to commit")
+	}
+	if len(db.tx.execCalls) == 0 {
+		t.Fatal("expected reconciliation statements to execute")
+	}
+	lastExec := db.tx.execCalls[len(db.tx.execCalls)-1]
+	if strings.TrimSpace(lastExec.sql) != strings.TrimSpace(updateSchemaMigrationChecksumSQL) {
+		t.Fatalf("expected checksum update statement, got %q", lastExec.sql)
+	}
+	if !reflect.DeepEqual(lastExec.arguments, []any{currentSchemaVersion, checksum}) {
+		t.Fatalf("unexpected checksum update arguments: %#v", lastExec.arguments)
 	}
 }
 

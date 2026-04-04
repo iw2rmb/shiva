@@ -95,6 +95,10 @@ func (c *Client) ListRepos(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/v1/repos")
 }
 
+func (c *Client) CountNamespaces(ctx context.Context) ([]byte, error) {
+	return c.get(ctx, "/v1/namespaces/count")
+}
+
 func (c *Client) ListNamespaces(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/v1/namespaces")
 }

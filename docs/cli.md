@@ -119,13 +119,15 @@ Rules:
     - no selector starts in the `SHIVA` home list
     - `<namespace>/` starts in that namespace's repo view
     - `<namespace>/<repo>` starts in that repo's explorer view
-  - startup for home route does not preload namespace catalog; namespace rows are loaded when entering namespace mode
+  - startup for home route preloads only namespace count from `/v1/namespaces/count` and shows it in the `Repos` item as `Total: <count>`
+  - startup for home route does not preload namespace rows; namespace rows are loaded when entering namespace mode
   - startup for namespace route loads namespace catalog from `/v1/namespaces`
   - startup for direct namespace route (`shiva tui <namespace>/`) loads both namespace and repo catalogs (`/v1/namespaces` + `/v1/repos`) before interactions
   - startup for direct repo route (`shiva tui <namespace>/<repo>`) skips repo catalog preload and loads repo operations immediately
   - home mode:
     - list title: `SHIVA`
     - entries: `Repos`, `Endpoints`
+    - `Repos` description includes `Total: <namespace-count>`
     - `enter` on `Repos` opens namespace mode
   - namespace mode:
     - built-in list filtering is enabled

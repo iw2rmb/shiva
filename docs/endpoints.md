@@ -340,6 +340,13 @@ Legacy path-segment endpoints were removed:
   - `X-Limit`
   - `X-Offset`
 
+### `GET /v1/namespaces/count`
+- supported query parameters:
+  - optional `query` (prefix match; server applies `query%`)
+- this endpoint does not accept repo/snapshot selector parameters
+- response body shape:
+  - `total_count`
+
 ### `GET /v1/repos`
 - takes no repo/snapshot selector parameters
 - inventory includes only repos with at least one active spec

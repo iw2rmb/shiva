@@ -20,6 +20,7 @@ const (
 )
 
 type BrowserService interface {
+	CountNamespaces(ctx context.Context, options RequestOptions) (int64, error)
 	ListNamespaces(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListOperations(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)

@@ -64,6 +64,9 @@ func TestNewRootModelHomeRouteShowsShivaSections(t *testing.T) {
 	if model.home.Entries[0].Title != "Repos" || model.home.Entries[1].Title != "Endpoints" {
 		t.Fatalf("unexpected home entries %+v", model.home.Entries)
 	}
+	if model.home.Entries[0].Description != "Total: ..." {
+		t.Fatalf("expected default repos description to include loading total, got %q", model.home.Entries[0].Description)
+	}
 }
 
 func TestRootModelEnterReposFromHomeOpensNamespaces(t *testing.T) {
@@ -89,6 +92,42 @@ func TestRootModelNamespacesListUsesDefaultFiltering(t *testing.T) {
 	}
 	if !model.namespaces.List.ShowFilter() {
 		t.Fatalf("expected namespace list filter input to be visible")
+	}
+}
+
+func TestRootModelNamespaceCountLoadUpdatesHomeReposDescription(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	token := model.beginNamespaceCountLoad()
+
+	updated, _ := model.Update(namespaceCountLoadedMsg{Token: token, Count: 17})
+	model = updated.(*rootModel)
+
+	if model.home.Entries[0].Description != "Total: 17" {
+		t.Fatalf("expected repos home description with namespace total, got %q", model.home.Entries[0].Description)
+	}
+}
+
+func TestRootModelNamespaceCountLoadFailureShowsUnavailableAndError(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	token := model.beginNamespaceCountLoad()
+
+	updated, _ := model.Update(loadFailedMsg{
+		Domain: loadDomainNamespaceCount,
+		Token:  token,
+		Err:    errors.New("boom"),
+	})
+	model = updated.(*rootModel)
+
+	if model.home.Entries[0].Description != "Total: unavailable" {
+		t.Fatalf("expected unavailable repos home description, got %q", model.home.Entries[0].Description)
+	}
+	view := stripANSI(model.View().Content)
+	if !strings.Contains(view, "Failed to load namespace total.") {
+		t.Fatalf("expected home view to include namespace total load error, got %q", view)
 	}
 }
 
@@ -269,19 +308,29 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 func TestRootModelInitRouteHomeDefersNamespaceLoad(t *testing.T) {
 	t.Parallel()
 
-	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	model := newRootModel(&fakeBrowserService{countNamespacesValue: 42}, InitialRoute{Kind: RouteHome}, RequestOptions{})
 	cmd := model.Init()
 	if cmd == nil {
 		t.Fatalf("expected init command")
+	}
+	if !model.async.NamespaceCount.Loading {
+		t.Fatalf("expected namespace count to load on home route init")
 	}
 	if model.async.Namespaces.Loading {
 		t.Fatalf("expected namespaces load to be deferred on home route")
 	}
 
+	var namespaceCountLoaded bool
 	for _, msg := range collectCmdMessages(cmd) {
+		if _, ok := msg.(namespaceCountLoadedMsg); ok {
+			namespaceCountLoaded = true
+		}
 		if _, ok := msg.(namespaceCatalogLoadedMsg); ok {
 			t.Fatalf("did not expect namespace catalog load on home route init")
 		}
+	}
+	if !namespaceCountLoaded {
+		t.Fatalf("expected namespaceCountLoadedMsg in home route init batch")
 	}
 }
 
@@ -903,26 +952,39 @@ func TestLayoutScreenPinsFooterToLastTerminalRow(t *testing.T) {
 }
 
 type fakeBrowserService struct {
-	listNamespacesBody []byte
-	listNamespacesErr  error
-	listNamespacesCall int
-	listReposBody      []byte
-	listReposErr       error
-	listReposCall      int
-	listOperationsBody []byte
-	listOperationsErr  error
-	listOperationsCall int
-	lastOperationQuery request.Envelope
-	getOperationCall   int
-	lastOperationGet   request.Envelope
-	operationBody      []byte
-	operationErr       error
-	getSpecCall        int
-	lastSpecGet        request.Envelope
-	lastSpecFormat     SpecFormat
-	specBody           []byte
-	specErr            error
-	lastContextValue   any
+	countNamespacesValue int64
+	countNamespacesErr   error
+	countNamespacesCall  int
+	listNamespacesBody   []byte
+	listNamespacesErr    error
+	listNamespacesCall   int
+	listReposBody        []byte
+	listReposErr         error
+	listReposCall        int
+	listOperationsBody   []byte
+	listOperationsErr    error
+	listOperationsCall   int
+	lastOperationQuery   request.Envelope
+	getOperationCall     int
+	lastOperationGet     request.Envelope
+	operationBody        []byte
+	operationErr         error
+	getSpecCall          int
+	lastSpecGet          request.Envelope
+	lastSpecFormat       SpecFormat
+	specBody             []byte
+	specErr              error
+	lastContextValue     any
+}
+
+func (service *fakeBrowserService) CountNamespaces(
+	ctx context.Context,
+	options RequestOptions,
+) (int64, error) {
+	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.countNamespacesCall++
+	_ = options
+	return service.countNamespacesValue, service.countNamespacesErr
 }
 
 func (service *fakeBrowserService) ListNamespaces(
