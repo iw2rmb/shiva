@@ -27,8 +27,8 @@ func TestNewRootModelSeedsRouteSpecificState(t *testing.T) {
 		Offline: true,
 	})
 
-	if model.activeRoute != RouteRepoExplorer {
-		t.Fatalf("expected active route %q, got %q", RouteRepoExplorer, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected active route %q, got %q", RouteHome, model.activeRoute)
 	}
 	if model.repoList.Namespace != "acme" {
 		t.Fatalf("expected repo route namespace to seed from initial route, got %q", model.repoList.Namespace)
@@ -42,7 +42,7 @@ func TestNewRootModelSeedsRouteSpecificState(t *testing.T) {
 	if model.namespaces.List.Title != "Namespaces" {
 		t.Fatalf("expected namespace list to initialize, got %q", model.namespaces.List.Title)
 	}
-	if model.repoList.List.Title != "Repositories" {
+	if !strings.Contains(model.repoList.List.Title, "Repositories") {
 		t.Fatalf("expected repo list to initialize, got %q", model.repoList.List.Title)
 	}
 }
@@ -58,14 +58,14 @@ func TestNewRootModelHomeRouteShowsShivaSections(t *testing.T) {
 	if model.home.List.Title != "SHIVA" {
 		t.Fatalf("expected home list title SHIVA, got %q", model.home.List.Title)
 	}
-	if len(model.home.Entries) != 2 {
-		t.Fatalf("expected two home entries, got %d", len(model.home.Entries))
+	if len(model.home.Entries) != 3 {
+		t.Fatalf("expected three home entries, got %d", len(model.home.Entries))
 	}
-	if model.home.Entries[0].Title != "Repos" || model.home.Entries[1].Title != "Endpoints" {
+	if model.home.Entries[0].Title != "Namespaces" || model.home.Entries[1].Title != "Repos" || model.home.Entries[2].Title != "Endpoints" {
 		t.Fatalf("unexpected home entries %+v", model.home.Entries)
 	}
 	if model.home.Entries[0].Description != "Total: ..." {
-		t.Fatalf("expected default repos description to include loading total, got %q", model.home.Entries[0].Description)
+		t.Fatalf("expected default namespaces description to include loading total, got %q", model.home.Entries[0].Description)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestRootModelNamespaceCountLoadUpdatesHomeReposDescription(t *testing.T) {
 	model = updated.(*rootModel)
 
 	if model.home.Entries[0].Description != "Total: 17" {
-		t.Fatalf("expected repos home description with namespace total, got %q", model.home.Entries[0].Description)
+		t.Fatalf("expected namespaces home description with namespace total, got %q", model.home.Entries[0].Description)
 	}
 }
 
@@ -123,7 +123,7 @@ func TestRootModelNamespaceCountLoadFailureShowsUnavailableAndError(t *testing.T
 	model = updated.(*rootModel)
 
 	if model.home.Entries[0].Description != "Total: unavailable" {
-		t.Fatalf("expected unavailable repos home description, got %q", model.home.Entries[0].Description)
+		t.Fatalf("expected unavailable namespaces home description, got %q", model.home.Entries[0].Description)
 	}
 	view := stripANSI(model.View().Content)
 	if !strings.Contains(view, "Failed to load namespace total.") {
@@ -189,7 +189,7 @@ func TestRootModelTypingQInNamespaceFilterDoesNotQuit(t *testing.T) {
 	}
 }
 
-func TestRootModelEnterFilteredNamespaceOpensSelectedNamespaceRepos(t *testing.T) {
+func TestRootModelEnterFilteredNamespaceSelectsAndReturnsHome(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
@@ -219,11 +219,14 @@ func TestRootModelEnterFilteredNamespaceOpensSelectedNamespaceRepos(t *testing.T
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteRepos {
-		t.Fatalf("expected route %q, got %q", RouteRepos, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
 	}
 	if model.repoList.Namespace != "beta" {
 		t.Fatalf("expected filtered namespace beta, got %q", model.repoList.Namespace)
+	}
+	if model.home.Selected != homeItemRepos {
+		t.Fatalf("expected SHIVA selection to move to Repos, got %d", model.home.Selected)
 	}
 	if len(model.repoList.Entries) != 1 || model.repoList.Entries[0].Repo != "payments" {
 		t.Fatalf("expected beta/payments repo entries, got %+v", model.repoList.Entries)
@@ -305,7 +308,7 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 	}
 }
 
-func TestRootModelInitRouteHomeDefersNamespaceLoad(t *testing.T) {
+func TestRootModelInitRouteHomeStartsNamespaceLoad(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{countNamespacesValue: 42}, InitialRoute{Kind: RouteHome}, RequestOptions{})
@@ -316,21 +319,28 @@ func TestRootModelInitRouteHomeDefersNamespaceLoad(t *testing.T) {
 	if !model.async.NamespaceCount.Loading {
 		t.Fatalf("expected namespace count to load on home route init")
 	}
-	if model.async.Namespaces.Loading {
-		t.Fatalf("expected namespaces load to be deferred on home route")
+	if !model.async.Namespaces.Loading {
+		t.Fatalf("expected namespaces load to start on home route")
 	}
 
 	var namespaceCountLoaded bool
+	var namespaceCatalogTriggered bool
 	for _, msg := range collectCmdMessages(cmd) {
 		if _, ok := msg.(namespaceCountLoadedMsg); ok {
 			namespaceCountLoaded = true
 		}
 		if _, ok := msg.(namespaceCatalogLoadedMsg); ok {
-			t.Fatalf("did not expect namespace catalog load on home route init")
+			namespaceCatalogTriggered = true
+		}
+		if typed, ok := msg.(loadFailedMsg); ok && typed.Domain == loadDomainNamespaces {
+			namespaceCatalogTriggered = true
 		}
 	}
 	if !namespaceCountLoaded {
 		t.Fatalf("expected namespaceCountLoadedMsg in home route init batch")
+	}
+	if !namespaceCatalogTriggered {
+		t.Fatalf("expected namespace catalog load to be triggered in home route init batch")
 	}
 }
 
@@ -398,13 +408,13 @@ func TestRootModelInitRepoExplorerSkipsRepoCatalogLoad(t *testing.T) {
 
 	var operationLoaded bool
 	for _, msg := range collectCmdMessages(cmd) {
-		if _, ok := msg.(operationListLoadedMsg); ok {
+		if _, ok := msg.(repoOperationCatalogLoadedMsg); ok {
 			operationLoaded = true
 			break
 		}
 	}
 	if !operationLoaded {
-		t.Fatalf("expected operationListLoadedMsg in init batch")
+		t.Fatalf("expected repoOperationCatalogLoadedMsg in init batch")
 	}
 	if service.listReposCall != 0 {
 		t.Fatalf("expected no repo list calls on direct repo route init, got %d", service.listReposCall)
@@ -540,7 +550,7 @@ func TestRootModelBuildsNamespaceEntriesFromCatalog(t *testing.T) {
 	}
 }
 
-func TestRootModelEnterOpensSelectedNamespaceRepos(t *testing.T) {
+func TestRootModelEnterOnNamespaceSelectsAndReturnsHome(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
@@ -574,8 +584,8 @@ func TestRootModelEnterOpensSelectedNamespaceRepos(t *testing.T) {
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteRepos {
-		t.Fatalf("expected route %q, got %q", RouteRepos, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
 	}
 	if model.repoList.Namespace != "beta" {
 		t.Fatalf("expected beta namespace, got %q", model.repoList.Namespace)
@@ -587,9 +597,12 @@ func TestRootModelEnterOpensSelectedNamespaceRepos(t *testing.T) {
 	if model.repoList.Selected != 0 {
 		t.Fatalf("expected first repo selected, got %d", model.repoList.Selected)
 	}
+	if model.home.Selected != homeItemRepos {
+		t.Fatalf("expected SHIVA selection to move to Repos, got %d", model.home.Selected)
+	}
 }
 
-func TestRootModelRepoCatalogLoadAfterNamespaceEnterDoesNotResetToHome(t *testing.T) {
+func TestRootModelRepoCatalogLoadAfterNamespaceSelectStaysOnHome(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
@@ -619,8 +632,11 @@ func TestRootModelRepoCatalogLoadAfterNamespaceEnterDoesNotResetToHome(t *testin
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = updated.(*rootModel)
-	if model.activeRoute != RouteRepos {
-		t.Fatalf("expected route %q after opening namespace, got %q", RouteRepos, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected route %q after selecting namespace, got %q", RouteHome, model.activeRoute)
+	}
+	if model.home.Selected != homeItemRepos {
+		t.Fatalf("expected SHIVA selection on Repos, got %d", model.home.Selected)
 	}
 
 	token := model.beginRepoCatalogLoad()
@@ -633,12 +649,12 @@ func TestRootModelRepoCatalogLoadAfterNamespaceEnterDoesNotResetToHome(t *testin
 	})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteRepos {
-		t.Fatalf("expected to stay on %q after repo catalog load, got %q", RouteRepos, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected to stay on %q after repo catalog load, got %q", RouteHome, model.activeRoute)
 	}
 }
 
-func TestRootModelEscReturnsFromReposToNamespaces(t *testing.T) {
+func TestRootModelEscReturnsFromReposToHome(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
@@ -661,18 +677,18 @@ func TestRootModelEscReturnsFromReposToNamespaces(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteRepos {
-		t.Fatalf("expected initial route to switch to repos, got %q", model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected initial route focus on %q, got %q", RouteHome, model.activeRoute)
 	}
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteNamespaces {
-		t.Fatalf("expected route %q, got %q", RouteNamespaces, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
 	}
-	if model.namespaces.Selected != 0 {
-		t.Fatalf("expected namespace selection to be preserved, got %d", model.namespaces.Selected)
+	if model.home.Selected != homeItemRepos {
+		t.Fatalf("expected SHIVA selection to remain on Repos, got %d", model.home.Selected)
 	}
 }
 

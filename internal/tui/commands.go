@@ -144,13 +144,63 @@ func loadOperationListMsg(
 		return loadFailedMsg{Domain: loadDomainOperationList, Token: token, Err: err}
 	}
 
-	var rows []clioutput.OperationRow
-	if err := json.Unmarshal(body, &rows); err != nil {
+	entries, err := decodeOperationEntries(body)
+	if err != nil {
 		return loadFailedMsg{
 			Domain: loadDomainOperationList,
 			Token:  token,
-			Err:    fmt.Errorf("decode operation list: %w", err),
+			Err:    err,
 		}
+	}
+
+	return operationListLoadedMsg{Token: token, Entries: entries}
+}
+
+func loadRepoOperationCatalogCmd(
+	ctx context.Context,
+	service BrowserService,
+	namespace string,
+	repo string,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		body, err := service.ListOperations(ctx, request.Envelope{
+			Namespace: namespace,
+			Repo:      repo,
+		}, options, clioutput.ListFormatJSON)
+		if err != nil {
+			return repoOperationCatalogLoadedMsg{
+				Token:     token,
+				Namespace: namespace,
+				Repo:      repo,
+				Err:       err,
+			}
+		}
+
+		entries, decodeErr := decodeOperationEntries(body)
+		if decodeErr != nil {
+			return repoOperationCatalogLoadedMsg{
+				Token:     token,
+				Namespace: namespace,
+				Repo:      repo,
+				Err:       decodeErr,
+			}
+		}
+
+		return repoOperationCatalogLoadedMsg{
+			Token:     token,
+			Namespace: namespace,
+			Repo:      repo,
+			Entries:   entries,
+		}
+	}
+}
+
+func decodeOperationEntries(body []byte) ([]EndpointEntry, error) {
+	var rows []clioutput.OperationRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("decode operation list: %w", err)
 	}
 
 	entries := make([]EndpointEntry, 0, len(rows))
@@ -168,7 +218,7 @@ func loadOperationListMsg(
 		})
 	}
 
-	return operationListLoadedMsg{Token: token, Entries: entries}
+	return entries, nil
 }
 
 func loadOperationDetailCmd(

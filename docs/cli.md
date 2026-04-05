@@ -116,37 +116,38 @@ Rules:
 - `shiva tui`
   - starts a read-only terminal UI shell
   - initial route is selected by the optional argument:
-    - no selector starts in the `SHIVA` home list
-    - `<namespace>/` starts in that namespace's repo view
-    - `<namespace>/<repo>` starts in that repo's explorer view
-  - startup for home route preloads only namespace count from `/v1/namespaces/count` and shows it in the `Repos` item as `Total: <count>`
-  - startup for home route does not preload namespace rows; namespace rows are loaded when entering namespace mode
-  - startup for namespace route loads namespace catalog from `/v1/namespaces`
-  - startup for direct namespace route (`shiva tui <namespace>/`) loads both namespace and repo catalogs (`/v1/namespaces` + `/v1/repos`) before interactions
-  - startup for direct repo route (`shiva tui <namespace>/<repo>`) skips repo catalog preload and loads repo operations immediately
-  - home mode:
-    - list title: `SHIVA`
-    - entries: `Repos`, `Endpoints`
-    - `Repos` description includes `Total: <namespace-count>`
-    - `enter` on `Repos` opens namespace mode
-  - namespace mode:
-    - built-in list filtering is enabled
-    - `up` and `down` move the selection
-    - `enter` opens the selected namespace's repo view
-    - `esc` returns to home mode
-  - repo mode:
-    - `up` and `down` move the selection
-    - `enter` opens the selected repo explorer
-    - `esc` returns to namespace mode
-  - repo explorer mode:
-    - left pane lists repo endpoints (sorted deterministically by path, method, operation id, and API)
-    - right pane renders markdown details in tabs: `Endpoints`, `Servers`, `Errors`
+    - no selector starts with `SHIVA` focused on `Namespaces`
+    - `<namespace>/` seeds namespace selection and starts with `SHIVA` focused on `Repos`
+    - `<namespace>/<repo>` seeds namespace+repo selection and starts with `SHIVA` focused on `Endpoints`
+  - startup preloads namespace count from `/v1/namespaces/count` and namespace catalog from `/v1/namespaces`
+  - startup for direct namespace route (`shiva tui <namespace>/`) also loads repo catalog (`/v1/repos`)
+  - startup for direct repo route (`shiva tui <namespace>/<repo>`) skips repo catalog preload and loads endpoint catalog for that repo
+  - layout uses pane chaining:
+    - left pane is always `SHIVA` with rows `Namespaces`, `Repos`, `Endpoints`
+    - middle pane shows the list for the currently active `SHIVA` row
+    - when `Endpoints` is active, a details pane is shown with tabs `Endpoints`, `Servers`, `Errors`
+  - focus/input model:
+    - one pane is focused at a time
+    - `enter` on `SHIVA` moves focus to the active middle pane
+    - `enter` in middle pane commits selection, returns focus to `SHIVA`, and moves active `SHIVA` row one step down
+    - `esc` in a middle pane returns focus to `SHIVA`
+    - `backspace` on a `SHIVA` row clears that row selection
+      - clearing `Namespaces` clears namespace+repo+endpoint
+      - clearing `Repos` clears repo+endpoint
+      - clearing `Endpoints` clears endpoint only
+  - filtering and sync:
+    - namespace list keeps built-in list filtering
+    - selecting a repo auto-sets namespace
+    - selecting an endpoint auto-sets repo and namespace
+  - endpoint catalog loading:
+    - endpoint rows are sorted by path, method, operation id, then API
+    - endpoint catalog loading is lazy and progressive with bounded concurrency
+    - scope is selected repo, else selected namespace, else all repos
+    - operation detail loads lazily for selected endpoint and is cached by endpoint identity
+    - spec detail loads only for `Servers` when operation-level servers are missing/empty and is cached by `(namespace, repo, api)`
     - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)
     - `tab` and `shift+tab` switch detail tabs
     - `pgup`, `pgdown`, `home`, `end`, `ctrl+u`, and `ctrl+d` scroll the detail viewport
-    - `esc` returns to repo mode
-    - operation detail loads lazily for selected endpoint and is cached by endpoint identity
-    - spec detail loads only for `Servers` when operation-level servers are missing/empty and is cached by `(namespace, repo, api)`
     - wide terminals render side-by-side panes; narrow terminals stack panes vertically
   - empty catalogs and startup catalog-load failures render explicit deterministic states
   - `q` and `ctrl+c` quit from any route

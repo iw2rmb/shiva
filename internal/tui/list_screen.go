@@ -97,9 +97,13 @@ func (item homeListItem) Description() string { return item.description }
 func defaultHomeEntries() []HomeEntry {
 	return []HomeEntry{
 		{
-			Title:       "Repos",
+			Title:       "Namespaces",
 			Description: "Total: ...",
 			Route:       RouteNamespaces,
+		},
+		{
+			Title:       "Repos",
+			Description: "Total: ...",
 		},
 		{
 			Title:       "Endpoints",
@@ -111,7 +115,7 @@ func defaultHomeEntries() []HomeEntry {
 func withHomeNamespaceCount(entries []HomeEntry, total int64) []HomeEntry {
 	updated := append([]HomeEntry(nil), entries...)
 	for index := range updated {
-		if updated[index].Route != RouteNamespaces {
+		if updated[index].Title != "Namespaces" {
 			continue
 		}
 		updated[index].Description = fmt.Sprintf("Total: %d", total)
@@ -122,7 +126,7 @@ func withHomeNamespaceCount(entries []HomeEntry, total int64) []HomeEntry {
 func withHomeNamespaceCountUnavailable(entries []HomeEntry) []HomeEntry {
 	updated := append([]HomeEntry(nil), entries...)
 	for index := range updated {
-		if updated[index].Route != RouteNamespaces {
+		if updated[index].Title != "Namespaces" {
 			continue
 		}
 		updated[index].Description = "Total: unavailable"
@@ -159,6 +163,17 @@ func namespaceEntriesFromRepos(rows []RepoEntry) []NamespaceEntry {
 }
 
 func repoEntriesByNamespace(rows []RepoEntry, namespace string) []RepoEntry {
+	if strings.TrimSpace(namespace) == "" {
+		filtered := append([]RepoEntry(nil), rows...)
+		sort.Slice(filtered, func(i, j int) bool {
+			if filtered[i].Namespace != filtered[j].Namespace {
+				return filtered[i].Namespace < filtered[j].Namespace
+			}
+			return filtered[i].Repo < filtered[j].Repo
+		})
+		return filtered
+	}
+
 	filtered := make([]RepoEntry, 0, len(rows))
 	for _, row := range rows {
 		if row.Namespace != namespace {

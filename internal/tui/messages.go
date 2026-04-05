@@ -22,6 +22,14 @@ type operationListLoadedMsg struct {
 	Entries []EndpointEntry
 }
 
+type repoOperationCatalogLoadedMsg struct {
+	Token     RequestToken
+	Namespace string
+	Repo      string
+	Entries   []EndpointEntry
+	Err       error
+}
+
 type operationDetailLoadedMsg struct {
 	Token  RequestToken
 	Detail OperationDetail

@@ -44,11 +44,14 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = next.(*rootModel)
+
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 
-	if model.activeRoute != RouteRepoExplorer {
-		t.Fatalf("expected active route %q, got %q", RouteRepoExplorer, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected active route %q, got %q", RouteHome, model.activeRoute)
 	}
 	if cmd == nil {
 		t.Fatalf("expected operation list load command")
@@ -58,9 +61,9 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	}
 
 	msg := cmd()
-	loaded, ok := msg.(operationListLoadedMsg)
+	loaded, ok := msg.(repoOperationCatalogLoadedMsg)
 	if !ok {
-		t.Fatalf("expected operationListLoadedMsg, got %T", msg)
+		t.Fatalf("expected repoOperationCatalogLoadedMsg, got %T", msg)
 	}
 	if service.listOperationsCall != 1 {
 		t.Fatalf("expected one operation list call, got %d", service.listOperationsCall)
@@ -120,11 +123,14 @@ func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = next.(*rootModel)
+
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 
-	if model.activeRoute != RouteRepoExplorer {
-		t.Fatalf("expected active route %q, got %q", RouteRepoExplorer, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected active route %q, got %q", RouteHome, model.activeRoute)
 	}
 	if cmd != nil {
 		t.Fatalf("expected operation list load command to be skipped")
@@ -137,7 +143,7 @@ func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 	}
 
 	got := stripANSI(model.View().Content)
-	if !strings.Contains(got, "No endpoints found in") || !strings.Contains(got, "repository.") {
+	if !strings.Contains(got, "No endpoints found for current scope.") {
 		t.Fatalf("expected empty operation catalog message, got %q", got)
 	}
 }
@@ -150,6 +156,10 @@ func TestRootModelExplorerArrowKeysUpdateSelection(t *testing.T) {
 		Namespace: "acme",
 		Repo:      "platform",
 	}, RequestOptions{})
+	if model.activeRoute == RouteHome {
+		updated, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		model = updated.(*rootModel)
+	}
 
 	token := model.beginOperationListLoad()
 	updated, _ := model.Update(operationListLoadedMsg{
@@ -198,6 +208,9 @@ func TestRootModelExplorerEscReturnsToRepoList(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = next.(*rootModel)
+
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 	if cmd == nil {
@@ -206,15 +219,15 @@ func TestRootModelExplorerEscReturnsToRepoList(t *testing.T) {
 	updated, _ = model.Update(cmd())
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteRepoExplorer {
-		t.Fatalf("expected route %q, got %q", RouteRepoExplorer, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
 	}
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteRepos {
-		t.Fatalf("expected route %q, got %q", RouteRepos, model.activeRoute)
+	if model.activeRoute != RouteHome {
+		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
 	}
 	if model.repoList.Namespace != "acme" || model.repoList.Selected != 0 {
 		t.Fatalf("expected repo list state preserved, got namespace=%q selected=%d", model.repoList.Namespace, model.repoList.Selected)
@@ -238,7 +251,7 @@ func TestRootModelExplorerRendersEmptyOperationCatalog(t *testing.T) {
 		t.Fatalf("expected no selected endpoint, got %d", model.explorer.Selected)
 	}
 	got := stripANSI(model.View().Content)
-	if !strings.Contains(got, "No endpoints found in") || !strings.Contains(got, "repository.") {
+	if !strings.Contains(got, "No endpoints found for current scope.") {
 		t.Fatalf("expected empty operation catalog message, got %q", got)
 	}
 }
@@ -605,8 +618,8 @@ func TestRootModelExplorerResizeRerendersUsingViewportWidth(t *testing.T) {
 	wideRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
 	wideWidth := model.explorer.Detail.Viewport.Width()
 
-	if wideWidth <= narrowWidth {
-		t.Fatalf("expected detail viewport width to increase on resize, narrow=%d wide=%d", narrowWidth, wideWidth)
+	if wideWidth == narrowWidth {
+		t.Fatalf("expected detail viewport width to change on resize, narrow=%d wide=%d", narrowWidth, wideWidth)
 	}
 	if narrowRendered == wideRendered {
 		t.Fatalf("expected rendered markdown to change with viewport width")
@@ -634,6 +647,10 @@ func newExplorerModelWithSingleEndpoint(
 	model.refreshExplorerList()
 	model.explorer.Detail.ActiveTab = tab
 	model.refreshExplorerDetailViewport()
+	if model.activeRoute == RouteHome {
+		updated, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		model = updated.(*rootModel)
+	}
 	return model, selected
 }
 

@@ -45,7 +45,8 @@ func namespaceRouteHelp() routeHelpKeyMap {
 
 func homeRouteHelp() routeHelpKeyMap {
 	short := []key.Binding{
-		keyHelp("enter", "open section"),
+		keyHelp("enter", "focus pane"),
+		keyHelp("backspace", "clear selection"),
 		keyHelp("q", "quit"),
 	}
 	return routeHelpKeyMap{short: short}
@@ -62,7 +63,7 @@ func reposRouteHelp() routeHelpKeyMap {
 
 func explorerRouteHelp() routeHelpKeyMap {
 	short := []key.Binding{
-		keyHelp("up/down", "select endpoint"),
+		keyHelp("enter", "select endpoint"),
 		keyHelp("tab/shift+tab", "switch tab"),
 		keyHelp("pgup/pgdown", "scroll details"),
 		keyHelp("esc", "back"),

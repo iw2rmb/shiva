@@ -1,20 +1,27 @@
 package tui
 
 import (
-	"context"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
 func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		model.activeRoute = RouteRepos
-		model.syncRepoSelection()
-		return model, model.ensureRepoCatalogLoadCmd()
+		model.activeRoute = RouteHome
+		model.syncHomeSelection()
+		return model, nil
+	case "enter":
+		if model.explorer.Selected < 0 || model.explorer.Selected >= len(model.explorer.Endpoints) {
+			return model, nil
+		}
+		selected := model.explorer.Endpoints[model.explorer.Selected]
+		model.setEndpointSelection(selected.Identity)
+		model.activeRoute = RouteHome
+		model.setHomeSelection(homeItemEndpoints)
+		return model, nil
 	case "tab":
 		return model, model.switchExplorerTab(1)
 	case "shift+tab":
@@ -32,57 +39,10 @@ func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.C
 }
 
 func (model *rootModel) openRepoExplorer(namespace string, repo string) tea.Cmd {
-	model.activeRoute = RouteRepoExplorer
-	model.explorer.Namespace = namespace
-	model.explorer.Repo = repo
-	model.explorer.Endpoints = nil
-	model.explorer.Selected = -1
-	model.explorer.Detail.ActiveTab = DetailTabEndpoints
-	model.explorer.OperationCache = make(map[EndpointIdentity]OperationDetail)
-	model.explorer.SpecCache = make(map[SpecIdentity]SpecDetail)
-	model.clearExplorerDetailState()
-	model.refreshExplorerDetailViewport()
-	model.explorer.List.Title = "Endpoints"
-	model.explorer.List.SetItems(nil)
-	model.explorer.List.ResetSelected()
-
-	if model.repoLacksSnapshotCatalog(namespace, repo) {
-		return nil
-	}
-
-	token := model.beginOperationListLoad()
-	return loadOperationListCmd(context.Background(), model.service, request.Envelope{
-		Namespace: namespace,
-		Repo:      repo,
-	}, model.options, token)
-}
-
-func (model *rootModel) repoLacksSnapshotCatalog(namespace string, repo string) bool {
-	for _, entry := range model.repos {
-		if entry.Namespace != namespace || entry.Repo != repo {
-			continue
-		}
-		return entry.Row.SnapshotRevision == nil && entry.Row.ActiveAPICount == 0
-	}
-	return false
-}
-
-func (model *rootModel) refreshExplorerList() {
-	model.explorer.Endpoints = sortedEndpointEntries(model.explorer.Endpoints)
-	model.explorer.List.Title = "Endpoints"
-	if model.explorer.Namespace != "" && model.explorer.Repo != "" {
-		model.explorer.List.Title = "Endpoints: " + model.explorer.Namespace + "/" + model.explorer.Repo
-	}
-	model.explorer.List.SetItems(endpointItems(model.explorer.Endpoints))
-	if len(model.explorer.Endpoints) == 0 {
-		model.explorer.Selected = -1
-		model.explorer.List.ResetSelected()
-		return
-	}
-	if model.explorer.Selected < 0 || model.explorer.Selected >= len(model.explorer.Endpoints) {
-		model.explorer.Selected = 0
-	}
-	model.explorer.List.Select(model.explorer.Selected)
+	model.setRepoSelection(namespace, repo)
+	model.setHomeSelection(homeItemEndpoints)
+	model.activeRoute = RouteHome
+	return model.ensureEndpointCatalogLoadCmd()
 }
 
 func (model *rootModel) syncExplorerSelection() tea.Cmd {
@@ -107,7 +67,7 @@ func (model *rootModel) syncExplorerSelection() tea.Cmd {
 }
 
 func (model *rootModel) viewRepoExplorer() string {
-	repoLabel := model.explorer.Namespace + "/" + model.explorer.Repo
+	repoLabel := model.selectedNamespace + "/" + model.selectedRepo
 	leftPane := model.explorerListPane()
 	rightPane := model.explorerDetailPane()
 	body := strings.Join([]string{
