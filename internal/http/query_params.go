@@ -38,9 +38,38 @@ type namespacesCatalogCountQuery struct {
 	QueryPrefix string
 }
 
+type reposCatalogCountQuery struct {
+	Namespace string
+	Query     string
+}
+
+type reposCatalogQuery struct {
+	Namespace string
+	Query     string
+	Limit     int32
+	Offset    int32
+}
+
+type operationsCatalogCountQuery struct {
+	Namespace string
+	Repo      string
+	Query     string
+}
+
+type operationsCatalogQuery struct {
+	Snapshot store.ResolveReadSnapshotInput
+	Query    string
+	Limit    int32
+	Offset   int32
+}
+
 const (
 	defaultNamespacesPageLimit int32 = 100
 	maxNamespacesPageLimit     int32 = 1000
+	defaultReposPageLimit      int32 = 100
+	maxReposPageLimit          int32 = 1000
+	defaultOperationsPageLimit int32 = 200
+	maxOperationsPageLimit     int32 = 2000
 )
 
 func parseSpecQuery(c *fiber.Ctx) (normalizedSpecQuery, error) {
@@ -124,11 +153,58 @@ func parseAPIsQuery(c *fiber.Ctx) (store.ResolveReadSnapshotInput, error) {
 	return parseSnapshotQuery(c, snapshotQueryOptions{})
 }
 
-func parseOperationsQuery(c *fiber.Ctx) (store.ResolveReadSnapshotInput, error) {
+func parseOperationsQuery(c *fiber.Ctx) (operationsCatalogQuery, error) {
 	if err := rejectUnsupportedQueryParams(c, "operation_id", "method", "path", "format"); err != nil {
-		return store.ResolveReadSnapshotInput{}, err
+		return operationsCatalogQuery{}, err
 	}
-	return parseSnapshotQuery(c, snapshotQueryOptions{allowAPI: true})
+
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	repo := strings.TrimSpace(c.Query("repo"))
+	api := strings.TrimSpace(c.Query("api"))
+	queryPrefix := strings.TrimSpace(c.Query("query"))
+	if hasQueryParam(c, "query") && queryPrefix == "" {
+		return operationsCatalogQuery{}, invalidQuery("query must not be empty")
+	}
+
+	revisionID, err := parseOptionalPositiveInt64Query(c, "revision_id")
+	if err != nil {
+		return operationsCatalogQuery{}, err
+	}
+	sha := strings.TrimSpace(c.Query("sha"))
+	if hasQueryParam(c, "sha") && sha == "" {
+		return operationsCatalogQuery{}, invalidQuery("sha must not be empty")
+	}
+	if revisionID > 0 && sha != "" {
+		return operationsCatalogQuery{}, invalidQuery("revision_id and sha are mutually exclusive")
+	}
+	if sha != "" && !request.IsShortSHA(sha) {
+		return operationsCatalogQuery{}, invalidQuery("sha must be exactly 8 lowercase hex characters")
+	}
+
+	if repo != "" && namespace == "" {
+		return operationsCatalogQuery{}, invalidQuery("namespace is required when repo is provided")
+	}
+	if (api != "" || revisionID > 0 || sha != "") && (namespace == "" || repo == "") {
+		return operationsCatalogQuery{}, invalidQuery("namespace and repo are required when api, revision_id, or sha are provided")
+	}
+
+	limit, offset, err := parsePaginationQuery(c, defaultOperationsPageLimit, maxOperationsPageLimit)
+	if err != nil {
+		return operationsCatalogQuery{}, err
+	}
+
+	return operationsCatalogQuery{
+		Snapshot: store.ResolveReadSnapshotInput{
+			Namespace:  namespace,
+			Repo:       repo,
+			APIPath:    api,
+			RevisionID: revisionID,
+			SHA:        sha,
+		},
+		Query:  queryPrefix,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
 }
 
 func parseCatalogStatusQuery(c *fiber.Ctx) (string, error) {
@@ -147,8 +223,26 @@ func parseCatalogStatusQuery(c *fiber.Ctx) (string, error) {
 	return namespace + "/" + repo, nil
 }
 
-func parseReposQuery(c *fiber.Ctx) error {
-	return rejectUnsupportedQueryParams(c, "repo", "api", "revision_id", "sha", "operation_id", "method", "path", "format")
+func parseReposQuery(c *fiber.Ctx) (reposCatalogQuery, error) {
+	if err := rejectUnsupportedQueryParams(c, "repo", "api", "revision_id", "sha", "operation_id", "method", "path", "format"); err != nil {
+		return reposCatalogQuery{}, err
+	}
+
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	queryPrefix := strings.TrimSpace(c.Query("query"))
+	if hasQueryParam(c, "query") && queryPrefix == "" {
+		return reposCatalogQuery{}, invalidQuery("query must not be empty")
+	}
+	limit, offset, err := parsePaginationQuery(c, defaultReposPageLimit, maxReposPageLimit)
+	if err != nil {
+		return reposCatalogQuery{}, err
+	}
+	return reposCatalogQuery{
+		Namespace: namespace,
+		Query:     queryPrefix,
+		Limit:     limit,
+		Offset:    offset,
+	}, nil
 }
 
 func parseNamespacesQuery(c *fiber.Ctx) (namespacesCatalogQuery, error) {
@@ -213,6 +307,76 @@ func parseNamespacesCountQuery(c *fiber.Ctx) (namespacesCatalogCountQuery, error
 	}
 
 	return namespacesCatalogCountQuery{QueryPrefix: queryPrefix}, nil
+}
+
+func parseReposCountQuery(c *fiber.Ctx) (reposCatalogCountQuery, error) {
+	if err := rejectUnsupportedQueryParams(
+		c,
+		"repo",
+		"api",
+		"revision_id",
+		"sha",
+		"operation_id",
+		"method",
+		"path",
+		"format",
+		"limit",
+		"offset",
+	); err != nil {
+		return reposCatalogCountQuery{}, err
+	}
+
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	if hasQueryParam(c, "namespace") && namespace == "" {
+		return reposCatalogCountQuery{}, invalidQuery("namespace must not be empty")
+	}
+
+	queryPrefix := strings.TrimSpace(c.Query("query"))
+	if hasQueryParam(c, "query") && queryPrefix == "" {
+		return reposCatalogCountQuery{}, invalidQuery("query must not be empty")
+	}
+
+	return reposCatalogCountQuery{Namespace: namespace, Query: queryPrefix}, nil
+}
+
+func parseOperationsCountQuery(c *fiber.Ctx) (operationsCatalogCountQuery, error) {
+	if err := rejectUnsupportedQueryParams(
+		c,
+		"api",
+		"revision_id",
+		"sha",
+		"operation_id",
+		"method",
+		"path",
+		"format",
+		"limit",
+		"offset",
+	); err != nil {
+		return operationsCatalogCountQuery{}, err
+	}
+
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	if hasQueryParam(c, "namespace") && namespace == "" {
+		return operationsCatalogCountQuery{}, invalidQuery("namespace must not be empty")
+	}
+
+	repo := strings.TrimSpace(c.Query("repo"))
+	if hasQueryParam(c, "repo") && repo == "" {
+		return operationsCatalogCountQuery{}, invalidQuery("repo must not be empty")
+	}
+	if repo != "" && namespace == "" {
+		return operationsCatalogCountQuery{}, invalidQuery("namespace is required when repo is provided")
+	}
+	queryPrefix := strings.TrimSpace(c.Query("query"))
+	if hasQueryParam(c, "query") && queryPrefix == "" {
+		return operationsCatalogCountQuery{}, invalidQuery("query must not be empty")
+	}
+
+	return operationsCatalogCountQuery{
+		Namespace: namespace,
+		Repo:      repo,
+		Query:     queryPrefix,
+	}, nil
 }
 
 type snapshotQueryOptions struct {
@@ -310,6 +474,30 @@ func parseRequiredNonNegativeInt32Query(c *fiber.Ctx, name string) (int32, error
 		return 0, invalidQuery(fmt.Sprintf("%s must be a non-negative integer", name))
 	}
 	return int32(value), nil
+}
+
+func parsePaginationQuery(c *fiber.Ctx, defaultLimit int32, maxLimit int32) (int32, int32, error) {
+	limit := defaultLimit
+	if hasQueryParam(c, "limit") {
+		value, err := parseRequiredPositiveInt32Query(c, "limit")
+		if err != nil {
+			return 0, 0, err
+		}
+		if value > maxLimit {
+			return 0, 0, invalidQuery(fmt.Sprintf("limit must be <= %d", maxLimit))
+		}
+		limit = value
+	}
+
+	offset := int32(0)
+	if hasQueryParam(c, "offset") {
+		value, err := parseRequiredNonNegativeInt32Query(c, "offset")
+		if err != nil {
+			return 0, 0, err
+		}
+		offset = value
+	}
+	return limit, offset, nil
 }
 
 func rejectUnsupportedQueryParams(c *fiber.Ctx, names ...string) error {

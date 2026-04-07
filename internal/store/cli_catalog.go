@@ -139,6 +139,10 @@ type apiSnapshotInventoryQueries interface {
 }
 
 type operationInventoryQueries interface {
+	ListOperationCatalogInventory(
+		ctx context.Context,
+		namespace string,
+	) ([]sqlc.ListOperationCatalogInventoryRow, error)
 	ListOperationInventoryByRepoRevision(
 		ctx context.Context,
 		arg sqlc.ListOperationInventoryByRepoRevisionParams,
@@ -426,6 +430,37 @@ func (s *Store) ListOperationInventoryByRepoRevision(
 	}
 
 	return listOperationInventoryByRepoRevision(ctx, sqlc.New(s.pool), repoID, snapshotRevisionID)
+}
+
+func (s *Store) ListOperationCatalogInventory(
+	ctx context.Context,
+	namespace string,
+) ([]OperationSnapshot, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+
+	return listOperationCatalogInventory(ctx, sqlc.New(s.pool), strings.TrimSpace(namespace))
+}
+
+func listOperationCatalogInventory(
+	ctx context.Context,
+	queries operationInventoryQueries,
+	namespace string,
+) ([]OperationSnapshot, error) {
+	rows, err := queries.ListOperationCatalogInventory(ctx, namespace)
+	if err != nil {
+		if namespace != "" {
+			return nil, fmt.Errorf("list operation catalog inventory for namespace %q: %w", namespace, err)
+		}
+		return nil, fmt.Errorf("list operation catalog inventory: %w", err)
+	}
+
+	items := make([]OperationSnapshot, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, mapOperationCatalogInventoryRow(row))
+	}
+	return items, nil
 }
 
 func listOperationInventoryByRepoRevision(
@@ -868,6 +903,24 @@ func mapOperationInventoryRow(row sqlc.ListOperationInventoryByRepoRevisionRow) 
 }
 
 func mapOperationInventoryByAPIRow(row sqlc.ListOperationInventoryByRepoRevisionAndAPIRow) OperationSnapshot {
+	return OperationSnapshot{
+		APISpecID:         row.ApiSpecID,
+		API:               row.Api,
+		Status:            row.Status,
+		APISpecRevisionID: row.ApiSpecRevisionID,
+		IngestEventID:     row.IngestEventID,
+		IngestEventSHA:    row.IngestEventSha,
+		IngestEventBranch: row.IngestEventBranch,
+		Method:            row.Method,
+		Path:              row.Path,
+		OperationID:       textValue(row.OperationID),
+		Summary:           textValue(row.Summary),
+		Deprecated:        row.Deprecated,
+		RawJSON:           bytesCopy(row.RawJson),
+	}
+}
+
+func mapOperationCatalogInventoryRow(row sqlc.ListOperationCatalogInventoryRow) OperationSnapshot {
 	return OperationSnapshot{
 		APISpecID:         row.ApiSpecID,
 		API:               row.Api,

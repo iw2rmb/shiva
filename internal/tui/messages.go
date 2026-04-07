@@ -3,31 +3,39 @@ package tui
 type RequestToken uint64
 
 type repoCatalogLoadedMsg struct {
-	Token RequestToken
-	Rows  []RepoEntry
+	Token  RequestToken
+	Offset int32
+	Rows   []RepoEntry
 }
 
 type namespaceCatalogLoadedMsg struct {
-	Token RequestToken
-	Rows  []NamespaceEntry
+	Token  RequestToken
+	Offset int32
+	Rows   []NamespaceEntry
 }
 
 type namespaceCountLoadedMsg struct {
 	Token RequestToken
-	Count int64
+	Count CatalogCount
+}
+
+type repoCountLoadedMsg struct {
+	Token     RequestToken
+	Namespace string
+	Count     CatalogCount
+}
+
+type operationCountLoadedMsg struct {
+	Token     RequestToken
+	Namespace string
+	Repo      string
+	Count     CatalogCount
 }
 
 type operationListLoadedMsg struct {
 	Token   RequestToken
+	Offset  int32
 	Entries []EndpointEntry
-}
-
-type repoOperationCatalogLoadedMsg struct {
-	Token     RequestToken
-	Namespace string
-	Repo      string
-	Entries   []EndpointEntry
-	Err       error
 }
 
 type operationDetailLoadedMsg struct {

@@ -35,6 +35,10 @@ type queryReadStore interface {
 		repoID int64,
 		snapshotRevisionID int64,
 	) ([]store.OperationSnapshot, error)
+	ListOperationCatalogInventory(
+		ctx context.Context,
+		namespace string,
+	) ([]store.OperationSnapshot, error)
 	ListOperationInventoryByRepoRevisionAndAPI(
 		ctx context.Context,
 		repoID int64,

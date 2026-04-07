@@ -109,8 +109,45 @@ type tuiServiceAdapter struct {
 func (adapter tuiServiceAdapter) CountNamespaces(
 	ctx context.Context,
 	options tui.RequestOptions,
-) (int64, error) {
-	return adapter.service.CountNamespaces(ctx, fromTUIRequestOptions(options))
+) (tui.CatalogCount, error) {
+	count, err := adapter.service.CountNamespaceCatalog(ctx, fromTUIRequestOptions(options))
+	if err != nil {
+		return tui.CatalogCount{}, err
+	}
+	return tui.CatalogCount{
+		TotalCount:    count.TotalCount,
+		MaxItemLength: count.MaxItemLength,
+	}, nil
+}
+
+func (adapter tuiServiceAdapter) CountRepos(
+	ctx context.Context,
+	namespace string,
+	options tui.RequestOptions,
+) (tui.CatalogCount, error) {
+	count, err := adapter.service.CountRepoCatalog(ctx, namespace, fromTUIRequestOptions(options))
+	if err != nil {
+		return tui.CatalogCount{}, err
+	}
+	return tui.CatalogCount{
+		TotalCount:    count.TotalCount,
+		MaxItemLength: count.MaxItemLength,
+	}, nil
+}
+
+func (adapter tuiServiceAdapter) CountOperations(
+	ctx context.Context,
+	selector request.Envelope,
+	options tui.RequestOptions,
+) (tui.CatalogCount, error) {
+	count, err := adapter.service.CountOperationCatalog(ctx, selector, fromTUIRequestOptions(options))
+	if err != nil {
+		return tui.CatalogCount{}, err
+	}
+	return tui.CatalogCount{
+		TotalCount:    count.TotalCount,
+		MaxItemLength: count.MaxItemLength,
+	}, nil
 }
 
 func (adapter tuiServiceAdapter) ListRepos(
@@ -164,7 +201,11 @@ func (adapter tuiServiceAdapter) GetSpec(
 
 func fromTUIRequestOptions(options tui.RequestOptions) RequestOptions {
 	return RequestOptions{
-		Profile: options.Profile,
-		Offline: options.Offline,
+		Profile:   options.Profile,
+		Offline:   options.Offline,
+		Limit:     options.Limit,
+		Offset:    options.Offset,
+		Query:     options.Query,
+		Namespace: options.Namespace,
 	}
 }

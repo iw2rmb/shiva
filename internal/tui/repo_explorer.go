@@ -19,7 +19,6 @@ func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.C
 		}
 		selected := model.explorer.Endpoints[model.explorer.Selected]
 		model.setEndpointSelection(selected.Identity)
-		model.activeRoute = RouteHome
 		model.setHomeSelection(homeItemEndpoints)
 		return model, nil
 	case "tab":
@@ -27,8 +26,21 @@ func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.C
 	case "shift+tab":
 		return model, model.switchExplorerTab(-1)
 	default:
+		pageBefore := model.explorer.Pager.Page
+		model.explorer.Pager, _ = model.explorer.Pager.Update(msg)
+		if model.explorer.Pager.Page != pageBefore {
+			model.endpointHasMoreByScope[model.endpointScopeKey()] = true
+			return model, model.ensureEndpointCatalogLoadCmd()
+		}
 		var listCmd tea.Cmd
+		beforeFilter := model.explorer.List.FilterValue()
 		model.explorer.List, listCmd = model.explorer.List.Update(msg)
+		if beforeFilter != model.explorer.List.FilterValue() {
+			model.explorer.Query = strings.TrimSpace(model.explorer.List.FilterValue())
+			model.explorer.Pager.Page = 0
+			model.endpointHasMoreByScope[model.endpointScopeKey()] = true
+			return model, batchCmds(listCmd, model.ensureOperationCountLoadCmd(), model.ensureEndpointCatalogLoadCmd())
+		}
 		var viewportCmd tea.Cmd
 		if shouldRouteKeyToDetailViewport(msg) {
 			model.explorer.Detail.Viewport, viewportCmd = model.explorer.Detail.Viewport.Update(msg)
@@ -151,7 +163,7 @@ func shouldRouteKeyToDetailViewport(msg tea.KeyPressMsg) bool {
 }
 
 func renderExplorerPanes(styles tuiStyles, left string, right string, width int) string {
-	leftWidth, rightWidth, _, stacked := explorerPaneLayout(width, defaultListHeight)
+	leftWidth, rightWidth, _, stacked := explorerPaneLayout(width, defaultViewportHeight)
 	leftPane := styles.Pane("Endpoints", left, leftWidth)
 	rightPane := styles.Pane("Details", right, rightWidth)
 	if stacked {

@@ -7,8 +7,10 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/paginator"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/iw2rmb/shiva/internal/cli/request"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 	homeItemRepos      = 1
 	homeItemEndpoints  = 2
 
-	endpointFanoutConcurrency = 4
+	defaultCatalogPageLimit int32 = 200
 )
 
 type rootModel struct {
@@ -40,10 +42,14 @@ type rootModel struct {
 	selectedRepo      string
 	selectedEndpoint  *EndpointIdentity
 
-	endpointCatalogByRepo  map[string][]EndpointEntry
-	endpointLoadFailures   map[string]error
-	endpointFanoutQueue    []RepoEntry
-	endpointFanoutInFlight int
+	endpointCatalogByRepo   map[string][]EndpointEntry
+	endpointHasMoreByScope  map[string]bool
+	namespaceCatalogHasMore bool
+	repoCatalogHasMore      map[string]bool
+
+	namespaceCatalogCount CatalogCount
+	repoCatalogCount      map[string]CatalogCount
+	operationCatalogCount map[string]CatalogCount
 }
 
 func newRootModel(service BrowserService, route InitialRoute, options RequestOptions) *rootModel {
@@ -69,23 +75,30 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 		namespaces: NamespaceRouteState{
 			Selected: -1,
 			List:     newNamespaceList(),
+			Pager:    newPaginator(),
 		},
 		repoList: RepoRouteState{
 			Selected: -1,
 			List:     newRepoList(),
+			Pager:    newPaginator(),
 		},
 		explorer: RepoExplorerRouteState{
 			Selected: -1,
 			List:     newEndpointList(),
+			Pager:    newPaginator(),
 			Detail: DetailState{
 				ActiveTab: DetailTabEndpoints,
-				Viewport:  newDetailViewport(defaultListWidth, defaultListHeight),
+				Viewport:  newDetailViewport(defaultListWidth, defaultViewportHeight),
 			},
 			OperationCache: make(map[EndpointIdentity]OperationDetail),
 			SpecCache:      make(map[SpecIdentity]SpecDetail),
 		},
-		endpointCatalogByRepo: make(map[string][]EndpointEntry),
-		endpointLoadFailures:  make(map[string]error),
+		endpointCatalogByRepo:   make(map[string][]EndpointEntry),
+		endpointHasMoreByScope:  make(map[string]bool),
+		namespaceCatalogHasMore: true,
+		repoCatalogHasMore:      make(map[string]bool),
+		repoCatalogCount:        make(map[string]CatalogCount),
+		operationCatalogCount:   make(map[string]CatalogCount),
 	}
 
 	model.seedSelectionFromInitialRoute(route)
@@ -133,6 +146,9 @@ func (model *rootModel) Init() tea.Cmd {
 		if cmd := model.ensureRepoCatalogLoadCmd(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		if cmd := model.ensureRepoCountLoadCmd(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case homeItemEndpoints:
 		if model.initialRoute.Kind != RouteRepoExplorer {
 			if cmd := model.ensureRepoCatalogLoadCmd(); cmd != nil {
@@ -140,6 +156,9 @@ func (model *rootModel) Init() tea.Cmd {
 			}
 		}
 		if cmd := model.ensureEndpointCatalogLoadCmd(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if cmd := model.ensureOperationCountLoadCmd(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -178,6 +197,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(loadDomainRepoCatalog, typed.Token, nil)
 		model.repos = append([]RepoEntry(nil), typed.Rows...)
+		model.repoCatalogHasMore[model.selectedNamespace] = int32(len(typed.Rows)) >= defaultCatalogPageLimit
 		model.refreshRepoList()
 		model.refreshExplorerList()
 		model.refreshHomeEntryPresentation()
@@ -192,6 +212,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(loadDomainNamespaces, typed.Token, nil)
 		model.namespaces.Entries = append([]NamespaceEntry(nil), typed.Rows...)
+		model.namespaceCatalogHasMore = int32(len(typed.Rows)) >= defaultCatalogPageLimit
 		model.refreshNamespaceList()
 		return model, nil
 	case namespaceCountLoadedMsg:
@@ -199,40 +220,39 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainNamespaceCount, typed.Token, nil)
-		model.home.Entries = withHomeNamespaceCount(model.home.Entries, typed.Count)
+		model.namespaceCatalogCount = typed.Count
+		model.syncPaginator(&model.namespaces.Pager, typed.Count.TotalCount)
+		model.home.Entries = withHomeNamespaceCount(model.home.Entries, typed.Count.TotalCount)
 		model.refreshHomeEntryPresentation()
 		model.refreshHomeList()
+		model.resizeLists()
 		return model, nil
-	case repoOperationCatalogLoadedMsg:
-		if !model.accepts(loadDomainOperationList, typed.Token) {
+	case repoCountLoadedMsg:
+		if !model.accepts(loadDomainRepoCount, typed.Token) {
 			return model, nil
 		}
-		if model.endpointFanoutInFlight > 0 {
-			model.endpointFanoutInFlight--
-		}
-		key := repoPath(typed.Namespace, typed.Repo)
-		if typed.Err != nil {
-			model.endpointLoadFailures[key] = typed.Err
-		} else {
-			model.endpointCatalogByRepo[key] = append([]EndpointEntry(nil), typed.Entries...)
-			delete(model.endpointLoadFailures, key)
-		}
-		model.refreshExplorerList()
-		model.refreshExplorerDetailViewport()
-		if model.endpointFanoutInFlight == 0 && len(model.endpointFanoutQueue) == 0 {
-			model.finishLoad(loadDomainOperationList, typed.Token, model.joinEndpointLoadErrors())
+		model.finishLoad(loadDomainRepoCount, typed.Token, nil)
+		model.repoCatalogCount[typed.Namespace] = typed.Count
+		model.syncPaginator(&model.repoList.Pager, typed.Count.TotalCount)
+		model.resizeLists()
+		return model, nil
+	case operationCountLoadedMsg:
+		if !model.accepts(loadDomainOperationCount, typed.Token) {
 			return model, nil
 		}
-		return model, model.dispatchEndpointFanoutCmds(typed.Token)
+		model.finishLoad(loadDomainOperationCount, typed.Token, nil)
+		model.operationCatalogCount[repoPath(typed.Namespace, typed.Repo)] = typed.Count
+		model.syncPaginator(&model.explorer.Pager, typed.Count.TotalCount)
+		model.resizeLists()
+		return model, nil
 	case operationListLoadedMsg:
 		if !model.accepts(loadDomainOperationList, typed.Token) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainOperationList, typed.Token, nil)
-		if model.selectedNamespace != "" && model.selectedRepo != "" {
-			key := repoPath(model.selectedNamespace, model.selectedRepo)
-			model.endpointCatalogByRepo[key] = append([]EndpointEntry(nil), typed.Entries...)
-		}
+		key := model.endpointScopeKey()
+		model.endpointCatalogByRepo[key] = append([]EndpointEntry(nil), typed.Entries...)
+		model.endpointHasMoreByScope[key] = int32(len(typed.Entries)) >= defaultCatalogPageLimit
 		model.refreshExplorerList()
 		model.refreshExplorerDetailViewport()
 		return model, model.loadExplorerDetailForSelection()
@@ -286,6 +306,8 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model.home.Entries = withHomeNamespaceCountUnavailable(model.home.Entries)
 			model.refreshHomeEntryPresentation()
 			model.refreshHomeList()
+		case loadDomainRepoCount, loadDomainOperationCount:
+			model.resizeLists()
 		case loadDomainOperationDetail, loadDomainSpecDetail:
 			model.refreshExplorerDetailViewport()
 		}
@@ -329,18 +351,39 @@ func (model *rootModel) updateActiveRouteList(msg tea.Msg) (tea.Model, tea.Cmd) 
 		return model, model.batchWithActiveSectionEnsure(cmd)
 	case RouteNamespaces:
 		var cmd tea.Cmd
+		beforeFilter := model.namespaces.List.FilterValue()
 		model.namespaces.List, cmd = model.namespaces.List.Update(msg)
 		model.syncNamespaceSelection()
-		return model, cmd
+		if beforeFilter != model.namespaces.List.FilterValue() {
+			model.namespaces.Query = strings.TrimSpace(model.namespaces.List.FilterValue())
+			model.namespaces.Pager.Page = 0
+			model.namespaceCatalogHasMore = true
+			return model, batchCmds(cmd, model.ensureNamespaceCountLoadCmd(), model.ensureNamespaceCatalogLoadCmd())
+		}
+		return model, batchCmds(cmd, model.ensureNamespaceCatalogLoadCmd())
 	case RouteRepos:
 		var cmd tea.Cmd
+		beforeFilter := model.repoList.List.FilterValue()
 		model.repoList.List, cmd = model.repoList.List.Update(msg)
 		model.syncRepoSelection()
-		return model, cmd
+		if beforeFilter != model.repoList.List.FilterValue() {
+			model.repoList.Query = strings.TrimSpace(model.repoList.List.FilterValue())
+			model.repoList.Pager.Page = 0
+			model.repoCatalogHasMore[model.selectedNamespace] = true
+			return model, batchCmds(cmd, model.ensureRepoCountLoadCmd(), model.ensureRepoCatalogLoadCmd())
+		}
+		return model, batchCmds(cmd, model.ensureRepoCatalogLoadCmd())
 	case RouteRepoExplorer:
 		var cmd tea.Cmd
+		beforeFilter := model.explorer.List.FilterValue()
 		model.explorer.List, cmd = model.explorer.List.Update(msg)
-		return model, cmd
+		if beforeFilter != model.explorer.List.FilterValue() {
+			model.explorer.Query = strings.TrimSpace(model.explorer.List.FilterValue())
+			model.explorer.Pager.Page = 0
+			model.endpointHasMoreByScope[model.endpointScopeKey()] = true
+			return model, batchCmds(cmd, model.ensureOperationCountLoadCmd(), model.ensureEndpointCatalogLoadCmd())
+		}
+		return model, batchCmds(cmd, model.ensureEndpointCatalogLoadCmd())
 	default:
 		return model, nil
 	}
@@ -363,6 +406,12 @@ func (model *rootModel) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (model *rootModel) updateHomeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "left", "shift+tab":
+		model.setHomeSelection((model.home.Selected - 1 + len(model.home.Entries)) % len(model.home.Entries))
+		return model, model.ensureLoadForActiveSection()
+	case "right", "tab":
+		model.setHomeSelection((model.home.Selected + 1) % len(model.home.Entries))
+		return model, model.ensureLoadForActiveSection()
 	case "enter":
 		model.activeRoute = model.contextRouteFromHomeSelection()
 		return model, model.ensureLoadForActiveSection()
@@ -370,12 +419,7 @@ func (model *rootModel) updateHomeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		model.clearActiveSelection()
 		return model, model.ensureLoadForActiveSection()
 	default:
-		var cmd tea.Cmd
-		model.home.List, cmd = model.home.List.Update(msg)
-		model.syncHomeSelection()
-		model.refreshHomeEntryPresentation()
-		model.refreshHomeList()
-		return model, model.batchWithActiveSectionEnsure(cmd)
+		return model, nil
 	}
 }
 
@@ -403,13 +447,26 @@ func (model *rootModel) updateNamespacesKey(msg tea.KeyPressMsg) (tea.Model, tea
 		}
 		selection := model.namespaces.Entries[model.namespaces.Selected]
 		model.setNamespaceSelection(selection.Namespace)
-		model.activeRoute = RouteHome
 		model.setHomeSelection(homeItemRepos)
+		model.activeRoute = RouteRepos
 		return model, model.ensureLoadForActiveSection()
 	default:
+		pageBefore := model.namespaces.Pager.Page
+		model.namespaces.Pager, _ = model.namespaces.Pager.Update(msg)
+		if model.namespaces.Pager.Page != pageBefore {
+			model.namespaceCatalogHasMore = true
+			return model, model.ensureNamespaceCatalogLoadCmd()
+		}
 		var cmd tea.Cmd
+		beforeFilter := model.namespaces.List.FilterValue()
 		model.namespaces.List, cmd = model.namespaces.List.Update(msg)
 		model.syncNamespaceSelection()
+		if beforeFilter != model.namespaces.List.FilterValue() {
+			model.namespaces.Query = strings.TrimSpace(model.namespaces.List.FilterValue())
+			model.namespaces.Pager.Page = 0
+			model.namespaceCatalogHasMore = true
+			return model, batchCmds(cmd, model.ensureNamespaceCountLoadCmd(), model.ensureNamespaceCatalogLoadCmd())
+		}
 		return model, cmd
 	}
 }
@@ -426,13 +483,26 @@ func (model *rootModel) updateReposKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		}
 		selected := model.repoList.Entries[model.repoList.Selected]
 		model.setRepoSelection(selected.Namespace, selected.Repo)
-		model.activeRoute = RouteHome
 		model.setHomeSelection(homeItemEndpoints)
+		model.activeRoute = RouteRepoExplorer
 		return model, model.ensureLoadForActiveSection()
 	default:
+		pageBefore := model.repoList.Pager.Page
+		model.repoList.Pager, _ = model.repoList.Pager.Update(msg)
+		if model.repoList.Pager.Page != pageBefore {
+			model.repoCatalogHasMore[model.selectedNamespace] = true
+			return model, model.ensureRepoCatalogLoadCmd()
+		}
 		var cmd tea.Cmd
+		beforeFilter := model.repoList.List.FilterValue()
 		model.repoList.List, cmd = model.repoList.List.Update(msg)
 		model.syncRepoSelection()
+		if beforeFilter != model.repoList.List.FilterValue() {
+			model.repoList.Query = strings.TrimSpace(model.repoList.List.FilterValue())
+			model.repoList.Pager.Page = 0
+			model.repoCatalogHasMore[model.selectedNamespace] = true
+			return model, batchCmds(cmd, model.ensureRepoCountLoadCmd(), model.ensureRepoCatalogLoadCmd())
+		}
 		return model, cmd
 	}
 }
@@ -470,10 +540,7 @@ func (model *rootModel) refreshNamespaceList() {
 func (model *rootModel) refreshRepoList() {
 	model.repoList.Namespace = model.selectedNamespace
 	model.repoList.Entries = repoEntriesByNamespace(model.repos, model.repoList.Namespace)
-	model.repoList.List.Title = "Repositories"
-	if model.repoList.Namespace != "" {
-		model.repoList.List.Title = "Repositories: " + model.repoList.Namespace
-	}
+	model.repoList.List.Title = "REPOSITORIES"
 	model.repoList.List.SetItems(repoItems(model.repoList.Entries))
 	if len(model.repoList.Entries) == 0 {
 		model.repoList.Selected = -1
@@ -492,20 +559,7 @@ func (model *rootModel) refreshExplorerList() {
 		entries = sortedEndpointEntries(model.explorer.Endpoints)
 	}
 	model.explorer.Endpoints = entries
-	model.explorer.List.Title = "Endpoints"
-	namespace := model.selectedNamespace
-	repo := model.selectedRepo
-	if namespace == "" {
-		namespace = model.explorer.Namespace
-	}
-	if repo == "" {
-		repo = model.explorer.Repo
-	}
-	if namespace != "" && repo != "" {
-		model.explorer.List.Title = "Endpoints: " + namespace + "/" + repo
-	} else if namespace != "" {
-		model.explorer.List.Title = "Endpoints: " + namespace + "/*"
-	}
+	model.explorer.List.Title = "ENDPOINTS"
 	model.explorer.List.SetItems(endpointItems(entries))
 	if len(entries) == 0 {
 		model.explorer.Selected = -1
@@ -528,19 +582,9 @@ func (model *rootModel) refreshExplorerList() {
 }
 
 func (model *rootModel) filteredEndpointEntries() []EndpointEntry {
-	entries := make([]EndpointEntry, 0)
-	for key, repoEntries := range model.endpointCatalogByRepo {
-		namespace, repo := splitRepoPath(key)
-		if model.selectedRepo != "" {
-			if namespace != model.selectedNamespace || repo != model.selectedRepo {
-				continue
-			}
-		} else if model.selectedNamespace != "" {
-			if namespace != model.selectedNamespace {
-				continue
-			}
-		}
-		entries = append(entries, repoEntries...)
+	entries, ok := model.endpointCatalogByRepo[model.endpointScopeKey()]
+	if !ok {
+		return nil
 	}
 	return sortedEndpointEntries(entries)
 }
@@ -573,25 +617,47 @@ func (model *rootModel) syncRepoSelection() {
 }
 
 func (model *rootModel) resizeLists() {
-	leftWidth, centerWidth, rightWidth, stacked := browserPaneLayout(model.width, model.home.Selected == homeItemEndpoints)
-	_, height := listSize(model.width, model.height)
-	if stacked {
-		model.home.List.SetSize(leftWidth, height)
-		model.namespaces.List.SetSize(leftWidth, height)
-		model.repoList.List.SetSize(leftWidth, height)
-		model.explorer.List.SetSize(leftWidth, height)
-		model.help.SetWidth(leftWidth)
-		model.explorer.Detail.Viewport.SetWidth(leftWidth)
-		model.explorer.Detail.Viewport.SetHeight(height)
-		return
+	width, height := listSize(model.width, model.height)
+	listWidth := model.activeListWidth(width)
+	listHeight := height - 1
+	if listHeight < 1 {
+		listHeight = 1
 	}
-	model.home.List.SetSize(leftWidth, height)
-	model.namespaces.List.SetSize(centerWidth, height)
-	model.repoList.List.SetSize(centerWidth, height)
-	model.explorer.List.SetSize(centerWidth, height)
-	model.help.SetWidth(leftWidth + centerWidth + rightWidth + 4)
-	model.explorer.Detail.Viewport.SetWidth(rightWidth)
+	model.home.List.SetSize(listWidth, listHeight)
+	model.namespaces.List.SetSize(listWidth, listHeight)
+	model.repoList.List.SetSize(listWidth, listHeight)
+	model.explorer.List.SetSize(listWidth, listHeight)
+	model.help.SetWidth(width)
+
+	detailWidth := width - listWidth - 2
+	if detailWidth < 24 {
+		detailWidth = listWidth
+	}
+	model.explorer.Detail.Viewport.SetWidth(detailWidth)
 	model.explorer.Detail.Viewport.SetHeight(height)
+}
+
+func (model *rootModel) activeListWidth(terminalWidth int) int {
+	scopeWidth := defaultListWidth
+	switch model.home.Selected {
+	case homeItemNamespaces:
+		scopeWidth = measuredListWidth(model.namespaceCatalogCount.MaxItemLength)
+	case homeItemRepos:
+		scopeWidth = measuredListWidth(model.repoCatalogCount[model.selectedNamespace].MaxItemLength)
+	case homeItemEndpoints:
+		scopeWidth = measuredListWidth(model.operationCatalogCount[repoPath(model.selectedNamespace, model.selectedRepo)].MaxItemLength)
+	}
+	if scopeWidth > terminalWidth {
+		return terminalWidth
+	}
+	return scopeWidth
+}
+
+func measuredListWidth(maxLength int64) int {
+	if maxLength < int64(defaultListWidth) {
+		return defaultListWidth
+	}
+	return int(maxLength)
 }
 
 func (model *rootModel) refreshExplorerDetailViewportIfVisible() {
@@ -607,28 +673,33 @@ func (model *rootModel) View() tea.View {
 	return v
 }
 
+func (model *rootModel) refreshListTitleStyles() {
+	// List titles are hidden; header carries active/focus styling.
+}
+
+func (model *rootModel) focusedListModel() *list.Model {
+	switch model.activeRoute {
+	case RouteNamespaces:
+		return &model.namespaces.List
+	case RouteRepos:
+		return &model.repoList.List
+	case RouteRepoExplorer:
+		return &model.explorer.List
+	case RouteHome:
+		fallthrough
+	default:
+		return &model.home.List
+	}
+}
+
 func (model *rootModel) viewBrowser() string {
-	shivaPane := model.home.List.View()
+	header := model.headerView()
 	contextPane := model.activeContextPaneView()
 	footer := model.routeHelpView()
 
-	showDetails := model.home.Selected == homeItemEndpoints
-	leftWidth, _, _, stacked := browserPaneLayout(model.width, showDetails)
-	if stacked {
-		sections := []string{shivaPane, "", contextPane}
-		if showDetails {
-			sections = append(sections, "", model.endpointDetailsPaneView())
-		}
-		return model.layoutScreen(strings.Join(sections, "\n"), footer)
-	}
-
-	panes := []string{shivaPane, contextPane}
-	if showDetails {
-		panes = append(panes, model.endpointDetailsPaneView())
-	}
-	body := lipgloss.JoinHorizontal(lipgloss.Top, joinPanes(panes)...)
-	if leftWidth <= 0 {
-		body = strings.Join(panes, "\n\n")
+	body := contextPane
+	if model.home.Selected == homeItemEndpoints {
+		body = model.viewEndpointsWithDetailsPane()
 	}
 	if model.async.NamespaceCount.LastError != nil {
 		body = strings.Join([]string{
@@ -640,7 +711,39 @@ func (model *rootModel) viewBrowser() string {
 			),
 		}, "\n")
 	}
-	return model.layoutScreen(body, footer)
+	return model.layoutScreen(strings.Join([]string{header, "", body}, "\n"), footer)
+}
+
+func (model *rootModel) headerView() string {
+	brand := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		Faint(true).
+		Render("SHIVA")
+
+	items := []string{"NAMESPACES", "REPOS", "ENDPOINTS"}
+	segments := make([]string, 0, len(items))
+	headerFocused := model.activeRoute == RouteHome
+	for index, item := range items {
+		style := lipgloss.NewStyle()
+		if model.home.Selected == index {
+			style = style.Background(lipgloss.Color("62")).Foreground(lipgloss.Color("230"))
+			if headerFocused {
+				style = style.Bold(true)
+			}
+		} else {
+			style = style.Faint(true)
+		}
+		segments = append(segments, style.Render(item))
+	}
+
+	return strings.Join([]string{brand, strings.Join(segments, " / ")}, " // ")
+}
+
+func renderPaneAtWidth(view string, width int) string {
+	if width <= 0 {
+		return view
+	}
+	return lipgloss.NewStyle().Width(width).Render(view)
 }
 
 func joinPanes(panes []string) []string {
@@ -680,7 +783,7 @@ func (model *rootModel) viewNamespacesPane() string {
 	if len(model.namespaces.Entries) == 0 {
 		return model.styles.EmptyBlock("No namespaces found.")
 	}
-	return model.namespaces.List.View()
+	return model.withPaginator(model.namespaces.List.View(), model.namespaces.Pager)
 }
 
 func (model *rootModel) viewReposPane() string {
@@ -699,7 +802,7 @@ func (model *rootModel) viewReposPane() string {
 		}
 		return model.styles.EmptyBlock("No repositories found in namespace.")
 	}
-	return model.repoList.List.View()
+	return model.withPaginator(model.repoList.List.View(), model.repoList.Pager)
 }
 
 func (model *rootModel) viewEndpointsPane() string {
@@ -715,17 +818,28 @@ func (model *rootModel) viewEndpointsPane() string {
 		}
 		return model.styles.EmptyBlock("No endpoints found for current scope.")
 	}
-	if len(model.endpointLoadFailures) > 0 {
+	return model.withPaginator(model.explorer.List.View(), model.explorer.Pager)
+}
+
+func (model *rootModel) viewEndpointsWithDetailsPane() string {
+	left := model.viewEndpointsPane()
+	right := model.endpointDetailsPaneView()
+	width, _ := listSize(model.width, model.height)
+	leftWidth := model.activeListWidth(width)
+	rightWidth := width - leftWidth - 2
+	if rightWidth < 24 {
 		return strings.Join([]string{
-			model.explorer.List.View(),
+			renderPaneAtWidth(left, leftWidth),
 			"",
-			model.styles.ErrorBlock(
-				"Some repositories failed to load endpoints.",
-				fmt.Sprintf("Failed repos: %d", len(model.endpointLoadFailures)),
-			),
+			renderPaneAtWidth(right, leftWidth),
 		}, "\n")
 	}
-	return model.explorer.List.View()
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		renderPaneAtWidth(left, leftWidth),
+		"  ",
+		renderPaneAtWidth(right, rightWidth),
+	)
 }
 
 func (model *rootModel) endpointDetailsPaneView() string {
@@ -738,28 +852,27 @@ func (model *rootModel) endpointDetailsPaneView() string {
 }
 
 func browserPaneLayout(width int, includeDetails bool) (int, int, int, bool) {
-	width, _ = listSize(width, defaultListHeight)
+	width, _ = listSize(width, defaultViewportHeight)
+	const paneGap = 2
 	if !includeDetails {
-		if width < 72 {
+		if width < defaultListWidth*2+paneGap {
 			return width, width, 0, true
 		}
-		left := width / 3
-		if left < 24 {
-			left = 24
-		}
-		center := width - left - 2
-		if center < 30 {
+		left := defaultListWidth
+		center := width - left - paneGap
+		if center < defaultListWidth {
 			return width, width, 0, true
 		}
 		return left, center, 0, false
 	}
-	if width < 108 {
+	const detailMinWidth = 28
+	if width < defaultListWidth*2+detailMinWidth+paneGap*2 {
 		return width, width, width, true
 	}
-	left := width / 4
-	center := width / 3
-	right := width - left - center - 4
-	if left < 22 || center < 28 || right < 28 {
+	left := defaultListWidth
+	center := defaultListWidth
+	right := width - left - center - paneGap*2
+	if right < detailMinWidth {
 		return width, width, width, true
 	}
 	return left, center, right, false
@@ -794,6 +907,7 @@ func (model *rootModel) setHomeSelection(index int) {
 	}
 	model.home.Selected = index
 	model.home.List.Select(index)
+	model.resizeLists()
 }
 
 func (model *rootModel) contextRouteFromHomeSelection() RouteKind {
@@ -832,6 +946,8 @@ func (model *rootModel) setNamespaceSelection(namespace string) {
 	if model.selectedNamespace != namespace {
 		model.selectedRepo = ""
 		model.selectedEndpoint = nil
+		model.repoList.Pager.Page = 0
+		model.explorer.Pager.Page = 0
 	}
 	model.selectedNamespace = namespace
 	model.explorer.Namespace = namespace
@@ -852,6 +968,7 @@ func (model *rootModel) setRepoSelection(namespace string, repo string) {
 	model.explorer.Repo = repo
 	if namespaceChanged || repoChanged {
 		model.selectedEndpoint = nil
+		model.explorer.Pager.Page = 0
 	}
 	model.refreshHomeEntryPresentation()
 	model.refreshHomeList()
@@ -929,21 +1046,6 @@ func repoPath(namespace string, repo string) string {
 	return namespace + "/" + repo
 }
 
-func splitRepoPath(path string) (string, string) {
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 {
-		return "", ""
-	}
-	return parts[0], parts[1]
-}
-
-func (model *rootModel) joinEndpointLoadErrors() error {
-	if len(model.endpointLoadFailures) == 0 {
-		return nil
-	}
-	return fmt.Errorf("failed to load endpoints for %d repos", len(model.endpointLoadFailures))
-}
-
 func (model *rootModel) beginRepoCatalogLoad() RequestToken {
 	return model.beginLoad(loadDomainRepoCatalog)
 }
@@ -952,97 +1054,136 @@ func (model *rootModel) beginNamespaceCountLoad() RequestToken {
 	return model.beginLoad(loadDomainNamespaceCount)
 }
 
+func (model *rootModel) beginRepoCountLoad() RequestToken {
+	return model.beginLoad(loadDomainRepoCount)
+}
+
+func (model *rootModel) beginOperationCountLoad() RequestToken {
+	return model.beginLoad(loadDomainOperationCount)
+}
+
 func (model *rootModel) beginNamespaceCatalogLoad() RequestToken {
 	return model.beginLoad(loadDomainNamespaces)
 }
 
 func (model *rootModel) ensureNamespaceCatalogLoadCmd() tea.Cmd {
-	if model.async.Namespaces.Loading || model.async.Namespaces.ActiveToken > 0 {
+	if model.async.Namespaces.Loading {
+		return nil
+	}
+	if !model.namespaceCatalogHasMore {
 		return nil
 	}
 	token := model.beginNamespaceCatalogLoad()
-	return loadNamespaceCatalogCmd(context.Background(), model.service, model.options, token)
+	page := model.options
+	page.Limit = defaultCatalogPageLimit
+	page.Offset = int32(model.namespaces.Pager.Page) * defaultCatalogPageLimit
+	page.Query = model.namespaces.Query
+	return loadNamespaceCatalogCmd(context.Background(), model.service, page, page.Offset, token)
+}
+
+func (model *rootModel) ensureNamespaceCountLoadCmd() tea.Cmd {
+	if model.async.NamespaceCount.Loading {
+		return nil
+	}
+	token := model.beginNamespaceCountLoad()
+	options := model.options
+	options.Query = model.namespaces.Query
+	return loadNamespaceCountCmd(context.Background(), model.service, options, token)
+}
+
+func (model *rootModel) ensureRepoCountLoadCmd() tea.Cmd {
+	token := model.beginRepoCountLoad()
+	options := model.options
+	options.Query = model.repoList.Query
+	return loadRepoCountCmd(context.Background(), model.service, model.selectedNamespace, options, token)
+}
+
+func (model *rootModel) ensureOperationCountLoadCmd() tea.Cmd {
+	token := model.beginOperationCountLoad()
+	options := model.options
+	options.Query = model.explorer.Query
+	return loadOperationCountCmd(context.Background(), model.service, request.Envelope{
+		Namespace: model.selectedNamespace,
+		Repo:      model.selectedRepo,
+	}, options, token)
 }
 
 func (model *rootModel) ensureRepoCatalogLoadCmd() tea.Cmd {
-	if model.async.RepoCatalog.Loading || model.async.RepoCatalog.ActiveToken > 0 {
+	if model.async.RepoCatalog.Loading {
+		return nil
+	}
+	if hasMore, ok := model.repoCatalogHasMore[model.selectedNamespace]; ok && !hasMore {
 		return nil
 	}
 	token := model.beginRepoCatalogLoad()
-	return loadRepoCatalogCmd(context.Background(), model.service, model.options, token)
+	page := model.options
+	page.Limit = defaultCatalogPageLimit
+	page.Offset = int32(model.repoList.Pager.Page) * defaultCatalogPageLimit
+	page.Query = model.repoList.Query
+	page.Namespace = model.selectedNamespace
+	return loadRepoCatalogCmd(context.Background(), model.service, page, page.Offset, token)
 }
 
 func (model *rootModel) ensureEndpointCatalogLoadCmd() tea.Cmd {
-	repos := model.endpointScopeRepos()
-	if len(repos) == 0 {
+	key := model.endpointScopeKey()
+	if model.async.OperationList.Loading {
 		return nil
 	}
-	missing := make([]RepoEntry, 0, len(repos))
-	for _, repo := range repos {
-		key := repoPath(repo.Namespace, repo.Repo)
-		if _, ok := model.endpointCatalogByRepo[key]; ok {
-			continue
-		}
-		if repo.Row.Namespace != "" && repo.Row.SnapshotRevision == nil && repo.Row.ActiveAPICount == 0 {
-			continue
-		}
-		missing = append(missing, repo)
-	}
-	if len(missing) == 0 {
+	if hasMore, ok := model.endpointHasMoreByScope[key]; ok && !hasMore {
 		return nil
+	}
+	if model.selectedRepo != "" {
+		for _, repo := range model.repos {
+			if repo.Namespace == model.selectedNamespace && repo.Repo == model.selectedRepo &&
+				repo.Row.SnapshotRevision == nil && repo.Row.ActiveAPICount == 0 {
+				return nil
+			}
+		}
 	}
 
 	token := model.beginOperationListLoad()
-	model.endpointFanoutQueue = append([]RepoEntry(nil), missing...)
-	model.endpointFanoutInFlight = 0
-	model.endpointLoadFailures = make(map[string]error)
-	return model.dispatchEndpointFanoutCmds(token)
+	page := model.options
+	page.Limit = defaultCatalogPageLimit
+	page.Offset = int32(model.explorer.Pager.Page) * defaultCatalogPageLimit
+	page.Query = model.explorer.Query
+	return loadOperationListCmd(context.Background(), model.service, request.Envelope{
+		Namespace: model.selectedNamespace,
+		Repo:      model.selectedRepo,
+	}, page, page.Offset, token)
 }
 
-func (model *rootModel) endpointScopeRepos() []RepoEntry {
-	if model.selectedNamespace != "" && model.selectedRepo != "" {
-		for _, repo := range model.repos {
-			if repo.Namespace == model.selectedNamespace && repo.Repo == model.selectedRepo {
-				return []RepoEntry{repo}
-			}
-		}
-		return []RepoEntry{{Namespace: model.selectedNamespace, Repo: model.selectedRepo}}
+func (model *rootModel) endpointScopeKey() string {
+	if model.selectedNamespace == "" && model.selectedRepo == "" {
+		return "/"
 	}
-	if model.selectedNamespace != "" {
-		return repoEntriesByNamespace(model.repos, model.selectedNamespace)
-	}
-	return append([]RepoEntry(nil), model.repos...)
+	return repoPath(model.selectedNamespace, model.selectedRepo)
 }
 
-func (model *rootModel) dispatchEndpointFanoutCmds(token RequestToken) tea.Cmd {
-	cmds := make([]tea.Cmd, 0, endpointFanoutConcurrency)
-	for model.endpointFanoutInFlight < endpointFanoutConcurrency && len(model.endpointFanoutQueue) > 0 {
-		next := model.endpointFanoutQueue[0]
-		model.endpointFanoutQueue = model.endpointFanoutQueue[1:]
-		model.endpointFanoutInFlight++
-		cmds = append(cmds, loadRepoOperationCatalogCmd(
-			context.Background(),
-			model.service,
-			next.Namespace,
-			next.Repo,
-			model.options,
-			token,
-		))
+func (model *rootModel) withPaginator(listView string, pager paginator.Model) string {
+	return strings.Join([]string{listView, pager.View()}, "\n")
+}
+
+func (model *rootModel) syncPaginator(pager *paginator.Model, totalCount int64) {
+	perPage := int(defaultCatalogPageLimit)
+	pager.PerPage = perPage
+	totalPages := int((totalCount + int64(perPage) - 1) / int64(perPage))
+	if totalPages < 1 {
+		totalPages = 1
 	}
-	if len(cmds) == 0 {
-		return nil
+	pager.TotalPages = totalPages
+	if pager.Page >= totalPages {
+		pager.Page = totalPages - 1
 	}
-	return tea.Batch(cmds...)
 }
 
 func (model *rootModel) ensureLoadForActiveSection() tea.Cmd {
 	switch model.home.Selected {
 	case homeItemNamespaces:
-		return model.ensureNamespaceCatalogLoadCmd()
+		return batchCmds(model.ensureNamespaceCatalogLoadCmd(), model.ensureNamespaceCountLoadCmd())
 	case homeItemRepos:
-		return batchCmds(model.ensureNamespaceCatalogLoadCmd(), model.ensureRepoCatalogLoadCmd())
+		return batchCmds(model.ensureNamespaceCatalogLoadCmd(), model.ensureRepoCatalogLoadCmd(), model.ensureRepoCountLoadCmd())
 	case homeItemEndpoints:
-		return batchCmds(model.ensureRepoCatalogLoadCmd(), model.ensureEndpointCatalogLoadCmd())
+		return batchCmds(model.ensureRepoCatalogLoadCmd(), model.ensureEndpointCatalogLoadCmd(), model.ensureOperationCountLoadCmd())
 	default:
 		return nil
 	}
@@ -1091,6 +1232,10 @@ func (model *rootModel) loadState(domain loadDomain) *asyncLoadState {
 	switch domain {
 	case loadDomainNamespaceCount:
 		return &model.async.NamespaceCount
+	case loadDomainRepoCount:
+		return &model.async.RepoCount
+	case loadDomainOperationCount:
+		return &model.async.OperationCount
 	case loadDomainNamespaces:
 		return &model.async.Namespaces
 	case loadDomainRepoCatalog:

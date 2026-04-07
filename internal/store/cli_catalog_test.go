@@ -299,8 +299,9 @@ type fakeCLICatalogQueries struct {
 	apiSelectionRow  sqlc.GetAPISnapshotByRepoRevisionAndAPIRow
 	apiSelectionErr  error
 
-	operationInventoryRows      []sqlc.ListOperationInventoryByRepoRevisionRow
-	operationInventoryByAPIRows []sqlc.ListOperationInventoryByRepoRevisionAndAPIRow
+	operationInventoryRows        []sqlc.ListOperationInventoryByRepoRevisionRow
+	operationCatalogInventoryRows []sqlc.ListOperationCatalogInventoryRow
+	operationInventoryByAPIRows   []sqlc.ListOperationInventoryByRepoRevisionAndAPIRow
 
 	operationRowsByID            []sqlc.FindOperationCandidatesByRepoRevisionAndOperationIDRow
 	operationRowsByAPIID         []sqlc.FindOperationCandidatesByRepoRevisionAndAPIAndOperationIDRow
@@ -362,6 +363,13 @@ func (f *fakeCLICatalogQueries) ListOperationInventoryByRepoRevision(
 	_ sqlc.ListOperationInventoryByRepoRevisionParams,
 ) ([]sqlc.ListOperationInventoryByRepoRevisionRow, error) {
 	return f.operationInventoryRows, nil
+}
+
+func (f *fakeCLICatalogQueries) ListOperationCatalogInventory(
+	_ context.Context,
+	_ string,
+) ([]sqlc.ListOperationCatalogInventoryRow, error) {
+	return f.operationCatalogInventoryRows, nil
 }
 
 func (f *fakeCLICatalogQueries) ListOperationInventoryByRepoRevisionAndAPI(

@@ -548,6 +548,8 @@ func TestRuntimeServiceNormalizesAPIAmbiguityIntoAPIError(t *testing.T) {
 
 type recordingTransportClient struct {
 	namespaceCountBody    []byte
+	repoCountBody         []byte
+	operationCountBody    []byte
 	namespacesBody        []byte
 	reposBody             []byte
 	statusBody            []byte
@@ -559,6 +561,8 @@ type recordingTransportClient struct {
 	specErr               error
 	operationErr          error
 	namespaceCountErr     error
+	repoCountErr          error
+	operationCountErr     error
 	namespacesErr         error
 	reposErr              error
 	statusErr             error
@@ -566,6 +570,8 @@ type recordingTransportClient struct {
 	operationsErr         error
 	namespacesCalls       int
 	namespaceCountCalls   int
+	repoCountCalls        int
+	operationCountCalls   int
 	reposCalls            int
 	statusCalls           int
 	apisCalls             int
@@ -575,6 +581,8 @@ type recordingTransportClient struct {
 	lastSpecSelector      request.Envelope
 	lastOperationSelector request.Envelope
 	lastCatalogRepo       string
+	lastCountNamespace    string
+	lastCountSelector     request.Envelope
 }
 
 func (c *recordingTransportClient) CountNamespaces(ctx context.Context) ([]byte, error) {
@@ -583,6 +591,24 @@ func (c *recordingTransportClient) CountNamespaces(ctx context.Context) ([]byte,
 		return nil, c.namespaceCountErr
 	}
 	return c.namespaceCountBody, nil
+}
+
+func (c *recordingTransportClient) CountRepos(ctx context.Context, namespace string) ([]byte, error) {
+	c.repoCountCalls++
+	c.lastCountNamespace = namespace
+	if c.repoCountErr != nil {
+		return nil, c.repoCountErr
+	}
+	return c.repoCountBody, nil
+}
+
+func (c *recordingTransportClient) CountOperations(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	c.operationCountCalls++
+	c.lastCountSelector = selector
+	if c.operationCountErr != nil {
+		return nil, c.operationCountErr
+	}
+	return c.operationCountBody, nil
 }
 
 func (c *recordingTransportClient) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {

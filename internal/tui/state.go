@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/paginator"
 	"charm.land/bubbles/v2/viewport"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
 )
@@ -79,6 +80,8 @@ type NamespaceRouteState struct {
 	Entries  []NamespaceEntry
 	Selected int
 	List     list.Model
+	Pager    paginator.Model
+	Query    string
 }
 
 type HomeRouteState struct {
@@ -92,6 +95,8 @@ type RepoRouteState struct {
 	Entries   []RepoEntry
 	Selected  int
 	List      list.Model
+	Pager     paginator.Model
+	Query     string
 }
 
 type RepoExplorerRouteState struct {
@@ -100,6 +105,8 @@ type RepoExplorerRouteState struct {
 	Endpoints      []EndpointEntry
 	Selected       int
 	List           list.Model
+	Pager          paginator.Model
+	Query          string
 	Detail         DetailState
 	OperationCache map[EndpointIdentity]OperationDetail
 	SpecCache      map[SpecIdentity]SpecDetail
@@ -116,6 +123,8 @@ type loadDomain string
 
 const (
 	loadDomainNamespaceCount  loadDomain = "namespace_count"
+	loadDomainRepoCount       loadDomain = "repo_count"
+	loadDomainOperationCount  loadDomain = "operation_count"
 	loadDomainNamespaces      loadDomain = "namespaces"
 	loadDomainRepoCatalog     loadDomain = "repo_catalog"
 	loadDomainOperationList   loadDomain = "operation_list"
@@ -132,6 +141,8 @@ type asyncLoadState struct {
 type AsyncState struct {
 	nextToken       RequestToken
 	NamespaceCount  asyncLoadState
+	RepoCount       asyncLoadState
+	OperationCount  asyncLoadState
 	Namespaces      asyncLoadState
 	RepoCatalog     asyncLoadState
 	OperationList   asyncLoadState

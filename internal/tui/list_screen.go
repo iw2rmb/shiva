@@ -6,45 +6,55 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/paginator"
 )
 
 const (
-	defaultListWidth  = 80
-	defaultListHeight = 20
+	defaultListWidth      = 40
+	defaultViewportWidth  = 80
+	defaultViewportHeight = 20
 )
 
 func newNamespaceList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
-	configureList(&model, "Namespaces", "namespace", "namespaces")
+	model := list.New(nil, delegate, defaultListWidth, defaultViewportHeight)
+	configureList(&model, "NAMESPACES", "namespace", "namespaces")
 	model.SetFilteringEnabled(true)
 	model.SetShowFilter(true)
+	model.Filter = passthroughFilter
 	return model
 }
 
 func newShivaList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
+	model := list.New(nil, delegate, defaultListWidth, defaultViewportHeight)
 	configureList(&model, "SHIVA", "entry", "entries")
 	return model
 }
 
 func newRepoList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
-	configureList(&model, "Repositories", "repo", "repos")
+	model := list.New(nil, delegate, defaultListWidth, defaultViewportHeight)
+	configureList(&model, "REPOSITORIES", "repo", "repos")
+	model.SetFilteringEnabled(true)
+	model.SetShowFilter(true)
+	model.Filter = passthroughFilter
 	return model
 }
 
 func newEndpointList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	model := list.New(nil, delegate, defaultListWidth, defaultListHeight)
-	configureList(&model, "Endpoints", "endpoint", "endpoints")
+	model := list.New(nil, delegate, defaultListWidth, defaultViewportHeight)
+	configureList(&model, "ENDPOINTS", "endpoint", "endpoints")
+	model.SetFilteringEnabled(true)
+	model.SetShowFilter(true)
+	model.Filter = passthroughFilter
 	return model
 }
 
 func configureList(model *list.Model, title string, singular string, plural string) {
-	model.Title = title
+	model.Title = strings.TrimSpace(title)
+	model.SetShowTitle(false)
 	model.SetShowFilter(false)
 	model.SetShowHelp(false)
 	model.SetShowPagination(false)
@@ -52,6 +62,18 @@ func configureList(model *list.Model, title string, singular string, plural stri
 	model.SetFilteringEnabled(false)
 	model.SetStatusBarItemName(singular, plural)
 	model.DisableQuitKeybindings()
+}
+
+func newPaginator() paginator.Model {
+	return paginator.New()
+}
+
+func passthroughFilter(_ string, targets []string) []list.Rank {
+	ranks := make([]list.Rank, 0, len(targets))
+	for index := range targets {
+		ranks = append(ranks, list.Rank{Index: index})
+	}
+	return ranks
 }
 
 type namespaceListItem struct {
@@ -319,10 +341,10 @@ func hasMultipleAPIs(entries []EndpointEntry) bool {
 
 func listSize(width int, height int) (int, int) {
 	if width <= 0 {
-		width = defaultListWidth
+		width = defaultViewportWidth
 	}
 	if height <= 0 {
-		height = defaultListHeight
+		height = defaultViewportHeight
 	}
 	if width < 20 {
 		width = 20

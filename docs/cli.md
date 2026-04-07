@@ -116,22 +116,23 @@ Rules:
 - `shiva tui`
   - starts a read-only terminal UI shell
   - initial route is selected by the optional argument:
-    - no selector starts with `SHIVA` focused on `Namespaces`
-    - `<namespace>/` seeds namespace selection and starts with `SHIVA` focused on `Repos`
-    - `<namespace>/<repo>` seeds namespace+repo selection and starts with `SHIVA` focused on `Endpoints`
+    - no selector starts with header focus on `NAMESPACES`
+    - `<namespace>/` seeds namespace selection and starts focused on `REPOS`
+    - `<namespace>/<repo>` seeds namespace+repo selection and starts focused on `ENDPOINTS`
   - startup preloads namespace count from `/v1/namespaces/count` and namespace catalog from `/v1/namespaces`
-  - startup for direct namespace route (`shiva tui <namespace>/`) also loads repo catalog (`/v1/repos`)
-  - startup for direct repo route (`shiva tui <namespace>/<repo>`) skips repo catalog preload and loads endpoint catalog for that repo
-  - layout uses pane chaining:
-    - left pane is always `SHIVA` with rows `Namespaces`, `Repos`, `Endpoints`
-    - middle pane shows the list for the currently active `SHIVA` row
-    - when `Endpoints` is active, a details pane is shown with tabs `Endpoints`, `Servers`, `Errors`
+  - startup also loads scoped width/count metadata from:
+    - `/v1/repos/count`
+    - `/v1/operations/count`
+  - layout uses a header-first shell:
+    - top header is `SHIVA // NAMESPACES / REPOS / ENDPOINTS`
+    - active header item determines which list preview is rendered below
+    - when `ENDPOINTS` is active, the details pane remains visible with tabs `Endpoints`, `Servers`, `Errors`
   - focus/input model:
-    - one pane is focused at a time
-    - `enter` on `SHIVA` moves focus to the active middle pane
-    - `enter` in middle pane commits selection, returns focus to `SHIVA`, and moves active `SHIVA` row one step down
-    - `esc` in a middle pane returns focus to `SHIVA`
-    - `backspace` on a `SHIVA` row clears that row selection
+    - focus target is either `header` or the active list
+    - in header focus: `left/right` and `tab/shift+tab` switch header item, `enter` focuses list
+    - in list focus: `esc` returns focus to header
+    - `enter` in list commits selection and auto-advances (`NAMESPACES -> REPOS -> ENDPOINTS`) while keeping list focus
+    - `backspace` on header clears active selection scope
       - clearing `Namespaces` clears namespace+repo+endpoint
       - clearing `Repos` clears repo+endpoint
       - clearing `Endpoints` clears endpoint only
@@ -148,7 +149,7 @@ Rules:
     - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)
     - `tab` and `shift+tab` switch detail tabs
     - `pgup`, `pgdown`, `home`, `end`, `ctrl+u`, and `ctrl+d` scroll the detail viewport
-    - wide terminals render side-by-side panes; narrow terminals stack panes vertically
+    - active list width is driven by scoped `max_item_length` count metadata
   - empty catalogs and startup catalog-load failures render explicit deterministic states
   - `q` and `ctrl+c` quit from any route
 

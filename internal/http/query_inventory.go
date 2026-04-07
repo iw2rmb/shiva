@@ -2,12 +2,19 @@ package httpserver
 
 import (
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/iw2rmb/shiva/internal/repoid"
 	"github.com/iw2rmb/shiva/internal/store"
 )
+
+type catalogCountResponse struct {
+	TotalCount    int64 `json:"total_count"`
+	MaxItemLength int64 `json:"max_item_length"`
+}
 
 func (s *Server) handleListAPIs(c *fiber.Ctx) error {
 	snapshotQuery, err := parseAPIsQuery(c)
@@ -33,9 +40,25 @@ func (s *Server) handleListAPIs(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleListOperations(c *fiber.Ctx) error {
-	snapshotQuery, err := parseOperationsQuery(c)
+	query, err := parseOperationsQuery(c)
 	if err != nil {
 		return s.writeQueryError(c, err)
+	}
+	snapshotQuery := query.Snapshot
+
+	if snapshotQuery.Repo == "" {
+		items, listErr := s.readStore.ListOperationCatalogInventory(c.Context(), snapshotQuery.Namespace)
+		if listErr != nil {
+			return s.writeQueryError(c, listErr)
+		}
+		items = filterOperationsByQuery(items, query.Query)
+		items = pagedSlice(items, query.Offset, query.Limit)
+
+		itemsResponse, mapErr := mapOperationSnapshots(items, true)
+		if mapErr != nil {
+			return s.writeQueryError(c, mapErr)
+		}
+		return c.Status(fiber.StatusOK).JSON(itemsResponse)
 	}
 
 	resolved, err := s.readStore.ResolveReadSnapshot(c.Context(), snapshotQuery)
@@ -70,6 +93,8 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 		if err != nil {
 			return s.writeQueryError(c, err)
 		}
+		items = filterOperationsByQuery(items, query.Query)
+		items = pagedSlice(items, query.Offset, query.Limit)
 
 		itemsResponse, err = mapOperationSnapshots(items, true)
 		if err != nil {
@@ -84,6 +109,8 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 		if err != nil {
 			return s.writeQueryError(c, err)
 		}
+		items = filterOperationsByQuery(items, query.Query)
+		items = pagedSlice(items, query.Offset, query.Limit)
 
 		itemsResponse, err = mapOperationSnapshots(items, true)
 		if err != nil {
@@ -95,7 +122,8 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleListRepos(c *fiber.Ctx) error {
-	if err := parseReposQuery(c); err != nil {
+	query, err := parseReposQuery(c)
+	if err != nil {
 		return s.writeQueryError(c, err)
 	}
 
@@ -103,8 +131,19 @@ func (s *Server) handleListRepos(c *fiber.Ctx) error {
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
+	filtered := make([]store.RepoCatalogEntry, 0, len(items))
+	for _, item := range items {
+		if query.Namespace != "" && item.Repo.Namespace != query.Namespace {
+			continue
+		}
+		if !matchesRepoQuery(item, query.Query) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	filtered = pagedSlice(filtered, query.Offset, query.Limit)
 
-	return c.Status(fiber.StatusOK).JSON(mapRepoCatalogEntries(items))
+	return c.Status(fiber.StatusOK).JSON(mapRepoCatalogEntries(filtered))
 }
 
 func (s *Server) handleListNamespaces(c *fiber.Ctx) error {
@@ -134,14 +173,132 @@ func (s *Server) handleCountNamespaces(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	totalCount, err := s.readStore.CountNamespaceCatalogInventory(c.Context(), store.NamespaceCatalogCountInput{
-		QueryPrefix: query.QueryPrefix,
-	})
+	repos, err := s.readStore.ListRepoCatalogInventory(c.Context())
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{"total_count": totalCount})
+	seen := make(map[string]struct{}, len(repos))
+	totalCount := int64(0)
+	maxItemLength := int64(0)
+	prefix := strings.ToLower(strings.TrimSpace(query.QueryPrefix))
+	for _, repo := range repos {
+		namespace := strings.TrimSpace(repo.Repo.Namespace)
+		if namespace == "" {
+			continue
+		}
+		if prefix != "" && !strings.HasPrefix(strings.ToLower(namespace), prefix) {
+			continue
+		}
+		if _, ok := seen[namespace]; ok {
+			continue
+		}
+		seen[namespace] = struct{}{}
+		totalCount++
+		length := int64(utf8.RuneCountInString(namespace))
+		if length > maxItemLength {
+			maxItemLength = length
+		}
+	}
+
+	return c.Status(fiber.StatusOK).JSON(catalogCountResponse{
+		TotalCount:    totalCount,
+		MaxItemLength: maxItemLength,
+	})
+}
+
+func (s *Server) handleCountRepos(c *fiber.Ctx) error {
+	query, err := parseReposCountQuery(c)
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	repos, err := s.readStore.ListRepoCatalogInventory(c.Context())
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	totalCount := int64(0)
+	maxItemLength := int64(0)
+	for _, repo := range repos {
+		if query.Namespace != "" && repo.Repo.Namespace != query.Namespace {
+			continue
+		}
+		if !matchesRepoQuery(repo, query.Query) {
+			continue
+		}
+		totalCount++
+		length := int64(utf8.RuneCountInString(strings.TrimSpace(repo.Repo.Repo)))
+		if length > maxItemLength {
+			maxItemLength = length
+		}
+	}
+
+	return c.Status(fiber.StatusOK).JSON(catalogCountResponse{
+		TotalCount:    totalCount,
+		MaxItemLength: maxItemLength,
+	})
+}
+
+func (s *Server) handleCountOperations(c *fiber.Ctx) error {
+	query, err := parseOperationsCountQuery(c)
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	repos, err := s.readStore.ListRepoCatalogInventory(c.Context())
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	scoped := make([]store.RepoCatalogEntry, 0, len(repos))
+	for _, repo := range repos {
+		if query.Namespace != "" && repo.Repo.Namespace != query.Namespace {
+			continue
+		}
+		if query.Repo != "" && repo.Repo.Repo != query.Repo {
+			continue
+		}
+		scoped = append(scoped, repo)
+	}
+
+	totalCount := int64(0)
+	maxItemLength := int64(0)
+	for _, repo := range scoped {
+		resolved, resolveErr := s.readStore.ResolveReadSnapshot(c.Context(), store.ResolveReadSnapshotInput{
+			Namespace: repo.Repo.Namespace,
+			Repo:      repo.Repo.Repo,
+		})
+		if resolveErr != nil {
+			return s.writeQueryError(c, resolveErr)
+		}
+
+		operations, operationsErr := s.readStore.ListOperationInventoryByRepoRevision(
+			c.Context(),
+			resolved.Repo.ID,
+			resolved.Revision.ID,
+		)
+		if operationsErr != nil {
+			return s.writeQueryError(c, operationsErr)
+		}
+
+		for _, operation := range operations {
+			if !matchesOperationQuery(operation, query.Query) {
+				continue
+			}
+			totalCount++
+			label := strings.ToUpper(strings.TrimSpace(operation.Method)) + " " + strings.TrimSpace(operation.Path)
+			length := int64(utf8.RuneCountInString(strings.TrimSpace(label)))
+			if length > maxItemLength {
+				maxItemLength = length
+			}
+		}
+	}
+
+	return c.Status(fiber.StatusOK).JSON(catalogCountResponse{
+		TotalCount:    totalCount,
+		MaxItemLength: maxItemLength,
+	})
 }
 
 func (s *Server) handleGetCatalogStatus(c *fiber.Ctx) error {
@@ -161,4 +318,56 @@ func (s *Server) handleGetCatalogStatus(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(mapRepoCatalogEntry(item))
+}
+
+func pagedSlice[T any](items []T, offset int32, limit int32) []T {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 && offset == 0 {
+		return items
+	}
+	if offset >= int32(len(items)) {
+		return []T{}
+	}
+	start := int(offset)
+	if limit <= 0 {
+		return items[start:]
+	}
+	end := start + int(limit)
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end]
+}
+
+func matchesRepoQuery(item store.RepoCatalogEntry, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(item.Repo.Repo)), query)
+}
+
+func filterOperationsByQuery(items []store.OperationSnapshot, query string) []store.OperationSnapshot {
+	if strings.TrimSpace(query) == "" {
+		return items
+	}
+	filtered := make([]store.OperationSnapshot, 0, len(items))
+	for _, item := range items {
+		if matchesOperationQuery(item, query) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func matchesOperationQuery(item store.OperationSnapshot, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	label := strings.ToLower(strings.TrimSpace(strings.ToUpper(strings.TrimSpace(item.Method)) + " " + strings.TrimSpace(item.Path)))
+	operationID := strings.ToLower(strings.TrimSpace(item.OperationID))
+	return strings.HasPrefix(label, query) || strings.HasPrefix(operationID, query)
 }

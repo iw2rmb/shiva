@@ -50,8 +50,8 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 
-	if model.activeRoute != RouteHome {
-		t.Fatalf("expected active route %q, got %q", RouteHome, model.activeRoute)
+	if model.activeRoute != RouteRepoExplorer {
+		t.Fatalf("expected active route %q, got %q", RouteRepoExplorer, model.activeRoute)
 	}
 	if cmd == nil {
 		t.Fatalf("expected operation list load command")
@@ -60,10 +60,19 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 		t.Fatalf("expected command to defer execution, got %d calls", service.listOperationsCall)
 	}
 
-	msg := cmd()
-	loaded, ok := msg.(repoOperationCatalogLoadedMsg)
-	if !ok {
-		t.Fatalf("expected repoOperationCatalogLoadedMsg, got %T", msg)
+	var loaded operationListLoadedMsg
+	found := false
+	for _, msg := range collectCmdMessages(cmd) {
+		typed, ok := msg.(operationListLoadedMsg)
+		if !ok {
+			continue
+		}
+		loaded = typed
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("expected operationListLoadedMsg in command batch")
 	}
 	if service.listOperationsCall != 1 {
 		t.Fatalf("expected one operation list call, got %d", service.listOperationsCall)
@@ -129,11 +138,13 @@ func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 
-	if model.activeRoute != RouteHome {
-		t.Fatalf("expected active route %q, got %q", RouteHome, model.activeRoute)
+	if model.activeRoute != RouteRepoExplorer {
+		t.Fatalf("expected active route %q, got %q", RouteRepoExplorer, model.activeRoute)
 	}
-	if cmd != nil {
-		t.Fatalf("expected operation list load command to be skipped")
+	for _, msg := range collectCmdMessages(cmd) {
+		if _, ok := msg.(operationListLoadedMsg); ok {
+			t.Fatalf("expected operation list load command to be skipped")
+		}
 	}
 	if service.listOperationsCall != 0 {
 		t.Fatalf("expected no operation list calls, got %d", service.listOperationsCall)
@@ -219,8 +230,8 @@ func TestRootModelExplorerEscReturnsToRepoList(t *testing.T) {
 	updated, _ = model.Update(cmd())
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteHome {
-		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
+	if model.activeRoute != RouteRepoExplorer {
+		t.Fatalf("expected route %q, got %q", RouteRepoExplorer, model.activeRoute)
 	}
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})

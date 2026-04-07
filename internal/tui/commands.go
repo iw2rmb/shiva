@@ -14,10 +14,11 @@ func loadRepoCatalogCmd(
 	ctx context.Context,
 	service BrowserService,
 	options RequestOptions,
+	offset int32,
 	token RequestToken,
 ) tea.Cmd {
 	return func() tea.Msg {
-		return loadRepoCatalogMsg(ctx, service, options, token)
+		return loadRepoCatalogMsg(ctx, service, options, offset, token)
 	}
 }
 
@@ -45,14 +46,56 @@ func loadNamespaceCountMsg(
 	return namespaceCountLoadedMsg{Token: token, Count: count}
 }
 
-func loadNamespaceCatalogCmd(
+func loadRepoCountCmd(
 	ctx context.Context,
 	service BrowserService,
+	namespace string,
 	options RequestOptions,
 	token RequestToken,
 ) tea.Cmd {
 	return func() tea.Msg {
-		return loadNamespaceCatalogMsg(ctx, service, options, token)
+		count, err := service.CountRepos(ctx, namespace, options)
+		if err != nil {
+			return loadFailedMsg{Domain: loadDomainRepoCount, Token: token, Err: err}
+		}
+		return repoCountLoadedMsg{
+			Token:     token,
+			Namespace: namespace,
+			Count:     count,
+		}
+	}
+}
+
+func loadOperationCountCmd(
+	ctx context.Context,
+	service BrowserService,
+	selector request.Envelope,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		count, err := service.CountOperations(ctx, selector, options)
+		if err != nil {
+			return loadFailedMsg{Domain: loadDomainOperationCount, Token: token, Err: err}
+		}
+		return operationCountLoadedMsg{
+			Token:     token,
+			Namespace: selector.Namespace,
+			Repo:      selector.Repo,
+			Count:     count,
+		}
+	}
+}
+
+func loadNamespaceCatalogCmd(
+	ctx context.Context,
+	service BrowserService,
+	options RequestOptions,
+	offset int32,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		return loadNamespaceCatalogMsg(ctx, service, options, offset, token)
 	}
 }
 
@@ -60,8 +103,10 @@ func loadNamespaceCatalogMsg(
 	ctx context.Context,
 	service BrowserService,
 	options RequestOptions,
+	offset int32,
 	token RequestToken,
 ) tea.Msg {
+	options.Offset = offset
 	body, err := service.ListNamespaces(ctx, options, clioutput.ListFormatJSON)
 	if err != nil {
 		return loadFailedMsg{Domain: loadDomainNamespaces, Token: token, Err: err}
@@ -85,15 +130,17 @@ func loadNamespaceCatalogMsg(
 		})
 	}
 
-	return namespaceCatalogLoadedMsg{Token: token, Rows: entries}
+	return namespaceCatalogLoadedMsg{Token: token, Offset: offset, Rows: entries}
 }
 
 func loadRepoCatalogMsg(
 	ctx context.Context,
 	service BrowserService,
 	options RequestOptions,
+	offset int32,
 	token RequestToken,
 ) tea.Msg {
+	options.Offset = offset
 	body, err := service.ListRepos(ctx, options, clioutput.ListFormatJSON)
 	if err != nil {
 		return loadFailedMsg{Domain: loadDomainRepoCatalog, Token: token, Err: err}
@@ -117,7 +164,7 @@ func loadRepoCatalogMsg(
 		})
 	}
 
-	return repoCatalogLoadedMsg{Token: token, Rows: entries}
+	return repoCatalogLoadedMsg{Token: token, Offset: offset, Rows: entries}
 }
 
 func loadOperationListCmd(
@@ -125,10 +172,11 @@ func loadOperationListCmd(
 	service BrowserService,
 	selector request.Envelope,
 	options RequestOptions,
+	offset int32,
 	token RequestToken,
 ) tea.Cmd {
 	return func() tea.Msg {
-		return loadOperationListMsg(ctx, service, selector, options, token)
+		return loadOperationListMsg(ctx, service, selector, options, offset, token)
 	}
 }
 
@@ -137,8 +185,10 @@ func loadOperationListMsg(
 	service BrowserService,
 	selector request.Envelope,
 	options RequestOptions,
+	offset int32,
 	token RequestToken,
 ) tea.Msg {
+	options.Offset = offset
 	body, err := service.ListOperations(ctx, selector, options, clioutput.ListFormatJSON)
 	if err != nil {
 		return loadFailedMsg{Domain: loadDomainOperationList, Token: token, Err: err}
@@ -153,48 +203,7 @@ func loadOperationListMsg(
 		}
 	}
 
-	return operationListLoadedMsg{Token: token, Entries: entries}
-}
-
-func loadRepoOperationCatalogCmd(
-	ctx context.Context,
-	service BrowserService,
-	namespace string,
-	repo string,
-	options RequestOptions,
-	token RequestToken,
-) tea.Cmd {
-	return func() tea.Msg {
-		body, err := service.ListOperations(ctx, request.Envelope{
-			Namespace: namespace,
-			Repo:      repo,
-		}, options, clioutput.ListFormatJSON)
-		if err != nil {
-			return repoOperationCatalogLoadedMsg{
-				Token:     token,
-				Namespace: namespace,
-				Repo:      repo,
-				Err:       err,
-			}
-		}
-
-		entries, decodeErr := decodeOperationEntries(body)
-		if decodeErr != nil {
-			return repoOperationCatalogLoadedMsg{
-				Token:     token,
-				Namespace: namespace,
-				Repo:      repo,
-				Err:       decodeErr,
-			}
-		}
-
-		return repoOperationCatalogLoadedMsg{
-			Token:     token,
-			Namespace: namespace,
-			Repo:      repo,
-			Entries:   entries,
-		}
-	}
+	return operationListLoadedMsg{Token: token, Offset: offset, Entries: entries}
 }
 
 func decodeOperationEntries(body []byte) ([]EndpointEntry, error) {

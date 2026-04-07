@@ -18,8 +18,12 @@ import (
 )
 
 type RequestOptions struct {
-	Profile string
-	Offline bool
+	Profile   string
+	Offline   bool
+	Limit     int32
+	Offset    int32
+	Query     string
+	Namespace string
 }
 
 type Service interface {
@@ -27,6 +31,9 @@ type Service interface {
 	GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
 	ExecuteCall(ctx context.Context, selector request.Envelope, options RequestOptions, format CallFormat) ([]byte, error)
 	CountNamespaces(ctx context.Context, options RequestOptions) (int64, error)
+	CountNamespaceCatalog(ctx context.Context, options RequestOptions) (CatalogCount, error)
+	CountRepoCatalog(ctx context.Context, namespace string, options RequestOptions) (CatalogCount, error)
+	CountOperationCatalog(ctx context.Context, selector request.Envelope, options RequestOptions) (CatalogCount, error)
 	ListNamespaces(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListAPIs(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
@@ -42,12 +49,32 @@ type transportClient interface {
 	GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error)
 	CountNamespaces(ctx context.Context) ([]byte, error)
+	CountRepos(ctx context.Context, namespace string) ([]byte, error)
+	CountOperations(ctx context.Context, selector request.Envelope) ([]byte, error)
 	ListNamespaces(ctx context.Context) ([]byte, error)
 	ListRepos(ctx context.Context) ([]byte, error)
 	GetCatalogStatus(ctx context.Context, repo string) ([]byte, error)
 	ListAPIs(ctx context.Context, selector request.Envelope) ([]byte, error)
 	ListOperations(ctx context.Context, selector request.Envelope) ([]byte, error)
 	Health(ctx context.Context) ([]byte, error)
+}
+
+type pagedTransportClient interface {
+	ListNamespacesPage(ctx context.Context, limit int32, offset int32) ([]byte, error)
+	ListReposPage(ctx context.Context, namespace string, limit int32, offset int32) ([]byte, error)
+	ListOperationsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error)
+}
+
+type filteredPagedTransportClient interface {
+	ListNamespacesPageFiltered(ctx context.Context, query string, limit int32, offset int32) ([]byte, error)
+	ListReposPageFiltered(ctx context.Context, namespace string, query string, limit int32, offset int32) ([]byte, error)
+	ListOperationsPageFiltered(ctx context.Context, selector request.Envelope, query string, limit int32, offset int32) ([]byte, error)
+}
+
+type filteredCountTransportClient interface {
+	CountNamespacesFiltered(ctx context.Context, query string) ([]byte, error)
+	CountReposFiltered(ctx context.Context, namespace string, query string) ([]byte, error)
+	CountOperationsFiltered(ctx context.Context, selector request.Envelope, query string) ([]byte, error)
 }
 
 type RuntimeService struct {

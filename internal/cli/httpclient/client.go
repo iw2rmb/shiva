@@ -95,12 +95,135 @@ func (c *Client) ListRepos(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/v1/repos")
 }
 
+func (c *Client) ListReposPage(ctx context.Context, namespace string, limit int32, offset int32) ([]byte, error) {
+	query := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		query.Set("namespace", strings.TrimSpace(namespace))
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		query.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/repos"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return c.get(ctx, path)
+}
+
 func (c *Client) CountNamespaces(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/v1/namespaces/count")
 }
 
+func (c *Client) CountNamespacesFiltered(ctx context.Context, query string) ([]byte, error) {
+	values := url.Values{}
+	if strings.TrimSpace(query) != "" {
+		values.Set("query", strings.TrimSpace(query))
+	}
+	path := "/v1/namespaces/count"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) CountRepos(ctx context.Context, namespace string) ([]byte, error) {
+	query := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		query.Set("namespace", strings.TrimSpace(namespace))
+	}
+	path := "/v1/repos/count"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) CountReposFiltered(ctx context.Context, namespace string, query string) ([]byte, error) {
+	values := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		values.Set("namespace", strings.TrimSpace(namespace))
+	}
+	if strings.TrimSpace(query) != "" {
+		values.Set("query", strings.TrimSpace(query))
+	}
+	path := "/v1/repos/count"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) CountOperations(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	query := url.Values{}
+	if strings.TrimSpace(selector.Namespace) != "" {
+		query.Set("namespace", strings.TrimSpace(selector.Namespace))
+	}
+	if strings.TrimSpace(selector.Repo) != "" {
+		query.Set("repo", strings.TrimSpace(selector.Repo))
+	}
+	path := "/v1/operations/count"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) CountOperationsFiltered(ctx context.Context, selector request.Envelope, query string) ([]byte, error) {
+	values := url.Values{}
+	if strings.TrimSpace(selector.Namespace) != "" {
+		values.Set("namespace", strings.TrimSpace(selector.Namespace))
+	}
+	if strings.TrimSpace(selector.Repo) != "" {
+		values.Set("repo", strings.TrimSpace(selector.Repo))
+	}
+	if strings.TrimSpace(query) != "" {
+		values.Set("query", strings.TrimSpace(query))
+	}
+	path := "/v1/operations/count"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
+}
+
 func (c *Client) ListNamespaces(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/v1/namespaces")
+}
+
+func (c *Client) ListNamespacesPage(ctx context.Context, limit int32, offset int32) ([]byte, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		query.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/namespaces"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) ListNamespacesPageFiltered(ctx context.Context, query string, limit int32, offset int32) ([]byte, error) {
+	values := url.Values{}
+	if strings.TrimSpace(query) != "" {
+		values.Set("query", strings.TrimSpace(query))
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/namespaces"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
 }
 
 func (c *Client) GetCatalogStatus(ctx context.Context, repo string) ([]byte, error) {
@@ -125,14 +248,72 @@ func (c *Client) ListOperations(ctx context.Context, selector request.Envelope) 
 	return c.get(ctx, "/v1/operations?"+query.Encode())
 }
 
+func (c *Client) ListOperationsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error) {
+	query := snapshotQuery(selector)
+	if limit > 0 {
+		query.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		query.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/operations"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) ListReposPageFiltered(ctx context.Context, namespace string, query string, limit int32, offset int32) ([]byte, error) {
+	values := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		values.Set("namespace", strings.TrimSpace(namespace))
+	}
+	if strings.TrimSpace(query) != "" {
+		values.Set("query", strings.TrimSpace(query))
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/repos"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) ListOperationsPageFiltered(ctx context.Context, selector request.Envelope, query string, limit int32, offset int32) ([]byte, error) {
+	values := snapshotQuery(selector)
+	if strings.TrimSpace(query) != "" {
+		values.Set("query", strings.TrimSpace(query))
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/operations"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
+}
+
 func (c *Client) Health(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "/healthz")
 }
 
 func snapshotQuery(selector request.Envelope) url.Values {
 	query := url.Values{}
-	query.Set("namespace", selector.Namespace)
-	query.Set("repo", selector.Repo)
+	if strings.TrimSpace(selector.Namespace) != "" {
+		query.Set("namespace", selector.Namespace)
+	}
+	if strings.TrimSpace(selector.Repo) != "" {
+		query.Set("repo", selector.Repo)
+	}
 	if strings.TrimSpace(selector.API) != "" {
 		query.Set("api", selector.API)
 	}

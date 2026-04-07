@@ -553,6 +553,70 @@ func (s *fakeService) CountNamespaces(ctx context.Context, options RequestOption
 	return int64(len(rows)), nil
 }
 
+func (s *fakeService) CountNamespaceCatalog(ctx context.Context, options RequestOptions) (CatalogCount, error) {
+	total, err := s.CountNamespaces(ctx, options)
+	if err != nil {
+		return CatalogCount{}, err
+	}
+	return CatalogCount{TotalCount: total}, nil
+}
+
+func (s *fakeService) CountRepoCatalog(ctx context.Context, namespace string, options RequestOptions) (CatalogCount, error) {
+	s.lastOptions = options
+	type repoRow struct {
+		Namespace string `json:"namespace"`
+		Repo      string `json:"repo"`
+	}
+	var repos []repoRow
+	if len(s.listReposBody) == 0 || json.Unmarshal(s.listReposBody, &repos) != nil {
+		return CatalogCount{}, nil
+	}
+	result := CatalogCount{}
+	for _, row := range repos {
+		if namespace != "" && row.Namespace != namespace {
+			continue
+		}
+		result.TotalCount++
+		if int64(len(row.Repo)) > result.MaxItemLength {
+			result.MaxItemLength = int64(len(row.Repo))
+		}
+	}
+	return result, nil
+}
+
+func (s *fakeService) CountOperationCatalog(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+) (CatalogCount, error) {
+	s.lastOptions = options
+	type opRow struct {
+		Namespace string `json:"namespace"`
+		Repo      string `json:"repo"`
+		Method    string `json:"method"`
+		Path      string `json:"path"`
+	}
+	var operations []opRow
+	if len(s.listOpsBody) == 0 || json.Unmarshal(s.listOpsBody, &operations) != nil {
+		return CatalogCount{}, nil
+	}
+	result := CatalogCount{}
+	for _, row := range operations {
+		if selector.Namespace != "" && row.Namespace != selector.Namespace {
+			continue
+		}
+		if selector.Repo != "" && row.Repo != selector.Repo {
+			continue
+		}
+		result.TotalCount++
+		label := strings.ToUpper(strings.TrimSpace(row.Method)) + " " + strings.TrimSpace(row.Path)
+		if int64(len(strings.TrimSpace(label))) > result.MaxItemLength {
+			result.MaxItemLength = int64(len(strings.TrimSpace(label)))
+		}
+	}
+	return result, nil
+}
+
 func (s *fakeService) ListRepos(ctx context.Context, options RequestOptions, format output.ListFormat) ([]byte, error) {
 	s.listReposCalls++
 	s.lastListFormat = string(format)

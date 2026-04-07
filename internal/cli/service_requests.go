@@ -60,7 +60,7 @@ func (s *RuntimeService) EmitAPIRequests(
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
-	normalized, err := normalizeInventorySelector(selector, false)
+	normalized, err := normalizeInventorySelector(selector, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (s *RuntimeService) EmitOperationRequests(
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
-	normalized, err := normalizeInventorySelector(selector, true)
+	normalized, err := normalizeInventorySelector(selector, true, true)
 	if err != nil {
 		return nil, err
 	}

@@ -171,7 +171,7 @@ Current state:
 
 ## Query and Call-Planning Endpoints (`/v1/*`)
 Current state:
-- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, and `/v1/catalog/status` are shipped query/read endpoints
+- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, `/v1/catalog/status`, `/v1/namespaces/count`, `/v1/repos/count`, and `/v1/operations/count` are shipped query/read endpoints
 - `/v1/call` is shipped as a planning endpoint only; it does not dispatch outbound traffic
 
 ### Registered Surface
@@ -303,10 +303,11 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/operations`
 - supported query parameters:
-  - `namespace`
-  - `repo`
+  - optional `namespace`
+  - optional `repo` (requires `namespace`)
   - optional `api`
   - optional `revision_id` or `sha`
+- when `api`, `revision_id`, or `sha` are provided, both `namespace` and `repo` are required
 - response body is an array of operation inventory rows
 - rows include:
   - `api`
@@ -346,6 +347,24 @@ Legacy path-segment endpoints were removed:
 - this endpoint does not accept repo/snapshot selector parameters
 - response body shape:
   - `total_count`
+  - `max_item_length` (`max(length(namespace))` within the filtered namespace set)
+
+### `GET /v1/repos/count`
+- supported query parameters:
+  - optional `namespace`
+- this endpoint does not accept repo/snapshot selector parameters
+- response body shape:
+  - `total_count`
+  - `max_item_length` (`max(length(repo))` within scope)
+
+### `GET /v1/operations/count`
+- supported query parameters:
+  - optional `namespace`
+  - optional `repo` (requires `namespace`)
+- this endpoint does not accept `api`, `revision_id`, or `sha`
+- response body shape:
+  - `total_count`
+  - `max_item_length` (`max(length(UPPER(method) + " " + path))` within scope)
 
 ### `GET /v1/repos`
 - takes no repo/snapshot selector parameters

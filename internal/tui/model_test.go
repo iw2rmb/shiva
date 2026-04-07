@@ -39,10 +39,10 @@ func TestNewRootModelSeedsRouteSpecificState(t *testing.T) {
 	if model.explorer.Detail.ActiveTab != DetailTabEndpoints {
 		t.Fatalf("expected default detail tab %q, got %q", DetailTabEndpoints, model.explorer.Detail.ActiveTab)
 	}
-	if model.namespaces.List.Title != "Namespaces" {
+	if model.namespaces.List.Title != "NAMESPACES" {
 		t.Fatalf("expected namespace list to initialize, got %q", model.namespaces.List.Title)
 	}
-	if !strings.Contains(model.repoList.List.Title, "Repositories") {
+	if !strings.Contains(model.repoList.List.Title, "REPOSITORIES") {
 		t.Fatalf("expected repo list to initialize, got %q", model.repoList.List.Title)
 	}
 }
@@ -101,7 +101,7 @@ func TestRootModelNamespaceCountLoadUpdatesHomeReposDescription(t *testing.T) {
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
 	token := model.beginNamespaceCountLoad()
 
-	updated, _ := model.Update(namespaceCountLoadedMsg{Token: token, Count: 17})
+	updated, _ := model.Update(namespaceCountLoadedMsg{Token: token, Count: CatalogCount{TotalCount: 17}})
 	model = updated.(*rootModel)
 
 	if model.home.Entries[0].Description != "Total: 17" {
@@ -131,10 +131,14 @@ func TestRootModelNamespaceCountLoadFailureShowsUnavailableAndError(t *testing.T
 	}
 }
 
-func TestRootModelNamespacesFilterInputReducesVisibleItems(t *testing.T) {
+func TestRootModelNamespacesFilterInputTriggersServerRefresh(t *testing.T) {
 	t.Parallel()
 
-	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	service := &fakeBrowserService{
+		countNamespacesValue: CatalogCount{TotalCount: 1},
+		listNamespacesBody:   []byte(`[{"namespace":"beta","repo_count":1,"all_pending":false}]`),
+	}
+	model := newRootModel(service, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
 	token := model.beginNamespaceCatalogLoad()
 
 	updated, _ := model.Update(namespaceCatalogLoadedMsg{
@@ -153,17 +157,11 @@ func TestRootModelNamespacesFilterInputReducesVisibleItems(t *testing.T) {
 		t.Fatalf("expected filter update command")
 	}
 	model = applyListCmd(model, cmd)
-
-	visible := model.namespaces.List.VisibleItems()
-	if len(visible) != 1 {
-		t.Fatalf("expected one visible namespace after filter, got %d", len(visible))
+	if model.namespaces.Query != "b" {
+		t.Fatalf("expected namespaces query to be %q, got %q", "b", model.namespaces.Query)
 	}
-	item, ok := visible[0].(namespaceListItem)
-	if !ok {
-		t.Fatalf("expected namespace list item, got %T", visible[0])
-	}
-	if item.title != "beta" {
-		t.Fatalf("expected filtered namespace beta, got %q", item.title)
+	if service.countNamespacesCall == 0 || service.listNamespacesCall == 0 {
+		t.Fatalf("expected server-backed count/list refresh, got counts=%d lists=%d", service.countNamespacesCall, service.listNamespacesCall)
 	}
 }
 
@@ -213,14 +211,16 @@ func TestRootModelEnterFilteredNamespaceSelectsAndReturnsHome(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
-	model.namespaces.List.SetFilterText("be")
+	model.namespaces.Query = "be"
+	model.namespaces.Entries = []NamespaceEntry{{Namespace: "beta", RepoCount: 1}}
+	model.refreshNamespaceList()
 	model.syncNamespaceSelection()
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteHome {
-		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected route %q, got %q", RouteRepos, model.activeRoute)
 	}
 	if model.repoList.Namespace != "beta" {
 		t.Fatalf("expected filtered namespace beta, got %q", model.repoList.Namespace)
@@ -311,7 +311,7 @@ func TestRootModelInitStartsRepoCatalogLoad(t *testing.T) {
 func TestRootModelInitRouteHomeStartsNamespaceLoad(t *testing.T) {
 	t.Parallel()
 
-	model := newRootModel(&fakeBrowserService{countNamespacesValue: 42}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	model := newRootModel(&fakeBrowserService{countNamespacesValue: CatalogCount{TotalCount: 42}}, InitialRoute{Kind: RouteHome}, RequestOptions{})
 	cmd := model.Init()
 	if cmd == nil {
 		t.Fatalf("expected init command")
@@ -408,13 +408,13 @@ func TestRootModelInitRepoExplorerSkipsRepoCatalogLoad(t *testing.T) {
 
 	var operationLoaded bool
 	for _, msg := range collectCmdMessages(cmd) {
-		if _, ok := msg.(repoOperationCatalogLoadedMsg); ok {
+		if _, ok := msg.(operationListLoadedMsg); ok {
 			operationLoaded = true
 			break
 		}
 	}
 	if !operationLoaded {
-		t.Fatalf("expected repoOperationCatalogLoadedMsg in init batch")
+		t.Fatalf("expected operationListLoadedMsg in init batch")
 	}
 	if service.listReposCall != 0 {
 		t.Fatalf("expected no repo list calls on direct repo route init, got %d", service.listReposCall)
@@ -428,7 +428,7 @@ func TestLoadRepoCatalogCmdCarriesRequestToken(t *testing.T) {
 		listReposBody: []byte(`[{"namespace":"acme","repo":"platform"}]`),
 	}
 
-	msg := loadRepoCatalogCmd(context.Background(), service, RequestOptions{Offline: true}, 7)()
+	msg := loadRepoCatalogCmd(context.Background(), service, RequestOptions{Offline: true}, 0, 7)()
 	loaded, ok := msg.(repoCatalogLoadedMsg)
 	if !ok {
 		t.Fatalf("expected repoCatalogLoadedMsg, got %T", msg)
@@ -584,8 +584,8 @@ func TestRootModelEnterOnNamespaceSelectsAndReturnsHome(t *testing.T) {
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteHome {
-		t.Fatalf("expected route %q, got %q", RouteHome, model.activeRoute)
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected route %q, got %q", RouteRepos, model.activeRoute)
 	}
 	if model.repoList.Namespace != "beta" {
 		t.Fatalf("expected beta namespace, got %q", model.repoList.Namespace)
@@ -632,8 +632,8 @@ func TestRootModelRepoCatalogLoadAfterNamespaceSelectStaysOnHome(t *testing.T) {
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = updated.(*rootModel)
-	if model.activeRoute != RouteHome {
-		t.Fatalf("expected route %q after selecting namespace, got %q", RouteHome, model.activeRoute)
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected route %q after selecting namespace, got %q", RouteRepos, model.activeRoute)
 	}
 	if model.home.Selected != homeItemRepos {
 		t.Fatalf("expected SHIVA selection on Repos, got %d", model.home.Selected)
@@ -649,8 +649,8 @@ func TestRootModelRepoCatalogLoadAfterNamespaceSelectStaysOnHome(t *testing.T) {
 	})
 	model = updated.(*rootModel)
 
-	if model.activeRoute != RouteHome {
-		t.Fatalf("expected to stay on %q after repo catalog load, got %q", RouteHome, model.activeRoute)
+	if model.activeRoute != RouteRepos {
+		t.Fatalf("expected to stay on %q after repo catalog load, got %q", RouteRepos, model.activeRoute)
 	}
 }
 
@@ -735,19 +735,19 @@ func TestRootModelRouteLocalHelpShowsOnlyActiveRouteBindings(t *testing.T) {
 
 	model.activeRoute = RouteNamespaces
 	namespaceHelp := model.routeHelpView()
-	if !strings.Contains(namespaceHelp, "open namespace") {
+	if !strings.Contains(namespaceHelp, "select namespace") {
 		t.Fatalf("expected namespace help to include namespace action, got %q", namespaceHelp)
 	}
-	if strings.Contains(namespaceHelp, "open repo") || strings.Contains(namespaceHelp, "switch tab") {
+	if strings.Contains(namespaceHelp, "select repo") || strings.Contains(namespaceHelp, "switch tab") {
 		t.Fatalf("expected namespace help to exclude repo/explorer actions, got %q", namespaceHelp)
 	}
 
 	model.activeRoute = RouteRepos
 	repoHelp := model.routeHelpView()
-	if !strings.Contains(repoHelp, "open repo") {
+	if !strings.Contains(repoHelp, "select repo") {
 		t.Fatalf("expected repos help to include repo action, got %q", repoHelp)
 	}
-	if strings.Contains(repoHelp, "open namespace") || strings.Contains(repoHelp, "switch tab") {
+	if strings.Contains(repoHelp, "select namespace") || strings.Contains(repoHelp, "switch tab") {
 		t.Fatalf("expected repos help to exclude namespace/explorer actions, got %q", repoHelp)
 	}
 
@@ -758,6 +758,26 @@ func TestRootModelRouteLocalHelpShowsOnlyActiveRouteBindings(t *testing.T) {
 	}
 	if strings.Contains(explorerHelp, "open namespace") || strings.Contains(explorerHelp, "open repo") {
 		t.Fatalf("expected explorer help to exclude namespace/repo actions, got %q", explorerHelp)
+	}
+}
+
+func TestBrowserPaneLayoutGuardsListMinWidth(t *testing.T) {
+	t.Parallel()
+
+	left, center, right, stacked := browserPaneLayout(81, false)
+	if !stacked {
+		t.Fatalf("expected width 81 to stack when two 40-char list panes do not fit")
+	}
+	if left != 81 || center != 81 || right != 0 {
+		t.Fatalf("unexpected stacked layout dimensions: left=%d center=%d right=%d", left, center, right)
+	}
+
+	left, center, right, stacked = browserPaneLayout(82, false)
+	if stacked {
+		t.Fatalf("expected width 82 to render side by side")
+	}
+	if left != 40 || center != 40 || right != 0 {
+		t.Fatalf("expected guarded widths left=40 center=40 right=0, got left=%d center=%d right=%d", left, center, right)
 	}
 }
 
@@ -983,9 +1003,17 @@ func TestLayoutScreenPinsFooterToLastTerminalRow(t *testing.T) {
 }
 
 type fakeBrowserService struct {
-	countNamespacesValue int64
+	countNamespacesValue CatalogCount
 	countNamespacesErr   error
 	countNamespacesCall  int
+	countReposValue      CatalogCount
+	countReposErr        error
+	countReposCall       int
+	lastCountNamespace   string
+	countOperationsValue CatalogCount
+	countOperationsErr   error
+	countOperationsCall  int
+	lastCountSelector    request.Envelope
 	listNamespacesBody   []byte
 	listNamespacesErr    error
 	listNamespacesCall   int
@@ -1011,11 +1039,35 @@ type fakeBrowserService struct {
 func (service *fakeBrowserService) CountNamespaces(
 	ctx context.Context,
 	options RequestOptions,
-) (int64, error) {
+) (CatalogCount, error) {
 	service.lastContextValue = ctx.Value(contextKey("request"))
 	service.countNamespacesCall++
 	_ = options
 	return service.countNamespacesValue, service.countNamespacesErr
+}
+
+func (service *fakeBrowserService) CountRepos(
+	ctx context.Context,
+	namespace string,
+	options RequestOptions,
+) (CatalogCount, error) {
+	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.countReposCall++
+	service.lastCountNamespace = namespace
+	_ = options
+	return service.countReposValue, service.countReposErr
+}
+
+func (service *fakeBrowserService) CountOperations(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+) (CatalogCount, error) {
+	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.countOperationsCall++
+	service.lastCountSelector = selector
+	_ = options
+	return service.countOperationsValue, service.countOperationsErr
 }
 
 func (service *fakeBrowserService) ListNamespaces(

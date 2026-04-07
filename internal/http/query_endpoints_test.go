@@ -449,6 +449,73 @@ func TestQueryEndpoints_ListOperations_ValidatesExplicitAPI(t *testing.T) {
 	}
 }
 
+func TestQueryEndpoints_ListOperations_AllowsGlobalAndNamespaceScope(t *testing.T) {
+	t.Parallel()
+
+	t.Run("global", func(t *testing.T) {
+		t.Parallel()
+
+		readStore := &fakeQueryReadStore{
+			operationCatalogInventoryResult: []store.OperationSnapshot{
+				{
+					API:               "apis/pets/openapi.yaml",
+					Status:            "active",
+					APISpecRevisionID: 501,
+					IngestEventID:     42,
+					IngestEventSHA:    "aaaaaaaa",
+					IngestEventBranch: "main",
+					Method:            "get",
+					Path:              "/pets",
+					OperationID:       "listPets",
+					RawJSON:           []byte(`{"operationId":"listPets"}`),
+				},
+			},
+		}
+		server := newQueryTestServer(readStore)
+
+		resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/operations", nil), -1)
+		if err != nil {
+			t.Fatalf("http test request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.StatusCode)
+		}
+		if !reflect.DeepEqual(readStore.operationCatalogInventoryInputs, []string{""}) {
+			t.Fatalf("unexpected operation catalog scope input: %+v", readStore.operationCatalogInventoryInputs)
+		}
+		if len(readStore.resolveReadSnapshotInputs) != 0 {
+			t.Fatalf("did not expect snapshot resolution, got %+v", readStore.resolveReadSnapshotInputs)
+		}
+	})
+
+	t.Run("namespace scoped", func(t *testing.T) {
+		t.Parallel()
+
+		readStore := &fakeQueryReadStore{
+			operationCatalogInventoryResult: []store.OperationSnapshot{},
+		}
+		server := newQueryTestServer(readStore)
+
+		resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/operations?namespace=acme", nil), -1)
+		if err != nil {
+			t.Fatalf("http test request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.StatusCode)
+		}
+		if !reflect.DeepEqual(readStore.operationCatalogInventoryInputs, []string{"acme"}) {
+			t.Fatalf("unexpected operation catalog scope input: %+v", readStore.operationCatalogInventoryInputs)
+		}
+		if len(readStore.resolveReadSnapshotInputs) != 0 {
+			t.Fatalf("did not expect snapshot resolution, got %+v", readStore.resolveReadSnapshotInputs)
+		}
+	})
+}
+
 func TestQueryEndpoints_ListReposAndCatalogStatus_ReturnCatalogShapes(t *testing.T) {
 	t.Parallel()
 
@@ -659,7 +726,11 @@ func TestQueryEndpoints_CountNamespaces_UsesQueryPrefixOnly(t *testing.T) {
 	t.Parallel()
 
 	readStore := &fakeQueryReadStore{
-		namespaceCountResult: 9,
+		repoInventoryResult: []store.RepoCatalogEntry{
+			{Repo: store.Repo{Namespace: "acme", Repo: "gateway"}},
+			{Repo: store.Repo{Namespace: "acme", Repo: "platform"}},
+			{Repo: store.Repo{Namespace: "beta", Repo: "payments"}},
+		},
 	}
 	server := newQueryTestServer(readStore)
 
@@ -675,19 +746,115 @@ func TestQueryEndpoints_CountNamespaces_UsesQueryPrefixOnly(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
-	if !reflect.DeepEqual(readStore.namespaceCountInputs, []store.NamespaceCatalogCountInput{{
-		QueryPrefix: "ac",
-	}}) {
-		t.Fatalf("unexpected namespace count inputs: %+v", readStore.namespaceCountInputs)
-	}
 	var body struct {
-		TotalCount int64 `json:"total_count"`
+		TotalCount    int64 `json:"total_count"`
+		MaxItemLength int64 `json:"max_item_length"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode count response: %v", err)
 	}
-	if body.TotalCount != 9 {
-		t.Fatalf("expected total_count=9, got %d", body.TotalCount)
+	if body.TotalCount != 1 {
+		t.Fatalf("expected total_count=1, got %d", body.TotalCount)
+	}
+	if body.MaxItemLength != 4 {
+		t.Fatalf("expected max_item_length=4, got %d", body.MaxItemLength)
+	}
+}
+
+func TestQueryEndpoints_CountRepos_UsesNamespaceScope(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeQueryReadStore{
+		repoInventoryResult: []store.RepoCatalogEntry{
+			{Repo: store.Repo{Namespace: "acme", Repo: "gateway"}},
+			{Repo: store.Repo{Namespace: "acme", Repo: "platform"}},
+			{Repo: store.Repo{Namespace: "beta", Repo: "payments"}},
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(
+		httptest.NewRequest(http.MethodGet, "/v1/repos/count?namespace=acme", nil),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	var body struct {
+		TotalCount    int64 `json:"total_count"`
+		MaxItemLength int64 `json:"max_item_length"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode count response: %v", err)
+	}
+	if body.TotalCount != 2 {
+		t.Fatalf("expected total_count=2, got %d", body.TotalCount)
+	}
+	if body.MaxItemLength != 8 {
+		t.Fatalf("expected max_item_length=8, got %d", body.MaxItemLength)
+	}
+}
+
+func TestQueryEndpoints_CountOperations_UsesRepoScope(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeQueryReadStore{
+		repoInventoryResult: []store.RepoCatalogEntry{
+			{Repo: store.Repo{ID: 1, Namespace: "acme", Repo: "gateway"}},
+			{Repo: store.Repo{ID: 2, Namespace: "acme", Repo: "platform"}},
+		},
+		resolveReadSnapshotResult: store.ResolvedReadSnapshot{
+			Repo:     store.Repo{ID: 2, Namespace: "acme", Repo: "platform"},
+			Revision: store.Revision{ID: 21},
+		},
+		operationInventoryResult: []store.OperationSnapshot{
+			{Method: "get", Path: "/accounts"},
+			{Method: "post", Path: "/accounts/{id}"},
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(
+		httptest.NewRequest(http.MethodGet, "/v1/operations/count?namespace=acme&repo=platform", nil),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if !reflect.DeepEqual(readStore.resolveReadSnapshotInputs, []store.ResolveReadSnapshotInput{{
+		Namespace: "acme",
+		Repo:      "platform",
+	}}) {
+		t.Fatalf("unexpected snapshot resolution inputs: %+v", readStore.resolveReadSnapshotInputs)
+	}
+	if !reflect.DeepEqual(readStore.operationInventoryInputs, []operationInventoryInput{{
+		RepoID:     2,
+		RevisionID: 21,
+	}}) {
+		t.Fatalf("unexpected operation inventory inputs: %+v", readStore.operationInventoryInputs)
+	}
+	var body struct {
+		TotalCount    int64 `json:"total_count"`
+		MaxItemLength int64 `json:"max_item_length"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode count response: %v", err)
+	}
+	if body.TotalCount != 2 {
+		t.Fatalf("expected total_count=2, got %d", body.TotalCount)
+	}
+	if body.MaxItemLength != int64(len("POST /accounts/{id}")) {
+		t.Fatalf("expected max_item_length=%d, got %d", len("POST /accounts/{id}"), body.MaxItemLength)
 	}
 }
 
@@ -731,21 +898,21 @@ type fakeQueryReadStore struct {
 	apiSnapshotFound  bool
 	apiSnapshotErr    error
 
-	operationInventoryInputs      []operationInventoryInput
-	operationInventoryResult      []store.OperationSnapshot
-	operationInventoryErr         error
-	operationInventoryByAPIInputs []operationInventoryByAPIInput
-	operationInventoryByAPIResult []store.OperationSnapshot
-	operationInventoryByAPIErr    error
+	operationInventoryInputs        []operationInventoryInput
+	operationInventoryResult        []store.OperationSnapshot
+	operationInventoryErr           error
+	operationCatalogInventoryInputs []string
+	operationCatalogInventoryResult []store.OperationSnapshot
+	operationCatalogInventoryErr    error
+	operationInventoryByAPIInputs   []operationInventoryByAPIInput
+	operationInventoryByAPIResult   []store.OperationSnapshot
+	operationInventoryByAPIErr      error
 
 	repoInventoryResult      []store.RepoCatalogEntry
 	repoInventoryErr         error
 	namespaceInventoryInputs []store.NamespaceCatalogListInput
 	namespaceInventoryResult store.NamespaceCatalogListResult
 	namespaceInventoryErr    error
-	namespaceCountInputs     []store.NamespaceCatalogCountInput
-	namespaceCountResult     int64
-	namespaceCountErr        error
 
 	catalogStatusInputs []string
 	catalogStatusResult store.RepoCatalogFreshness
@@ -895,6 +1062,19 @@ func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevision(
 	return result, nil
 }
 
+func (f *fakeQueryReadStore) ListOperationCatalogInventory(
+	_ context.Context,
+	namespace string,
+) ([]store.OperationSnapshot, error) {
+	f.operationCatalogInventoryInputs = append(f.operationCatalogInventoryInputs, namespace)
+	if f.operationCatalogInventoryErr != nil {
+		return nil, f.operationCatalogInventoryErr
+	}
+	result := make([]store.OperationSnapshot, len(f.operationCatalogInventoryResult))
+	copy(result, f.operationCatalogInventoryResult)
+	return result, nil
+}
+
 func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevisionAndAPI(
 	_ context.Context,
 	repoID int64,
@@ -941,13 +1121,9 @@ func (f *fakeQueryReadStore) ListNamespaceCatalogInventory(
 
 func (f *fakeQueryReadStore) CountNamespaceCatalogInventory(
 	_ context.Context,
-	input store.NamespaceCatalogCountInput,
+	_ store.NamespaceCatalogCountInput,
 ) (int64, error) {
-	f.namespaceCountInputs = append(f.namespaceCountInputs, input)
-	if f.namespaceCountErr != nil {
-		return 0, f.namespaceCountErr
-	}
-	return f.namespaceCountResult, nil
+	return 0, nil
 }
 
 func (f *fakeQueryReadStore) GetRepoCatalogFreshness(_ context.Context, namespace string, repo string) (store.RepoCatalogFreshness, error) {
