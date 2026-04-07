@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -69,6 +70,49 @@ func TestNewRootModelHomeRouteShowsShivaSections(t *testing.T) {
 	}
 }
 
+func TestRootModelHeaderViewUsesProtocolSeparatorAndPaddedSections(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	header := stripANSI(model.headerView())
+
+	if !strings.Contains(header, "SHIVA :// ") {
+		t.Fatalf("expected header to use :// separator, got %q", header)
+	}
+	for _, section := range []string{" NAMESPACES ", " REPOS ", " ENDPOINTS "} {
+		if !strings.Contains(header, section) {
+			t.Fatalf("expected header to contain padded section %q, got %q", section, header)
+		}
+	}
+}
+
+func TestRootModelHeaderViewSelectedFocusedSectionIsNotBold(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	codes, ok := headerSectionStyleCodes(model.headerView(), "NAMESPACES")
+	if !ok {
+		t.Fatalf("expected to extract style codes for selected focused section")
+	}
+	if sgrHasCode(codes, "1") {
+		t.Fatalf("expected selected focused section to not be bold, got codes %q", codes)
+	}
+}
+
+func TestRootModelHeaderViewSelectedUnfocusedSectionHasNoBackground(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	model.activeRoute = RouteNamespaces
+	codes, ok := headerSectionStyleCodes(model.headerView(), "NAMESPACES")
+	if !ok {
+		t.Fatalf("expected to extract style codes for selected unfocused section")
+	}
+	if sgrContainsSequence(codes, []string{"48", "5", "62"}) {
+		t.Fatalf("expected selected unfocused section to not have background color, got codes %q", codes)
+	}
+}
+
 func TestRootModelEnterReposFromHomeOpensNamespaces(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +124,43 @@ func TestRootModelEnterReposFromHomeOpensNamespaces(t *testing.T) {
 	if model.activeRoute != RouteNamespaces {
 		t.Fatalf("expected route %q after selecting Repos, got %q", RouteNamespaces, model.activeRoute)
 	}
+}
+
+func headerSectionStyleCodes(rendered string, label string) ([]string, bool) {
+	pattern := regexp.MustCompile(`\x1b\[([0-9;]*)m` + regexp.QuoteMeta(label) + `\x1b\[m`)
+	matches := pattern.FindStringSubmatch(rendered)
+	if len(matches) != 2 {
+		return nil, false
+	}
+	return strings.Split(matches[1], ";"), true
+}
+
+func sgrHasCode(codes []string, expected string) bool {
+	for _, candidate := range codes {
+		if candidate == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func sgrContainsSequence(codes []string, sequence []string) bool {
+	if len(sequence) == 0 || len(sequence) > len(codes) {
+		return false
+	}
+	for start := 0; start <= len(codes)-len(sequence); start++ {
+		match := true
+		for offset := range sequence {
+			if codes[start+offset] != sequence[offset] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRootModelNamespacesListUsesDefaultFiltering(t *testing.T) {
@@ -974,14 +1055,115 @@ func TestRootModelHomeResizeDoesNotRenderExplorerDetail(t *testing.T) {
 	}
 }
 
+func TestRootModelNamespaceCatalogLoadUsesVisiblePageSizeForLimitAndOffset(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{listNamespacesBody: []byte(`[]`)}
+	model := newRootModel(service, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	model.width = 120
+	model.height = 30
+	model.resizeLists()
+	model.namespaces.Pager.Page = 2
+
+	cmd := model.ensureNamespaceCatalogLoadCmd()
+	if cmd == nil {
+		t.Fatalf("expected namespace catalog load command")
+	}
+	_ = cmd()
+
+	wantLimit := int32(model.namespaceItemsPerPage())
+	if service.lastListNamespaces.Limit != wantLimit {
+		t.Fatalf("expected limit %d, got %d", wantLimit, service.lastListNamespaces.Limit)
+	}
+	wantOffset := int32(model.namespaces.Pager.Page) * wantLimit
+	if service.lastListNamespaces.Offset != wantOffset {
+		t.Fatalf("expected offset %d, got %d", wantOffset, service.lastListNamespaces.Offset)
+	}
+}
+
+func TestRootModelResizeReloadsActiveCatalogWhenPageSizeChanges(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{listNamespacesBody: []byte(`[]`)}
+	model := newRootModel(service, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+
+	updated, _ := model.Update(resizeMsg{Width: 120, Height: 14})
+	model = updated.(*rootModel)
+	model.async.Namespaces.Loading = false
+	model.namespaceCatalogHasMore = true
+	service.listNamespacesCall = 0
+
+	updated, cmd := model.Update(resizeMsg{Width: 120, Height: 40})
+	model = updated.(*rootModel)
+	if cmd == nil {
+		t.Fatalf("expected resize to trigger catalog reload command")
+	}
+	_ = cmd()
+	if service.listNamespacesCall == 0 {
+		t.Fatalf("expected namespace list reload on resize")
+	}
+	wantLimit := int32(model.namespaceItemsPerPage())
+	if service.lastListNamespaces.Limit != wantLimit {
+		t.Fatalf("expected resize reload limit %d, got %d", wantLimit, service.lastListNamespaces.Limit)
+	}
+}
+
+func TestRootModelRendersPaginatorOnBottomRowAboveHelp(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	model.height = 12
+	model.width = 100
+	model.resizeLists()
+
+	countToken := model.beginNamespaceCountLoad()
+	updated, _ := model.Update(namespaceCountLoadedMsg{
+		Token: countToken,
+		Count: CatalogCount{TotalCount: 200},
+	})
+	model = updated.(*rootModel)
+
+	catalogToken := model.beginNamespaceCatalogLoad()
+	updated, _ = model.Update(namespaceCatalogLoadedMsg{
+		Token: catalogToken,
+		Rows:  []NamespaceEntry{{Namespace: "acme", RepoCount: 1}},
+	})
+	model = updated.(*rootModel)
+
+	rendered := stripANSI(model.View().Content)
+	lines := strings.Split(rendered, "\n")
+	lastNonEmpty := -1
+	prevNonEmpty := -1
+	for index := len(lines) - 1; index >= 0; index-- {
+		if strings.TrimSpace(lines[index]) == "" {
+			continue
+		}
+		if lastNonEmpty == -1 {
+			lastNonEmpty = index
+			continue
+		}
+		prevNonEmpty = index
+		break
+	}
+	if lastNonEmpty == -1 || prevNonEmpty == -1 {
+		t.Fatalf("expected non-empty footer and paginator rows, got %q", rendered)
+	}
+	if !strings.Contains(lines[lastNonEmpty], "q") {
+		t.Fatalf("expected help footer on last non-empty row, got %q", lines[lastNonEmpty])
+	}
+	if !regexp.MustCompile(`\b\d+/\d+\b`).MatchString(lines[prevNonEmpty]) {
+		t.Fatalf("expected paginator row above footer, got %q", lines[prevNonEmpty])
+	}
+}
+
 func TestLayoutScreenWithoutKnownHeightKeepsDefaultSpacing(t *testing.T) {
 	t.Parallel()
 
 	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteHome}, RequestOptions{})
 	model.height = 0
 
-	rendered := model.layoutScreen("body", "footer")
-	if rendered != "body\n\nfooter" {
+	rendered := stripANSI(model.layoutScreen("body", "footer"))
+	if rendered != "body\n\n1/1\nfooter" {
 		t.Fatalf("unexpected layout output %q", rendered)
 	}
 }
@@ -1017,12 +1199,15 @@ type fakeBrowserService struct {
 	listNamespacesBody   []byte
 	listNamespacesErr    error
 	listNamespacesCall   int
+	lastListNamespaces   RequestOptions
 	listReposBody        []byte
 	listReposErr         error
 	listReposCall        int
+	lastListRepos        RequestOptions
 	listOperationsBody   []byte
 	listOperationsErr    error
 	listOperationsCall   int
+	lastListOperations   RequestOptions
 	lastOperationQuery   request.Envelope
 	getOperationCall     int
 	lastOperationGet     request.Envelope
@@ -1077,7 +1262,7 @@ func (service *fakeBrowserService) ListNamespaces(
 ) ([]byte, error) {
 	service.lastContextValue = ctx.Value(contextKey("request"))
 	service.listNamespacesCall++
-	_ = options
+	service.lastListNamespaces = options
 	_ = format
 	return service.listNamespacesBody, service.listNamespacesErr
 }
@@ -1089,7 +1274,7 @@ func (service *fakeBrowserService) ListRepos(
 ) ([]byte, error) {
 	service.lastContextValue = ctx.Value(contextKey("request"))
 	service.listReposCall++
-	_ = options
+	service.lastListRepos = options
 	_ = format
 	return service.listReposBody, service.listReposErr
 }
@@ -1103,7 +1288,7 @@ func (service *fakeBrowserService) ListOperations(
 	service.lastContextValue = ctx.Value(contextKey("request"))
 	service.listOperationsCall++
 	service.lastOperationQuery = selector
-	_ = options
+	service.lastListOperations = options
 	_ = format
 	return service.listOperationsBody, service.listOperationsErr
 }

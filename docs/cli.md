@@ -124,8 +124,11 @@ Rules:
     - `/v1/repos/count`
     - `/v1/operations/count`
   - layout uses a header-first shell:
-    - top header is `SHIVA // NAMESPACES / REPOS / ENDPOINTS`
+    - top header is `SHIVA :// NAMESPACES / REPOS / ENDPOINTS`
     - active header item determines which list preview is rendered below
+    - bottom rows are fixed as:
+      - paginator row (`<current>/<total>`) for the active list scope
+      - help footer row
     - when `ENDPOINTS` is active, the details pane remains visible with tabs `Endpoints`, `Servers`, `Errors`
   - focus/input model:
     - focus target is either `header` or the active list
@@ -144,6 +147,11 @@ Rules:
     - endpoint rows are sorted by path, method, operation id, then API
     - endpoint catalog loading is lazy and progressive with bounded concurrency
     - scope is selected repo, else selected namespace, else all repos
+    - list queries are paged by visible capacity:
+      - `limit = items_per_page_for_current_height`
+      - `offset = current_page * limit`
+      - applies to namespace, repo, and endpoint catalog requests
+      - active catalog auto-reloads on terminal resize when visible page size changes
     - operation detail loads lazily for selected endpoint and is cached by endpoint identity
     - spec detail loads only for `Servers` when operation-level servers are missing/empty and is cached by `(namespace, repo, api)`
     - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)

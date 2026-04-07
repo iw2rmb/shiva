@@ -130,7 +130,7 @@ func loadNamespaceCatalogMsg(
 		})
 	}
 
-	return namespaceCatalogLoadedMsg{Token: token, Offset: offset, Rows: entries}
+	return namespaceCatalogLoadedMsg{Token: token, Limit: options.Limit, Offset: offset, Rows: entries}
 }
 
 func loadRepoCatalogMsg(
@@ -164,7 +164,7 @@ func loadRepoCatalogMsg(
 		})
 	}
 
-	return repoCatalogLoadedMsg{Token: token, Offset: offset, Rows: entries}
+	return repoCatalogLoadedMsg{Token: token, Limit: options.Limit, Offset: offset, Rows: entries}
 }
 
 func loadOperationListCmd(
@@ -203,7 +203,7 @@ func loadOperationListMsg(
 		}
 	}
 
-	return operationListLoadedMsg{Token: token, Offset: offset, Entries: entries}
+	return operationListLoadedMsg{Token: token, Limit: options.Limit, Offset: offset, Entries: entries}
 }
 
 func decodeOperationEntries(body []byte) ([]EndpointEntry, error) {

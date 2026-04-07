@@ -17,8 +17,6 @@ const (
 	homeItemNamespaces = 0
 	homeItemRepos      = 1
 	homeItemEndpoints  = 2
-
-	defaultCatalogPageLimit int32 = 200
 )
 
 type rootModel struct {
@@ -187,17 +185,28 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return resizeMsg{Width: typed.Width, Height: typed.Height}
 		}
 	case resizeMsg:
+		previousNamespacePerPage := model.namespaceItemsPerPage()
+		previousRepoPerPage := model.repoItemsPerPage()
+		previousEndpointPerPage := model.endpointItemsPerPage()
 		model.width = typed.Width
 		model.height = typed.Height
 		model.resizeLists()
+		model.syncKnownPaginators()
 		model.refreshExplorerDetailViewportIfVisible()
+		if model.activePageSizeChanged(previousNamespacePerPage, previousRepoPerPage, previousEndpointPerPage) {
+			return model, model.reloadActiveCatalogForResize()
+		}
 	case repoCatalogLoadedMsg:
 		if !model.accepts(loadDomainRepoCatalog, typed.Token) {
 			return model, nil
 		}
 		model.finishLoad(loadDomainRepoCatalog, typed.Token, nil)
 		model.repos = append([]RepoEntry(nil), typed.Rows...)
-		model.repoCatalogHasMore[model.selectedNamespace] = int32(len(typed.Rows)) >= defaultCatalogPageLimit
+		limit := typed.Limit
+		if limit < 1 {
+			limit = int32(model.repoItemsPerPage())
+		}
+		model.repoCatalogHasMore[model.selectedNamespace] = int32(len(typed.Rows)) >= limit
 		model.refreshRepoList()
 		model.refreshExplorerList()
 		model.refreshHomeEntryPresentation()
@@ -212,7 +221,11 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(loadDomainNamespaces, typed.Token, nil)
 		model.namespaces.Entries = append([]NamespaceEntry(nil), typed.Rows...)
-		model.namespaceCatalogHasMore = int32(len(typed.Rows)) >= defaultCatalogPageLimit
+		limit := typed.Limit
+		if limit < 1 {
+			limit = int32(model.namespaceItemsPerPage())
+		}
+		model.namespaceCatalogHasMore = int32(len(typed.Rows)) >= limit
 		model.refreshNamespaceList()
 		return model, nil
 	case namespaceCountLoadedMsg:
@@ -221,7 +234,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(loadDomainNamespaceCount, typed.Token, nil)
 		model.namespaceCatalogCount = typed.Count
-		model.syncPaginator(&model.namespaces.Pager, typed.Count.TotalCount)
+		model.syncPaginator(&model.namespaces.Pager, typed.Count.TotalCount, model.namespaceItemsPerPage())
 		model.home.Entries = withHomeNamespaceCount(model.home.Entries, typed.Count.TotalCount)
 		model.refreshHomeEntryPresentation()
 		model.refreshHomeList()
@@ -233,7 +246,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(loadDomainRepoCount, typed.Token, nil)
 		model.repoCatalogCount[typed.Namespace] = typed.Count
-		model.syncPaginator(&model.repoList.Pager, typed.Count.TotalCount)
+		model.syncPaginator(&model.repoList.Pager, typed.Count.TotalCount, model.repoItemsPerPage())
 		model.resizeLists()
 		return model, nil
 	case operationCountLoadedMsg:
@@ -242,7 +255,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model.finishLoad(loadDomainOperationCount, typed.Token, nil)
 		model.operationCatalogCount[repoPath(typed.Namespace, typed.Repo)] = typed.Count
-		model.syncPaginator(&model.explorer.Pager, typed.Count.TotalCount)
+		model.syncPaginator(&model.explorer.Pager, typed.Count.TotalCount, model.endpointItemsPerPage())
 		model.resizeLists()
 		return model, nil
 	case operationListLoadedMsg:
@@ -252,7 +265,11 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.finishLoad(loadDomainOperationList, typed.Token, nil)
 		key := model.endpointScopeKey()
 		model.endpointCatalogByRepo[key] = append([]EndpointEntry(nil), typed.Entries...)
-		model.endpointHasMoreByScope[key] = int32(len(typed.Entries)) >= defaultCatalogPageLimit
+		limit := typed.Limit
+		if limit < 1 {
+			limit = int32(model.endpointItemsPerPage())
+		}
+		model.endpointHasMoreByScope[key] = int32(len(typed.Entries)) >= limit
 		model.refreshExplorerList()
 		model.refreshExplorerDetailViewport()
 		return model, model.loadExplorerDetailForSelection()
@@ -724,11 +741,11 @@ func (model *rootModel) headerView() string {
 	segments := make([]string, 0, len(items))
 	headerFocused := model.activeRoute == RouteHome
 	for index, item := range items {
-		style := lipgloss.NewStyle()
+		style := lipgloss.NewStyle().Padding(0, 1)
 		if model.home.Selected == index {
-			style = style.Background(lipgloss.Color("62")).Foreground(lipgloss.Color("230"))
+			style = style.Foreground(lipgloss.Color("230"))
 			if headerFocused {
-				style = style.Bold(true)
+				style = style.Background(lipgloss.Color("62"))
 			}
 		} else {
 			style = style.Faint(true)
@@ -736,7 +753,7 @@ func (model *rootModel) headerView() string {
 		segments = append(segments, style.Render(item))
 	}
 
-	return strings.Join([]string{brand, strings.Join(segments, " / ")}, " // ")
+	return strings.Join([]string{brand, strings.Join(segments, " / ")}, " :// ")
 }
 
 func renderPaneAtWidth(view string, width int) string {
@@ -783,7 +800,7 @@ func (model *rootModel) viewNamespacesPane() string {
 	if len(model.namespaces.Entries) == 0 {
 		return model.styles.EmptyBlock("No namespaces found.")
 	}
-	return model.withPaginator(model.namespaces.List.View(), model.namespaces.Pager)
+	return model.namespaces.List.View()
 }
 
 func (model *rootModel) viewReposPane() string {
@@ -802,7 +819,7 @@ func (model *rootModel) viewReposPane() string {
 		}
 		return model.styles.EmptyBlock("No repositories found in namespace.")
 	}
-	return model.withPaginator(model.repoList.List.View(), model.repoList.Pager)
+	return model.repoList.List.View()
 }
 
 func (model *rootModel) viewEndpointsPane() string {
@@ -818,7 +835,7 @@ func (model *rootModel) viewEndpointsPane() string {
 		}
 		return model.styles.EmptyBlock("No endpoints found for current scope.")
 	}
-	return model.withPaginator(model.explorer.List.View(), model.explorer.Pager)
+	return model.explorer.List.View()
 }
 
 func (model *rootModel) viewEndpointsWithDetailsPane() string {
@@ -879,18 +896,18 @@ func browserPaneLayout(width int, includeDetails bool) (int, int, int, bool) {
 }
 
 func (model *rootModel) layoutScreen(body string, footer string) string {
+	paginatorLine := model.activePaginatorLine()
+	paginatorView := model.styles.Subtle(paginatorLine)
 	if model.height <= 0 {
-		return strings.Join([]string{body, "", footer}, "\n")
+		return strings.Join([]string{body, "", paginatorView, footer}, "\n")
 	}
 
-	bodyHeight := lipgloss.Height(body)
-	footerHeight := lipgloss.Height(footer)
-	separatorNewlines := model.height - bodyHeight - footerHeight + 1
+	separatorNewlines := model.height - lipgloss.Height(body) - lipgloss.Height(paginatorLine) - lipgloss.Height(footer) + 1
 	if separatorNewlines < 1 {
 		separatorNewlines = 1
 	}
 
-	return body + strings.Repeat("\n", separatorNewlines) + footer
+	return body + strings.Repeat("\n", separatorNewlines) + paginatorView + "\n" + footer
 }
 
 func (model *rootModel) setHomeSelection(index int) {
@@ -1075,8 +1092,9 @@ func (model *rootModel) ensureNamespaceCatalogLoadCmd() tea.Cmd {
 	}
 	token := model.beginNamespaceCatalogLoad()
 	page := model.options
-	page.Limit = defaultCatalogPageLimit
-	page.Offset = int32(model.namespaces.Pager.Page) * defaultCatalogPageLimit
+	pageSize := int32(model.namespaceItemsPerPage())
+	page.Limit = pageSize
+	page.Offset = int32(model.namespaces.Pager.Page) * pageSize
 	page.Query = model.namespaces.Query
 	return loadNamespaceCatalogCmd(context.Background(), model.service, page, page.Offset, token)
 }
@@ -1117,8 +1135,9 @@ func (model *rootModel) ensureRepoCatalogLoadCmd() tea.Cmd {
 	}
 	token := model.beginRepoCatalogLoad()
 	page := model.options
-	page.Limit = defaultCatalogPageLimit
-	page.Offset = int32(model.repoList.Pager.Page) * defaultCatalogPageLimit
+	pageSize := int32(model.repoItemsPerPage())
+	page.Limit = pageSize
+	page.Offset = int32(model.repoList.Pager.Page) * pageSize
 	page.Query = model.repoList.Query
 	page.Namespace = model.selectedNamespace
 	return loadRepoCatalogCmd(context.Background(), model.service, page, page.Offset, token)
@@ -1143,8 +1162,9 @@ func (model *rootModel) ensureEndpointCatalogLoadCmd() tea.Cmd {
 
 	token := model.beginOperationListLoad()
 	page := model.options
-	page.Limit = defaultCatalogPageLimit
-	page.Offset = int32(model.explorer.Pager.Page) * defaultCatalogPageLimit
+	pageSize := int32(model.endpointItemsPerPage())
+	page.Limit = pageSize
+	page.Offset = int32(model.explorer.Pager.Page) * pageSize
 	page.Query = model.explorer.Query
 	return loadOperationListCmd(context.Background(), model.service, request.Envelope{
 		Namespace: model.selectedNamespace,
@@ -1159,12 +1179,10 @@ func (model *rootModel) endpointScopeKey() string {
 	return repoPath(model.selectedNamespace, model.selectedRepo)
 }
 
-func (model *rootModel) withPaginator(listView string, pager paginator.Model) string {
-	return strings.Join([]string{listView, pager.View()}, "\n")
-}
-
-func (model *rootModel) syncPaginator(pager *paginator.Model, totalCount int64) {
-	perPage := int(defaultCatalogPageLimit)
+func (model *rootModel) syncPaginator(pager *paginator.Model, totalCount int64, perPage int) {
+	if perPage < 1 {
+		perPage = 1
+	}
 	pager.PerPage = perPage
 	totalPages := int((totalCount + int64(perPage) - 1) / int64(perPage))
 	if totalPages < 1 {
@@ -1174,6 +1192,100 @@ func (model *rootModel) syncPaginator(pager *paginator.Model, totalCount int64) 
 	if pager.Page >= totalPages {
 		pager.Page = totalPages - 1
 	}
+}
+
+func (model *rootModel) namespaceItemsPerPage() int {
+	perPage := model.namespaces.List.Paginator.PerPage
+	if perPage < 1 {
+		return 1
+	}
+	return perPage
+}
+
+func (model *rootModel) repoItemsPerPage() int {
+	perPage := model.repoList.List.Paginator.PerPage
+	if perPage < 1 {
+		return 1
+	}
+	return perPage
+}
+
+func (model *rootModel) endpointItemsPerPage() int {
+	perPage := model.explorer.List.Paginator.PerPage
+	if perPage < 1 {
+		return 1
+	}
+	return perPage
+}
+
+func (model *rootModel) activePageSizeChanged(
+	previousNamespacePerPage int,
+	previousRepoPerPage int,
+	previousEndpointPerPage int,
+) bool {
+	switch model.home.Selected {
+	case homeItemNamespaces:
+		return previousNamespacePerPage != model.namespaceItemsPerPage()
+	case homeItemRepos:
+		return previousRepoPerPage != model.repoItemsPerPage()
+	case homeItemEndpoints:
+		return previousEndpointPerPage != model.endpointItemsPerPage()
+	default:
+		return false
+	}
+}
+
+func (model *rootModel) reloadActiveCatalogForResize() tea.Cmd {
+	switch model.home.Selected {
+	case homeItemNamespaces:
+		model.namespaceCatalogHasMore = true
+		return model.ensureNamespaceCatalogLoadCmd()
+	case homeItemRepos:
+		model.repoCatalogHasMore[model.selectedNamespace] = true
+		return model.ensureRepoCatalogLoadCmd()
+	case homeItemEndpoints:
+		model.endpointHasMoreByScope[model.endpointScopeKey()] = true
+		return model.ensureEndpointCatalogLoadCmd()
+	default:
+		return nil
+	}
+}
+
+func (model *rootModel) syncKnownPaginators() {
+	model.syncPaginator(
+		&model.namespaces.Pager,
+		model.namespaceCatalogCount.TotalCount,
+		model.namespaceItemsPerPage(),
+	)
+	model.syncPaginator(
+		&model.repoList.Pager,
+		model.repoCatalogCount[model.selectedNamespace].TotalCount,
+		model.repoItemsPerPage(),
+	)
+	model.syncPaginator(
+		&model.explorer.Pager,
+		model.operationCatalogCount[repoPath(model.selectedNamespace, model.selectedRepo)].TotalCount,
+		model.endpointItemsPerPage(),
+	)
+}
+
+func (model *rootModel) activePaginatorView() string {
+	return model.styles.Subtle(model.activePaginatorLine())
+}
+
+func (model *rootModel) activePaginatorLine() string {
+	var pager paginator.Model
+	switch model.home.Selected {
+	case homeItemNamespaces:
+		pager = model.namespaces.Pager
+	case homeItemRepos:
+		pager = model.repoList.Pager
+	case homeItemEndpoints:
+		pager = model.explorer.Pager
+	default:
+		return ""
+	}
+	return pager.View()
 }
 
 func (model *rootModel) ensureLoadForActiveSection() tea.Cmd {

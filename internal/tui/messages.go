@@ -4,12 +4,14 @@ type RequestToken uint64
 
 type repoCatalogLoadedMsg struct {
 	Token  RequestToken
+	Limit  int32
 	Offset int32
 	Rows   []RepoEntry
 }
 
 type namespaceCatalogLoadedMsg struct {
 	Token  RequestToken
+	Limit  int32
 	Offset int32
 	Rows   []NamespaceEntry
 }
@@ -34,6 +36,7 @@ type operationCountLoadedMsg struct {
 
 type operationListLoadedMsg struct {
 	Token   RequestToken
+	Limit   int32
 	Offset  int32
 	Entries []EndpointEntry
 }
