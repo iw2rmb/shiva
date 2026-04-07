@@ -542,19 +542,25 @@ func (model *rootModel) refreshHomeList() {
 }
 
 func (model *rootModel) refreshNamespaceList() {
+	filterValue := model.namespaces.List.FilterValue()
+	filterState := model.namespaces.List.FilterState()
 	model.namespaces.List.SetItems(namespaceItems(model.namespaces.Entries))
 	if len(model.namespaces.Entries) == 0 {
 		model.namespaces.Selected = -1
 		model.namespaces.List.ResetSelected()
+		restoreListFilter(&model.namespaces.List, filterValue, filterState)
 		return
 	}
 	if model.namespaces.Selected < 0 || model.namespaces.Selected >= len(model.namespaces.Entries) {
 		model.namespaces.Selected = 0
 	}
 	model.namespaces.List.Select(model.namespaces.Selected)
+	restoreListFilter(&model.namespaces.List, filterValue, filterState)
 }
 
 func (model *rootModel) refreshRepoList() {
+	filterValue := model.repoList.List.FilterValue()
+	filterState := model.repoList.List.FilterState()
 	model.repoList.Namespace = model.selectedNamespace
 	model.repoList.Entries = repoEntriesByNamespace(model.repos, model.repoList.Namespace)
 	model.repoList.List.Title = "REPOSITORIES"
@@ -562,15 +568,19 @@ func (model *rootModel) refreshRepoList() {
 	if len(model.repoList.Entries) == 0 {
 		model.repoList.Selected = -1
 		model.repoList.List.ResetSelected()
+		restoreListFilter(&model.repoList.List, filterValue, filterState)
 		return
 	}
 	if model.repoList.Selected < 0 || model.repoList.Selected >= len(model.repoList.Entries) {
 		model.repoList.Selected = 0
 	}
 	model.repoList.List.Select(model.repoList.Selected)
+	restoreListFilter(&model.repoList.List, filterValue, filterState)
 }
 
 func (model *rootModel) refreshExplorerList() {
+	filterValue := model.explorer.List.FilterValue()
+	filterState := model.explorer.List.FilterState()
 	entries := model.filteredEndpointEntries()
 	if len(entries) == 0 && len(model.endpointCatalogByRepo) == 0 && len(model.explorer.Endpoints) > 0 {
 		entries = sortedEndpointEntries(model.explorer.Endpoints)
@@ -581,6 +591,7 @@ func (model *rootModel) refreshExplorerList() {
 	if len(entries) == 0 {
 		model.explorer.Selected = -1
 		model.explorer.List.ResetSelected()
+		restoreListFilter(&model.explorer.List, filterValue, filterState)
 		return
 	}
 	if model.selectedEndpoint != nil {
@@ -588,6 +599,7 @@ func (model *rootModel) refreshExplorerList() {
 			if entry.Identity == *model.selectedEndpoint {
 				model.explorer.Selected = index
 				model.explorer.List.Select(index)
+				restoreListFilter(&model.explorer.List, filterValue, filterState)
 				return
 			}
 		}
@@ -596,6 +608,7 @@ func (model *rootModel) refreshExplorerList() {
 		model.explorer.Selected = 0
 	}
 	model.explorer.List.Select(model.explorer.Selected)
+	restoreListFilter(&model.explorer.List, filterValue, filterState)
 }
 
 func (model *rootModel) filteredEndpointEntries() []EndpointEntry {
@@ -613,6 +626,14 @@ func (model *rootModel) syncNamespaceSelection() {
 		return
 	}
 	model.namespaces.Selected = index
+}
+
+func restoreListFilter(model *list.Model, value string, state list.FilterState) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed != "" {
+		model.SetFilterText(value)
+	}
+	model.SetFilterState(state)
 }
 
 func (model *rootModel) syncHomeSelection() {
@@ -636,7 +657,8 @@ func (model *rootModel) syncRepoSelection() {
 func (model *rootModel) resizeLists() {
 	width, height := listSize(model.width, model.height)
 	listWidth := model.activeListWidth(width)
-	listHeight := height - 1
+	// Reserve rows for header+gap and bottom paginator/help shell.
+	listHeight := height - 5
 	if listHeight < 1 {
 		listHeight = 1
 	}
@@ -651,7 +673,11 @@ func (model *rootModel) resizeLists() {
 		detailWidth = listWidth
 	}
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
-	model.explorer.Detail.Viewport.SetHeight(height)
+	detailHeight := listHeight - 2
+	if detailHeight < 1 {
+		detailHeight = 1
+	}
+	model.explorer.Detail.Viewport.SetHeight(detailHeight)
 }
 
 func (model *rootModel) activeListWidth(terminalWidth int) int {

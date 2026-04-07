@@ -181,13 +181,18 @@ func (s *RuntimeService) ListNamespaces(
 	var rows []clioutput.NamespaceRow
 	body, err := client.ListNamespaces(ctx)
 	query := strings.TrimSpace(options.Query)
+	usedServerFiltering := false
+	usedServerPaging := false
 	if query != "" {
 		if filtered, ok := client.(filteredPagedTransportClient); ok {
 			body, err = filtered.ListNamespacesPageFiltered(ctx, query, options.Limit, options.Offset)
+			usedServerFiltering = true
+			usedServerPaging = true
 		}
 	} else if options.Limit > 0 || options.Offset > 0 {
 		if paged, ok := client.(pagedTransportClient); ok {
 			body, err = paged.ListNamespacesPage(ctx, options.Limit, options.Offset)
+			usedServerPaging = true
 		}
 	}
 	if err != nil {
@@ -196,8 +201,12 @@ func (s *RuntimeService) ListNamespaces(
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("decode namespace inventory: %w", err)
 	}
-	rows = filterNamespaceRows(rows, query)
-	rows = paginateRows(rows, options.Limit, options.Offset)
+	if !usedServerFiltering {
+		rows = filterNamespaceRows(rows, query)
+	}
+	if !usedServerPaging {
+		rows = paginateRows(rows, options.Limit, options.Offset)
+	}
 	return clioutput.RenderNamespaces(rows, format)
 }
 
@@ -224,13 +233,18 @@ func (s *RuntimeService) ListRepos(
 	body, err := client.ListRepos(ctx)
 	query := strings.TrimSpace(options.Query)
 	namespace := strings.TrimSpace(options.Namespace)
+	usedServerFiltering := false
+	usedServerPaging := false
 	if query != "" {
 		if filtered, ok := client.(filteredPagedTransportClient); ok {
 			body, err = filtered.ListReposPageFiltered(ctx, namespace, query, options.Limit, options.Offset)
+			usedServerFiltering = true
+			usedServerPaging = true
 		}
 	} else if options.Limit > 0 || options.Offset > 0 {
 		if paged, ok := client.(pagedTransportClient); ok {
 			body, err = paged.ListReposPage(ctx, namespace, options.Limit, options.Offset)
+			usedServerPaging = true
 		}
 	}
 	if err != nil {
@@ -239,8 +253,12 @@ func (s *RuntimeService) ListRepos(
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("decode repo inventory: %w", err)
 	}
-	rows = filterRepoRows(rows, query)
-	rows = paginateRows(rows, options.Limit, options.Offset)
+	if !usedServerFiltering {
+		rows = filterRepoRows(rows, query)
+	}
+	if !usedServerPaging {
+		rows = paginateRows(rows, options.Limit, options.Offset)
+	}
 	return clioutput.RenderRepos(rows, format)
 }
 
@@ -313,13 +331,18 @@ func (s *RuntimeService) ListOperations(
 
 	body, err := client.ListOperations(ctx, normalized)
 	query := strings.TrimSpace(options.Query)
+	usedServerFiltering := false
+	usedServerPaging := false
 	if query != "" {
 		if filtered, ok := client.(filteredPagedTransportClient); ok {
 			body, err = filtered.ListOperationsPageFiltered(ctx, normalized, query, options.Limit, options.Offset)
+			usedServerFiltering = true
+			usedServerPaging = true
 		}
 	} else if options.Limit > 0 || options.Offset > 0 {
 		if paged, ok := client.(pagedTransportClient); ok {
 			body, err = paged.ListOperationsPage(ctx, normalized, options.Limit, options.Offset)
+			usedServerPaging = true
 		}
 	}
 	if err != nil {
@@ -330,8 +353,12 @@ func (s *RuntimeService) ListOperations(
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("decode operation inventory: %w", err)
 	}
-	rows = filterOperationRowsByQuery(rows, query)
-	rows = paginateRows(rows, options.Limit, options.Offset)
+	if !usedServerFiltering {
+		rows = filterOperationRowsByQuery(rows, query)
+	}
+	if !usedServerPaging {
+		rows = paginateRows(rows, options.Limit, options.Offset)
+	}
 	for index := range rows {
 		if normalized.Namespace != "" {
 			rows[index].Namespace = normalized.Namespace

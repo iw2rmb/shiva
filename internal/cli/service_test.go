@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -160,6 +161,94 @@ func TestRuntimeServicePinsFloatingRequestsToPreparedSnapshot(t *testing.T) {
 			}
 			testCase.assert(t, testCase.client)
 		})
+	}
+}
+
+func TestRuntimeServiceListNamespacesPagedTransportDoesNotRepaginateLocally(t *testing.T) {
+	t.Parallel()
+
+	client := &pagedRecordingTransportClient{
+		recordingTransportClient: recordingTransportClient{
+			namespacesBody: []byte(`[]`),
+		},
+		namespacesPageBody: []byte(`[{"namespace":"acme","repo_count":1,"all_pending":false}]`),
+	}
+	service := newRuntimeServiceWithTransportClient(client)
+
+	body, err := service.ListNamespaces(context.Background(), RequestOptions{
+		Limit:  5,
+		Offset: 5,
+	}, clioutput.ListFormatJSON)
+	if err != nil {
+		t.Fatalf("list namespaces failed: %v", err)
+	}
+
+	var rows []clioutput.NamespaceRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		t.Fatalf("decode namespaces output: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Namespace != "acme" {
+		t.Fatalf("expected paged row to survive without local re-pagination, got %+v", rows)
+	}
+}
+
+func TestRuntimeServiceListReposPagedTransportDoesNotRepaginateLocally(t *testing.T) {
+	t.Parallel()
+
+	client := &pagedRecordingTransportClient{
+		recordingTransportClient: recordingTransportClient{
+			reposBody: []byte(`[]`),
+		},
+		reposPageBody: []byte(`[{"namespace":"acme","repo":"platform"}]`),
+	}
+	service := newRuntimeServiceWithTransportClient(client)
+
+	body, err := service.ListRepos(context.Background(), RequestOptions{
+		Namespace: "acme",
+		Limit:     5,
+		Offset:    5,
+	}, clioutput.ListFormatJSON)
+	if err != nil {
+		t.Fatalf("list repos failed: %v", err)
+	}
+
+	var rows []clioutput.RepoRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		t.Fatalf("decode repos output: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Repo != "platform" {
+		t.Fatalf("expected paged row to survive without local re-pagination, got %+v", rows)
+	}
+}
+
+func TestRuntimeServiceListOperationsPagedTransportDoesNotRepaginateLocally(t *testing.T) {
+	t.Parallel()
+
+	client := &pagedRecordingTransportClient{
+		recordingTransportClient: recordingTransportClient{
+			operationsBody: []byte(`[]`),
+		},
+		operationsPageBody: []byte(`[{"namespace":"acme","repo":"platform","api":"apis/pets/openapi.yaml","method":"get","path":"/pets","operation_id":"listPets"}]`),
+	}
+	service := newRuntimeServiceWithTransportClient(client)
+
+	body, err := service.ListOperations(context.Background(), request.Envelope{
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{
+		Limit:  5,
+		Offset: 5,
+	}, clioutput.ListFormatJSON)
+	if err != nil {
+		t.Fatalf("list operations failed: %v", err)
+	}
+
+	var rows []clioutput.OperationRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		t.Fatalf("decode operations output: %v", err)
+	}
+	if len(rows) != 1 || rows[0].OperationID != "listPets" {
+		t.Fatalf("expected paged row to survive without local re-pagination, got %+v", rows)
 	}
 }
 
@@ -585,6 +674,13 @@ type recordingTransportClient struct {
 	lastCountSelector     request.Envelope
 }
 
+type pagedRecordingTransportClient struct {
+	recordingTransportClient
+	namespacesPageBody []byte
+	reposPageBody      []byte
+	operationsPageBody []byte
+}
+
 func (c *recordingTransportClient) CountNamespaces(ctx context.Context) ([]byte, error) {
 	c.namespaceCountCalls++
 	if c.namespaceCountErr != nil {
@@ -675,4 +771,45 @@ func (c *recordingTransportClient) ListOperations(ctx context.Context, selector 
 
 func (c *recordingTransportClient) Health(ctx context.Context) ([]byte, error) {
 	return c.healthBody, nil
+}
+
+func (c *pagedRecordingTransportClient) ListNamespacesPage(ctx context.Context, limit int32, offset int32) ([]byte, error) {
+	_ = ctx
+	_ = limit
+	_ = offset
+	return c.namespacesPageBody, nil
+}
+
+func (c *pagedRecordingTransportClient) ListReposPage(ctx context.Context, namespace string, limit int32, offset int32) ([]byte, error) {
+	_ = ctx
+	_ = namespace
+	_ = limit
+	_ = offset
+	return c.reposPageBody, nil
+}
+
+func (c *pagedRecordingTransportClient) ListOperationsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error) {
+	_ = ctx
+	_ = selector
+	_ = limit
+	_ = offset
+	return c.operationsPageBody, nil
+}
+
+func newRuntimeServiceWithTransportClient(client transportClient) *RuntimeService {
+	return &RuntimeService{
+		document: config.Document{
+			ActiveProfile: "default",
+			Profiles: map[string]profile.Source{
+				"default": {Name: "default", BaseURL: "http://default.example", Timeout: 5 * time.Second},
+			},
+			Targets: map[string]target.Entry{
+				target.BuiltinShivaName: target.BuiltinShiva(),
+			},
+		},
+		newClient: func(source profile.Source) (transportClient, error) {
+			_ = source
+			return client, nil
+		},
+	}
 }

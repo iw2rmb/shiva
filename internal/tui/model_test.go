@@ -246,6 +246,50 @@ func TestRootModelNamespacesFilterInputTriggersServerRefresh(t *testing.T) {
 	}
 }
 
+func TestRootModelNamespaceRefreshPreservesActiveFilterInput(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteNamespaces}, RequestOptions{})
+	model.namespaces.List.SetFilterText("ac")
+	model.namespaces.List.SetFilterState(list.Filtering)
+
+	token := model.beginNamespaceCatalogLoad()
+	updated, _ := model.Update(namespaceCatalogLoadedMsg{
+		Token: token,
+		Rows:  []NamespaceEntry{{Namespace: "acme", RepoCount: 1}},
+	})
+	model = updated.(*rootModel)
+
+	if model.namespaces.List.FilterValue() != "ac" {
+		t.Fatalf("expected namespace filter value to be preserved, got %q", model.namespaces.List.FilterValue())
+	}
+	if model.namespaces.List.FilterState() != list.Filtering {
+		t.Fatalf("expected namespace filter state to remain filtering, got %v", model.namespaces.List.FilterState())
+	}
+}
+
+func TestRootModelRepoRefreshPreservesActiveFilterInput(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
+	model.repoList.List.SetFilterText("pla")
+	model.repoList.List.SetFilterState(list.Filtering)
+
+	token := model.beginRepoCatalogLoad()
+	updated, _ := model.Update(repoCatalogLoadedMsg{
+		Token: token,
+		Rows:  []RepoEntry{{Namespace: "acme", Repo: "platform"}},
+	})
+	model = updated.(*rootModel)
+
+	if model.repoList.List.FilterValue() != "pla" {
+		t.Fatalf("expected repo filter value to be preserved, got %q", model.repoList.List.FilterValue())
+	}
+	if model.repoList.List.FilterState() != list.Filtering {
+		t.Fatalf("expected repo filter state to remain filtering, got %v", model.repoList.List.FilterState())
+	}
+}
+
 func TestRootModelTypingQInNamespaceFilterDoesNotQuit(t *testing.T) {
 	t.Parallel()
 
