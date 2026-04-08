@@ -128,14 +128,19 @@ Rules:
     - active header item determines which list preview is rendered below
     - in `ENDPOINTS`, the screen is split:
       - left pane: global header + endpoints list
-      - right pane: details pane starts at row 1 with `/ REQUEST / RESPONSE / ERRORS`
+      - right pane: details pane starts at row 1 with `/ REQUEST / RESPONSE / ERRORS` and uses width `max(viewport_width/3, 90)` when side-by-side layout fits
     - bottom rows are fixed as:
       - paginator row (`<current>/<total>`) for the active list scope
       - endpoints scope shows `...` while `/v1/operations/count` is still in-flight
       - help footer row
     - details header row renders `/ REQUEST / RESPONSE <2xx chips> / ERRORS <non-2xx/default chips>`
     - details pane has no top border and uses a dark-gray left border
+    - details pane omits the endpoint identity row (`<method> <endpoint>`) above markdown content
     - request tab body omits the `## Request` heading and omits the ``Summary:`` label
+    - parameter/body section labels use inline badges:
+      - path params: `/: Path`
+      - query params: `?& Query`
+      - request body: `{} Body`
     - when operation description is empty, request tab shows gray italic `No decsription`
   - focus/input model:
     - focus target is either `header` or the active list
@@ -153,7 +158,9 @@ Rules:
   - endpoint catalog loading:
     - endpoint rows are sorted by path, method, operation id, then API
     - endpoint rows render method chips using one-dark palette mapping: `GET` blue, `POST` green, `PUT` yellow, `PATCH` orange, `DELETE` red, `OPTIONS`/`HEAD` neutral gray
+    - non-active endpoint row titles are faint; active row title keeps normal emphasis
     - endpoint row title uses a fixed 9-cell method lane with right-aligned chip (`left margin = 9 - chip width`)
+    - endpoint path params render as `:name` (instead of `{name}`) using color `#c11c84`
     - endpoint subtitle uses a fixed left margin of 10 columns:
       - `#<operationId> <summary>` when operation id exists
       - `<summary>` when operation id is empty

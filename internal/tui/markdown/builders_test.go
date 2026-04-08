@@ -121,12 +121,11 @@ func TestBuildEndpoint(t *testing.T) {
 			contains: []string{
 				"## GET /pets/{petId}",
 				"`Operation ID:` `listPets`",
-				"### Parameters",
-				"#### Path Parameters",
+				"/: Path",
 				"* /{petId}/: string",
-				"#### Query Parameters",
+				"?& Query",
 				"&limit: integer = 50",
-				"### Request Body",
+				"{} Body",
 				"#### `application/json`",
 				"CreatePetRequest {",
 				"### Responses",
@@ -140,9 +139,9 @@ func TestBuildEndpoint(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			output := BuildEndpoint(tc.input)
+			output := normalizeWhitespace(stripANSI(BuildEndpoint(tc.input)))
 			for _, part := range tc.contains {
-				if !strings.Contains(output, part) {
+				if !strings.Contains(output, normalizeWhitespace(part)) {
 					t.Fatalf("expected endpoint markdown to contain %q; output:\n%s", part, output)
 				}
 			}
@@ -153,7 +152,7 @@ func TestBuildEndpoint(t *testing.T) {
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
 
-	output := BuildRequest(EndpointInput{
+	output := normalizeWhitespace(stripANSI(BuildRequest(EndpointInput{
 		Method: "get",
 		Path:   "/pets/{petId}",
 		Operation: mustRawJSON(t, map[string]any{
@@ -186,14 +185,14 @@ func TestBuildRequest(t *testing.T) {
 				},
 			},
 		}),
-	})
+	})))
 
 	for _, part := range []string{
 		"`Operation ID:` `listPets`",
-		"### Parameters",
-		"### Request Body",
+		"/: Path",
+		"{} Body",
 	} {
-		if !strings.Contains(output, part) {
+		if !strings.Contains(output, normalizeWhitespace(part)) {
 			t.Fatalf("expected request markdown to contain %q; output:\n%s", part, output)
 		}
 	}
@@ -315,4 +314,27 @@ func mustRawJSON(t *testing.T, value any) json.RawMessage {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return body
+}
+
+func stripANSI(value string) string {
+	replacer := strings.NewReplacer("\u001b[0m", "")
+	value = replacer.Replace(value)
+	for {
+		start := strings.Index(value, "\u001b[")
+		if start < 0 {
+			return value
+		}
+		end := start
+		for end < len(value) && value[end] != 'm' {
+			end++
+		}
+		if end >= len(value) {
+			return value[:start]
+		}
+		value = value[:start] + value[end+1:]
+	}
+}
+
+func normalizeWhitespace(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }

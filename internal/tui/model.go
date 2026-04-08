@@ -680,13 +680,18 @@ func (model *rootModel) resizeLists() {
 	model.help.SetWidth(width)
 
 	detailWidth := width - listWidth - 2
-	if detailWidth < 24 {
+	if model.home.Selected == homeItemEndpoints {
+		detailWidth = endpointDetailsTargetWidth(width)
+		if listWidth+2+detailWidth > width {
+			detailWidth = listWidth
+		}
+	} else if detailWidth < 24 {
 		detailWidth = listWidth
 	}
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
 	detailHeight := listHeight - 3
 	if model.home.Selected == homeItemEndpoints {
-		// Tabs + spacer + endpoint line are rendered outside the viewport.
+		// Tabs and spacer are rendered outside the viewport.
 		detailHeight = height - 5
 	}
 	if detailHeight < 1 {
@@ -783,10 +788,11 @@ func (model *rootModel) viewEndpointsScreen(header string, footer string) string
 
 	width, _ := listSize(model.width, model.height)
 	leftWidth := model.activeListWidth(width)
-	rightWidth := width - leftWidth - 2
+	rightWidth := endpointDetailsTargetWidth(width)
+	stacked := leftWidth+2+rightWidth > width
 
 	body := ""
-	if rightWidth < 24 {
+	if stacked {
 		body = strings.Join([]string{
 			renderPaneAtWidth(left, leftWidth),
 			"",
@@ -923,19 +929,20 @@ func (model *rootModel) viewEndpointsPane() string {
 }
 
 func (model *rootModel) endpointDetailsPaneView() string {
-	selected, ok := model.explorer.SelectedEndpoint()
-	endpointRow := ""
-	if ok {
-		endpointRow = methodChip(selected.Identity.Method) + " " + renderPathWithDimmedParams(selected.Identity.Path)
-	}
 	body := strings.Join([]string{
 		model.explorerTabRow(),
 		"",
-		"",
-		endpointRow,
 		model.explorer.Detail.Viewport.View(),
 	}, "\n")
 	return model.styles.DetailPane(body, model.explorer.Detail.Viewport.Width())
+}
+
+func endpointDetailsTargetWidth(viewportWidth int) int {
+	width := viewportWidth / 3
+	if width < 90 {
+		width = 90
+	}
+	return width
 }
 
 func browserPaneLayout(width int, includeDetails bool) (int, int, int, bool) {

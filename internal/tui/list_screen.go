@@ -45,7 +45,7 @@ func newRepoList() list.Model {
 
 func newEndpointList() list.Model {
 	delegate := list.NewDefaultDelegate()
-	delegate.Styles.NormalTitle = lipgloss.NewStyle().Padding(0, 0, 0, 2)
+	delegate.Styles.NormalTitle = lipgloss.NewStyle().Padding(0, 0, 0, 2).Faint(true)
 	delegate.Styles.NormalDesc = lipgloss.NewStyle().Padding(0, 0, 0, 2).Faint(true)
 	delegate.Styles.SelectedTitle = lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder(), false, false, false, true).
@@ -313,7 +313,7 @@ func endpointItems(entries []EndpointEntry) []list.Item {
 		if path == "" {
 			path = "/"
 		}
-		title := methodChipWithAlignedGap(entry.Identity.Method) + " " + pathBaseStyle.Render(path)
+		title := methodChipWithAlignedGap(entry.Identity.Method) + " " + renderPathWithDimmedParams(path)
 
 		descriptionParts := make([]string, 0, 2)
 		operationID := strings.TrimSpace(entry.Identity.OperationID)

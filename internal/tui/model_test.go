@@ -906,6 +906,17 @@ func TestBrowserPaneLayoutGuardsListMinWidth(t *testing.T) {
 	}
 }
 
+func TestEndpointDetailsTargetWidth(t *testing.T) {
+	t.Parallel()
+
+	if got := endpointDetailsTargetWidth(120); got != 90 {
+		t.Fatalf("expected width 90 for viewport 120, got %d", got)
+	}
+	if got := endpointDetailsTargetWidth(360); got != 120 {
+		t.Fatalf("expected width 120 for viewport 360, got %d", got)
+	}
+}
+
 func TestRootModelIgnoresStaleOperationDetailMessages(t *testing.T) {
 	t.Parallel()
 

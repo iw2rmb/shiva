@@ -92,3 +92,30 @@ func TestEndpointItemsDescriptionDoesNotUseEndpointFallback(t *testing.T) {
 		t.Fatalf("expected empty subtitle when operation id and summary are absent, got %q", item.Description())
 	}
 }
+
+func TestEndpointItemsTitleRendersPathParamsAsColonTokens(t *testing.T) {
+	t.Parallel()
+
+	items := endpointItems([]EndpointEntry{
+		{
+			Identity: EndpointIdentity{
+				Method: "get",
+				Path:   "/pets/{petId}",
+			},
+		},
+	})
+	if len(items) != 1 {
+		t.Fatalf("expected 1 endpoint item, got %d", len(items))
+	}
+	item, ok := items[0].(endpointListItem)
+	if !ok {
+		t.Fatalf("expected endpointListItem, got %T", items[0])
+	}
+	title := stripANSI(item.Title())
+	if !strings.Contains(title, "/pets/:petId") {
+		t.Fatalf("expected title to render path param as colon token, got %q", title)
+	}
+	if strings.Contains(title, "{petId}") {
+		t.Fatalf("expected title to avoid brace token, got %q", title)
+	}
+}

@@ -551,7 +551,7 @@ func TestRootModelExplorerTabSwitchesReplaceViewportContent(t *testing.T) {
 	model.refreshExplorerDetailViewport()
 
 	endpointRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
-	if !strings.Contains(endpointRendered, "Request") {
+	if !strings.Contains(endpointRendered, "Operation ID:") {
 		t.Fatalf("expected request markdown content, got %q", endpointRendered)
 	}
 	selectionBefore := model.explorer.Selected

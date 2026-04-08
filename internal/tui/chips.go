@@ -12,7 +12,7 @@ import (
 var (
 	methodChipBaseStyle    = lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	pathBaseStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
-	pathParamStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Faint(true)
+	pathParamStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#c11c84"))
 	responseSuccessStyle   = lipgloss.NewStyle().Bold(true).Padding(0, 1).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#6d8f56"))
 	responseErrorChipStyle = lipgloss.NewStyle().Bold(true).Padding(0, 1).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#c96169"))
 )
@@ -62,7 +62,12 @@ func renderPathWithDimmedParams(path string) string {
 		if index > start {
 			parts = append(parts, pathBaseStyle.Render(path[start:index]))
 		}
-		parts = append(parts, pathParamStyle.Render(path[index:end+1]))
+		paramName := strings.TrimSpace(path[index+1 : end])
+		paramToken := ":"
+		if paramName != "" {
+			paramToken += paramName
+		}
+		parts = append(parts, pathParamStyle.Render(paramToken))
 		start = end + 1
 		index = end
 	}

@@ -84,6 +84,17 @@ type schemaNode struct {
 	AllOf       []schemaNode          `json:"allOf"`
 }
 
+var (
+	detailHeaderBadgeStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color("#FFFFFF")).
+				Padding(0, 1)
+	detailHeaderLabelStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#FFFFFF"))
+)
+
 func BuildEndpoint(input EndpointInput) string {
 	method := strings.ToUpper(strings.TrimSpace(input.Method))
 	if method == "" {
@@ -252,11 +263,7 @@ func renderServersSection(source string, servers []serverDocument) string {
 
 func renderParametersSection(parameters []parameterDocument) string {
 	if len(parameters) == 0 {
-		return strings.Join([]string{
-			"### Parameters",
-			"",
-			"No documented parameters.",
-		}, "\n")
+		return "No documented parameters."
 	}
 
 	grouped := map[string][]parameterDocument{}
@@ -279,28 +286,29 @@ func renderParametersSection(parameters []parameterDocument) string {
 	sort.Strings(remaining)
 	order = append(order, remaining...)
 
-	parts := []string{"### Parameters"}
+	parts := make([]string, 0, len(order)*2)
 	for _, location := range order {
 		group := grouped[location]
 		if len(group) == 0 {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("#### %s Parameters", strings.Title(location)))
+		parts = append(parts, renderParameterSectionHeader(location))
 		parts = append(parts, renderParameterBlock(location, group))
 	}
 	return strings.Join(parts, "\n\n")
 }
 
 func renderRequestBodySection(requestBody *requestBodyDocument) string {
+	header := detailHeaderBadgeStyle.Render("{}") + " " + detailHeaderLabelStyle.Render("Body")
 	if requestBody == nil {
 		return strings.Join([]string{
-			"### Request Body",
+			header,
 			"",
 			"No documented request body.",
 		}, "\n")
 	}
 
-	parts := []string{"### Request Body"}
+	parts := []string{header}
 	if requestBody.Description != "" {
 		parts = append(parts, requestBody.Description)
 	}
@@ -324,6 +332,17 @@ func renderRequestBodySection(requestBody *requestBodyDocument) string {
 		parts = append(parts, renderSchemaBlock("body", schema))
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func renderParameterSectionHeader(location string) string {
+	switch location {
+	case "path":
+		return detailHeaderBadgeStyle.Render("/:") + " " + detailHeaderLabelStyle.Render("Path")
+	case "query":
+		return detailHeaderBadgeStyle.Render("?&") + " " + detailHeaderLabelStyle.Render("Query")
+	default:
+		return fmt.Sprintf("#### %s Parameters", strings.Title(location))
+	}
 }
 
 func renderResponsesSection(
