@@ -48,14 +48,31 @@ type NamespaceCatalogCountInput struct {
 	QueryPrefix string
 }
 
+type APIInventoryListInput struct {
+	Namespace   string
+	Repo        string
+	QueryPrefix string
+	Limit       int32
+	Offset      int32
+}
+
+type APIInventoryCountInput struct {
+	Namespace   string
+	Repo        string
+	QueryPrefix string
+}
+
 type NamespaceCatalogListResult struct {
 	Items      []NamespaceCatalogEntry
 	TotalCount int64
 }
 
 type APISnapshot struct {
+	Namespace string
+	Repo      string
 	APISpecID int64
 	API       string
+	Title     string
 	Status    string
 
 	DisplayName string
@@ -135,10 +152,22 @@ type repoCatalogFreshnessQueries interface {
 }
 
 type apiSnapshotInventoryQueries interface {
+	ListAPICatalogInventory(
+		ctx context.Context,
+		arg sqlc.ListAPICatalogInventoryParams,
+	) ([]sqlc.ListAPICatalogInventoryRow, error)
+	ListAPICatalogInventoryPage(
+		ctx context.Context,
+		arg sqlc.ListAPICatalogInventoryPageParams,
+	) ([]sqlc.ListAPICatalogInventoryPageRow, error)
 	ListAPISnapshotInventoryByRepoRevision(
 		ctx context.Context,
 		arg sqlc.ListAPISnapshotInventoryByRepoRevisionParams,
 	) ([]sqlc.ListAPISnapshotInventoryByRepoRevisionRow, error)
+	ListAPISnapshotInventoryByRepoRevisionPage(
+		ctx context.Context,
+		arg sqlc.ListAPISnapshotInventoryByRepoRevisionPageParams,
+	) ([]sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow, error)
 	GetAPISnapshotByRepoRevisionAndAPI(
 		ctx context.Context,
 		arg sqlc.GetAPISnapshotByRepoRevisionAndAPIParams,
@@ -178,6 +207,17 @@ type operationInventoryQueries interface {
 		ctx context.Context,
 		arg sqlc.ListOperationInventoryByRepoRevisionAndAPIPageParams,
 	) ([]sqlc.ListOperationInventoryByRepoRevisionAndAPIPageRow, error)
+}
+
+type apiCatalogCountQueries interface {
+	CountAPICatalogInventory(
+		ctx context.Context,
+		arg sqlc.CountAPICatalogInventoryParams,
+	) (sqlc.CountAPICatalogInventoryRow, error)
+	CountAPIInventoryByRepoRevision(
+		ctx context.Context,
+		arg sqlc.CountAPIInventoryByRepoRevisionParams,
+	) (sqlc.CountAPIInventoryByRepoRevisionRow, error)
 }
 
 type operationLookupByIDQueries interface {
@@ -368,6 +408,44 @@ func (s *Store) ListAPISnapshotInventoryByRepoRevision(
 	return listAPISnapshotInventoryByRepoRevision(ctx, sqlc.New(s.pool), repoID, snapshotRevisionID)
 }
 
+func (s *Store) ListAPICatalogInventory(
+	ctx context.Context,
+	namespace string,
+	repo string,
+) ([]APISnapshot, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+	namespace = strings.TrimSpace(namespace)
+	repo = strings.TrimSpace(repo)
+	if repo != "" && namespace == "" {
+		return nil, errors.New("namespace is required when repo is provided")
+	}
+	return listAPICatalogInventory(ctx, sqlc.New(s.pool), namespace, repo)
+}
+
+func (s *Store) ListAPICatalogInventoryPage(
+	ctx context.Context,
+	input APIInventoryListInput,
+) ([]APISnapshot, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+	if input.Limit < 1 {
+		return nil, errors.New("limit must be positive")
+	}
+	if input.Offset < 0 {
+		return nil, errors.New("offset must be non-negative")
+	}
+	input.Namespace = strings.TrimSpace(input.Namespace)
+	input.Repo = strings.TrimSpace(input.Repo)
+	input.QueryPrefix = strings.TrimSpace(input.QueryPrefix)
+	if input.Repo != "" && input.Namespace == "" {
+		return nil, errors.New("namespace is required when repo is provided")
+	}
+	return listAPICatalogInventoryPage(ctx, sqlc.New(s.pool), input)
+}
+
 func listAPISnapshotInventoryByRepoRevision(
 	ctx context.Context,
 	queries apiSnapshotInventoryQueries,
@@ -387,6 +465,64 @@ func listAPISnapshotInventoryByRepoRevision(
 		items = append(items, mapAPISnapshotInventoryRow(row))
 	}
 
+	return items, nil
+}
+
+func listAPICatalogInventory(
+	ctx context.Context,
+	queries apiSnapshotInventoryQueries,
+	namespace string,
+	repo string,
+) ([]APISnapshot, error) {
+	rows, err := queries.ListAPICatalogInventory(ctx, sqlc.ListAPICatalogInventoryParams{
+		Namespace: namespace,
+		Repo:      repo,
+	})
+	if err != nil {
+		scope := "all repositories"
+		if namespace != "" {
+			scope = "namespace " + namespace
+		}
+		if repo != "" {
+			scope = "repo " + namespace + "/" + repo
+		}
+		return nil, fmt.Errorf("list api catalog inventory for %s: %w", scope, err)
+	}
+
+	items := make([]APISnapshot, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, mapAPICatalogInventoryRow(row))
+	}
+
+	return items, nil
+}
+
+func listAPICatalogInventoryPage(
+	ctx context.Context,
+	queries apiSnapshotInventoryQueries,
+	input APIInventoryListInput,
+) ([]APISnapshot, error) {
+	rows, err := queries.ListAPICatalogInventoryPage(ctx, sqlc.ListAPICatalogInventoryPageParams{
+		Namespace:   input.Namespace,
+		Repo:        input.Repo,
+		QueryPrefix: input.QueryPrefix,
+		PageLimit:   input.Limit,
+		PageOffset:  input.Offset,
+	})
+	if err != nil {
+		scope := "global"
+		if input.Namespace != "" && input.Repo != "" {
+			scope = "repo " + input.Namespace + "/" + input.Repo
+		} else if input.Namespace != "" {
+			scope = "namespace " + input.Namespace
+		}
+		return nil, fmt.Errorf("list api catalog inventory page for %s: %w", scope, err)
+	}
+
+	items := make([]APISnapshot, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, mapAPICatalogInventoryPageRow(row))
+	}
 	return items, nil
 }
 
@@ -411,6 +547,71 @@ func (s *Store) GetAPISnapshotByRepoRevisionAndAPI(
 	}
 
 	return getAPISnapshotByRepoRevisionAndAPI(ctx, sqlc.New(s.pool), repoID, api, snapshotRevisionID)
+}
+
+func (s *Store) ListAPISnapshotInventoryByRepoRevisionPage(
+	ctx context.Context,
+	repoID int64,
+	snapshotRevisionID int64,
+	queryPrefix string,
+	limit int32,
+	offset int32,
+) ([]APISnapshot, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return nil, ErrStoreNotConfigured
+	}
+	if repoID < 1 {
+		return nil, errors.New("repo id must be positive")
+	}
+	if snapshotRevisionID < 1 {
+		return nil, errors.New("snapshot revision id must be positive")
+	}
+	if limit < 1 {
+		return nil, errors.New("limit must be positive")
+	}
+	if offset < 0 {
+		return nil, errors.New("offset must be non-negative")
+	}
+	return listAPISnapshotInventoryByRepoRevisionPage(
+		ctx,
+		sqlc.New(s.pool),
+		repoID,
+		snapshotRevisionID,
+		strings.TrimSpace(queryPrefix),
+		limit,
+		offset,
+	)
+}
+
+func listAPISnapshotInventoryByRepoRevisionPage(
+	ctx context.Context,
+	queries apiSnapshotInventoryQueries,
+	repoID int64,
+	snapshotRevisionID int64,
+	queryPrefix string,
+	limit int32,
+	offset int32,
+) ([]APISnapshot, error) {
+	rows, err := queries.ListAPISnapshotInventoryByRepoRevisionPage(ctx, sqlc.ListAPISnapshotInventoryByRepoRevisionPageParams{
+		RepoID:             repoID,
+		SnapshotRevisionID: snapshotRevisionID,
+		QueryPrefix:        queryPrefix,
+		PageLimit:          limit,
+		PageOffset:         offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list api snapshot inventory page for repo %d revision %d: %w",
+			repoID,
+			snapshotRevisionID,
+			err,
+		)
+	}
+	items := make([]APISnapshot, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, mapAPISnapshotInventoryPageRow(row))
+	}
+	return items, nil
 }
 
 func getAPISnapshotByRepoRevisionAndAPI(
@@ -578,27 +779,70 @@ func (s *Store) CountOperationCatalogInventory(
 	)
 }
 
-func (s *Store) CountAPICatalogInventory(ctx context.Context) (OperationCatalogCount, error) {
+func (s *Store) CountAPICatalogInventory(ctx context.Context, input APIInventoryCountInput) (OperationCatalogCount, error) {
 	if s == nil || !s.configured || s.pool == nil {
 		return OperationCatalogCount{}, ErrStoreNotConfigured
 	}
+	input.Namespace = strings.TrimSpace(input.Namespace)
+	input.Repo = strings.TrimSpace(input.Repo)
+	input.QueryPrefix = strings.TrimSpace(input.QueryPrefix)
+	if input.Repo != "" && input.Namespace == "" {
+		return OperationCatalogCount{}, errors.New("namespace is required when repo is provided")
+	}
+	return countAPICatalogInventory(ctx, sqlc.New(s.pool), input)
+}
 
-	row := s.pool.QueryRow(
-		ctx,
-		`
-		SELECT
-			COUNT(*)::BIGINT AS total_count,
-			COALESCE(MAX(CHAR_LENGTH(TRIM(root_path))), 0)::BIGINT AS max_item_length
-		FROM api_specs
-		WHERE status = 'active'
-		`,
-	)
-
-	var count OperationCatalogCount
-	if err := row.Scan(&count.TotalCount, &count.MaxItemLength); err != nil {
+func countAPICatalogInventory(
+	ctx context.Context,
+	queries apiCatalogCountQueries,
+	input APIInventoryCountInput,
+) (OperationCatalogCount, error) {
+	row, err := queries.CountAPICatalogInventory(ctx, sqlc.CountAPICatalogInventoryParams{
+		Namespace:   input.Namespace,
+		Repo:        input.Repo,
+		QueryPrefix: input.QueryPrefix,
+	})
+	if err != nil {
 		return OperationCatalogCount{}, fmt.Errorf("count api catalog inventory: %w", err)
 	}
-	return count, nil
+	return OperationCatalogCount{
+		TotalCount:    row.TotalCount,
+		MaxItemLength: row.MaxItemLength,
+	}, nil
+}
+
+func (s *Store) CountAPIInventoryByRepoRevision(
+	ctx context.Context,
+	repoID int64,
+	snapshotRevisionID int64,
+	queryPrefix string,
+) (OperationCatalogCount, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return OperationCatalogCount{}, ErrStoreNotConfigured
+	}
+	if repoID < 1 {
+		return OperationCatalogCount{}, errors.New("repo id must be positive")
+	}
+	if snapshotRevisionID < 1 {
+		return OperationCatalogCount{}, errors.New("snapshot revision id must be positive")
+	}
+	row, err := sqlc.New(s.pool).CountAPIInventoryByRepoRevision(ctx, sqlc.CountAPIInventoryByRepoRevisionParams{
+		RepoID:             repoID,
+		SnapshotRevisionID: snapshotRevisionID,
+		QueryPrefix:        strings.TrimSpace(queryPrefix),
+	})
+	if err != nil {
+		return OperationCatalogCount{}, fmt.Errorf(
+			"count api inventory for repo %d revision %d: %w",
+			repoID,
+			snapshotRevisionID,
+			err,
+		)
+	}
+	return OperationCatalogCount{
+		TotalCount:    row.TotalCount,
+		MaxItemLength: row.MaxItemLength,
+	}, nil
 }
 
 func listOperationCatalogInventory(
@@ -1206,6 +1450,7 @@ func mapAPISnapshotInventoryRow(row sqlc.ListAPISnapshotInventoryByRepoRevisionR
 	return APISnapshot{
 		APISpecID:         row.ApiSpecID,
 		API:               row.Api,
+		Title:             strings.TrimSpace(row.Title),
 		Status:            row.Status,
 		DisplayName:       textValue(row.DisplayName),
 		HasSnapshot:       row.ApiSpecRevisionID.Valid,
@@ -1223,6 +1468,65 @@ func mapAPISnapshotSelectionRow(row sqlc.GetAPISnapshotByRepoRevisionAndAPIRow) 
 	return APISnapshot{
 		APISpecID:         row.ApiSpecID,
 		API:               row.Api,
+		Title:             strings.TrimSpace(row.Api),
+		Status:            row.Status,
+		DisplayName:       textValue(row.DisplayName),
+		HasSnapshot:       row.ApiSpecRevisionID.Valid,
+		APISpecRevisionID: int8Value(row.ApiSpecRevisionID),
+		IngestEventID:     int8Value(row.IngestEventID),
+		IngestEventSHA:    textValue(row.IngestEventSha),
+		IngestEventBranch: textValue(row.IngestEventBranch),
+		SpecETag:          textValue(row.SpecEtag),
+		SpecSizeBytes:     int8Value(row.SpecSizeBytes),
+		OperationCount:    row.OperationCount,
+	}
+}
+
+func mapAPICatalogInventoryRow(row sqlc.ListAPICatalogInventoryRow) APISnapshot {
+	return APISnapshot{
+		Namespace:         row.Namespace,
+		Repo:              row.Repo,
+		APISpecID:         row.ApiSpecID,
+		API:               row.Api,
+		Title:             strings.TrimSpace(row.Title),
+		Status:            row.Status,
+		DisplayName:       textValue(row.DisplayName),
+		HasSnapshot:       row.ApiSpecRevisionID.Valid,
+		APISpecRevisionID: int8Value(row.ApiSpecRevisionID),
+		IngestEventID:     int8Value(row.IngestEventID),
+		IngestEventSHA:    textValue(row.IngestEventSha),
+		IngestEventBranch: textValue(row.IngestEventBranch),
+		SpecETag:          textValue(row.SpecEtag),
+		SpecSizeBytes:     int8Value(row.SpecSizeBytes),
+		OperationCount:    row.OperationCount,
+	}
+}
+
+func mapAPISnapshotInventoryPageRow(row sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow) APISnapshot {
+	return APISnapshot{
+		APISpecID:         row.ApiSpecID,
+		API:               row.Api,
+		Title:             strings.TrimSpace(row.Title),
+		Status:            row.Status,
+		DisplayName:       textValue(row.DisplayName),
+		HasSnapshot:       row.ApiSpecRevisionID.Valid,
+		APISpecRevisionID: int8Value(row.ApiSpecRevisionID),
+		IngestEventID:     int8Value(row.IngestEventID),
+		IngestEventSHA:    textValue(row.IngestEventSha),
+		IngestEventBranch: textValue(row.IngestEventBranch),
+		SpecETag:          textValue(row.SpecEtag),
+		SpecSizeBytes:     int8Value(row.SpecSizeBytes),
+		OperationCount:    row.OperationCount,
+	}
+}
+
+func mapAPICatalogInventoryPageRow(row sqlc.ListAPICatalogInventoryPageRow) APISnapshot {
+	return APISnapshot{
+		Namespace:         row.Namespace,
+		Repo:              row.Repo,
+		APISpecID:         row.ApiSpecID,
+		API:               row.Api,
+		Title:             strings.TrimSpace(row.Title),
 		Status:            row.Status,
 		DisplayName:       textValue(row.DisplayName),
 		HasSnapshot:       row.ApiSpecRevisionID.Valid,

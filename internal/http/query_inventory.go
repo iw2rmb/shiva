@@ -17,50 +17,62 @@ type catalogCountResponse struct {
 }
 
 func (s *Server) handleListAPIs(c *fiber.Ctx) error {
-	snapshotQuery, err := parseAPIsQuery(c)
+	query, err := parseAPIsQuery(c)
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
+	snapshotQuery := query.Snapshot
 
-	resolved, err := s.readStore.ResolveReadSnapshot(c.Context(), snapshotQuery)
-	if err != nil {
-		return s.writeQueryError(c, err)
-	}
+	var items []store.APISnapshot
+	if snapshotQuery.Repo == "" {
+		items, err = s.readStore.ListAPICatalogInventoryPage(c.Context(), store.APIInventoryListInput{
+			Namespace:   snapshotQuery.Namespace,
+			Repo:        "",
+			QueryPrefix: query.Query,
+			Limit:       query.Limit,
+			Offset:      query.Offset,
+		})
+		if err != nil {
+			return s.writeQueryError(c, err)
+		}
+	} else {
+		resolved, resolveErr := s.readStore.ResolveReadSnapshot(c.Context(), snapshotQuery)
+		if resolveErr != nil {
+			return s.writeQueryError(c, resolveErr)
+		}
 
-	items, err := s.readStore.ListAPISnapshotInventoryByRepoRevision(
-		c.Context(),
-		resolved.Repo.ID,
-		resolved.Revision.ID,
-	)
-	if err != nil {
-		return s.writeQueryError(c, err)
+		items, err = s.readStore.ListAPISnapshotInventoryByRepoRevisionPage(
+			c.Context(),
+			resolved.Repo.ID,
+			resolved.Revision.ID,
+			query.Query,
+			query.Limit,
+			query.Offset,
+		)
+		if err != nil {
+			return s.writeQueryError(c, err)
+		}
+		items = withAPIRepoIdentity(items, resolved.Repo.Namespace, resolved.Repo.Repo)
 	}
 
 	rows := mapAPISnapshots(items)
 	if len(rows) == 0 {
 		return c.Status(fiber.StatusOK).JSON(rows)
 	}
+	return c.Status(fiber.StatusOK).JSON(rows)
+}
 
-	titlesByRevision := make(map[int64]string)
-	for _, row := range rows {
-		if row.APISpecRevisionID < 1 {
-			continue
-		}
-		if _, exists := titlesByRevision[row.APISpecRevisionID]; exists {
-			continue
-		}
-		artifact, artifactErr := s.readStore.GetSpecArtifactByAPISpecRevisionID(c.Context(), row.APISpecRevisionID)
-		if artifactErr != nil {
-			continue
-		}
-		title := extractSpecTitle(artifact.SpecJSON)
-		if title == "" {
-			continue
-		}
-		titlesByRevision[row.APISpecRevisionID] = title
+func withAPIRepoIdentity(items []store.APISnapshot, namespace string, repo string) []store.APISnapshot {
+	if len(items) == 0 {
+		return items
 	}
-
-	return c.Status(fiber.StatusOK).JSON(applyAPISnapshotTitles(rows, titlesByRevision))
+	enriched := make([]store.APISnapshot, len(items))
+	copy(enriched, items)
+	for i := range enriched {
+		enriched[i].Namespace = namespace
+		enriched[i].Repo = repo
+	}
+	return enriched
 }
 
 func (s *Server) handleListOperations(c *fiber.Ctx) error {
@@ -326,13 +338,36 @@ func (s *Server) handleCountOperations(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleCountAPIs(c *fiber.Ctx) error {
-	if _, err := parseAPIsCountQuery(c); err != nil {
-		return s.writeQueryError(c, err)
-	}
-
-	count, err := s.readStore.CountAPICatalogInventory(c.Context())
+	query, err := parseAPIsCountQuery(c)
 	if err != nil {
 		return s.writeQueryError(c, err)
+	}
+	snapshotQuery := query.Snapshot
+
+	var count store.OperationCatalogCount
+	if snapshotQuery.Repo == "" {
+		count, err = s.readStore.CountAPICatalogInventory(c.Context(), store.APIInventoryCountInput{
+			Namespace:   snapshotQuery.Namespace,
+			Repo:        "",
+			QueryPrefix: query.Query,
+		})
+		if err != nil {
+			return s.writeQueryError(c, err)
+		}
+	} else {
+		resolved, resolveErr := s.readStore.ResolveReadSnapshot(c.Context(), snapshotQuery)
+		if resolveErr != nil {
+			return s.writeQueryError(c, resolveErr)
+		}
+		count, err = s.readStore.CountAPIInventoryByRepoRevision(
+			c.Context(),
+			resolved.Repo.ID,
+			resolved.Revision.ID,
+			query.Query,
+		)
+		if err != nil {
+			return s.writeQueryError(c, err)
+		}
 	}
 
 	return c.Status(fiber.StatusOK).JSON(catalogCountResponse{

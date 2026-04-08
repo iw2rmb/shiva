@@ -71,7 +71,7 @@ func (model *rootModel) loadSelectedOperationDetail() tea.Cmd {
 	)
 }
 
-func selectedSpecIdentity(endpoint EndpointIdentity) SpecIdentity {
+func selectedAPIIdentity(endpoint EndpointIdentity) SpecIdentity {
 	return SpecIdentity{
 		Namespace: endpoint.Namespace,
 		Repo:      endpoint.Repo,

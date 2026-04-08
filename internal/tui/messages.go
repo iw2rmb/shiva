@@ -16,9 +16,11 @@ type namespaceCatalogLoadedMsg struct {
 	Rows   []NamespaceEntry
 }
 
-type specCatalogLoadedMsg struct {
-	Token RequestToken
-	Rows  []SpecEntry
+type apiCatalogLoadedMsg struct {
+	Token     RequestToken
+	Namespace string
+	Repo      string
+	Rows      []APIEntry
 }
 
 type namespaceCountLoadedMsg struct {
@@ -29,6 +31,13 @@ type namespaceCountLoadedMsg struct {
 type repoCountLoadedMsg struct {
 	Token     RequestToken
 	Namespace string
+	Count     CatalogCount
+}
+
+type apiCountLoadedMsg struct {
+	Token     RequestToken
+	Namespace string
+	Repo      string
 	Count     CatalogCount
 }
 

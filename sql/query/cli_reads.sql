@@ -183,6 +183,11 @@ latest_processed AS (
 SELECT
     repo_specs.id AS api_spec_id,
     repo_specs.root_path AS api,
+    COALESCE(
+        NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+        NULLIF(TRIM(repo_specs.display_name), ''),
+        TRIM(repo_specs.root_path)
+    )::TEXT AS title,
     repo_specs.status,
     repo_specs.display_name,
     latest_processed.api_spec_revision_id,
@@ -202,6 +207,279 @@ LEFT JOIN LATERAL (
     WHERE endpoint_index.api_spec_revision_id = latest_processed.api_spec_revision_id
 ) AS operation_counts ON TRUE
 ORDER BY repo_specs.root_path ASC;
+
+-- name: ListAPISnapshotInventoryByRepoRevisionPage :many
+WITH RECURSIVE snapshot_ancestors AS (
+    SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
+    FROM ingest_events
+    WHERE ingest_events.repo_id = sqlc.arg(repo_id)
+      AND ingest_events.id = sqlc.arg(snapshot_revision_id)
+    UNION ALL
+    SELECT parent.id, parent.repo_id, parent.sha, parent.parent_sha, snapshot_ancestors.distance + 1
+    FROM ingest_events AS parent
+    JOIN snapshot_ancestors
+      ON parent.repo_id = snapshot_ancestors.repo_id
+     AND parent.sha = snapshot_ancestors.parent_sha
+),
+repo_specs AS (
+    SELECT id, root_path, status, display_name
+    FROM api_specs
+    WHERE api_specs.repo_id = sqlc.arg(repo_id)
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.api_spec_id,
+        api_spec_revisions.id AS api_spec_revision_id,
+        api_spec_revisions.ingest_event_id
+    FROM api_spec_revisions
+    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+    JOIN snapshot_ancestors ON snapshot_ancestors.id = api_spec_revisions.ingest_event_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, snapshot_ancestors.distance ASC, api_spec_revisions.id DESC
+),
+resolved_rows AS (
+    SELECT
+        repo_specs.id AS api_spec_id,
+        repo_specs.root_path AS api,
+        COALESCE(
+            NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+            NULLIF(TRIM(repo_specs.display_name), ''),
+            TRIM(repo_specs.root_path)
+        )::TEXT AS title,
+        repo_specs.status,
+        repo_specs.display_name,
+        latest_processed.api_spec_revision_id,
+        latest_processed.ingest_event_id,
+        ingest_events.sha AS ingest_event_sha,
+        ingest_events.branch AS ingest_event_branch,
+        spec_artifacts.etag AS spec_etag,
+        spec_artifacts.size_bytes AS spec_size_bytes,
+        COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
+    FROM repo_specs
+    LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
+    LEFT JOIN ingest_events ON ingest_events.id = latest_processed.ingest_event_id
+    LEFT JOIN spec_artifacts ON spec_artifacts.api_spec_revision_id = latest_processed.api_spec_revision_id
+    LEFT JOIN LATERAL (
+        SELECT COUNT(*)::BIGINT AS operation_count
+        FROM endpoint_index
+        WHERE endpoint_index.api_spec_revision_id = latest_processed.api_spec_revision_id
+    ) AS operation_counts ON TRUE
+    WHERE (
+        sqlc.arg(query_prefix)::TEXT = ''
+        OR COALESCE(
+            NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+            NULLIF(TRIM(repo_specs.display_name), ''),
+            TRIM(repo_specs.root_path)
+        ) ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+        OR repo_specs.root_path ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+    )
+)
+SELECT
+    api_spec_id,
+    api,
+    title,
+    status,
+    display_name,
+    api_spec_revision_id,
+    ingest_event_id,
+    ingest_event_sha,
+    ingest_event_branch,
+    spec_etag,
+    spec_size_bytes,
+    operation_count
+FROM resolved_rows
+ORDER BY api ASC
+LIMIT sqlc.arg(page_limit)
+OFFSET sqlc.arg(page_offset);
+
+-- name: ListAPICatalogInventory :many
+WITH repos_in_scope AS (
+    SELECT
+        repos.id AS repo_id,
+        namespaces.namespace,
+        repos.repo,
+        repos.default_branch
+    FROM repos
+    JOIN namespaces ON namespaces.id = repos.namespace_id
+    WHERE (sqlc.arg(namespace)::TEXT = '' OR namespaces.namespace = sqlc.arg(namespace))
+      AND (sqlc.arg(repo)::TEXT = '' OR repos.repo = sqlc.arg(repo))
+      AND EXISTS (
+          SELECT 1
+          FROM api_specs
+          WHERE api_specs.repo_id = repos.id
+            AND api_specs.status = 'active'
+      )
+),
+latest_processed_openapi AS (
+    SELECT
+        repos_in_scope.repo_id,
+        latest_openapi.id AS snapshot_revision_id
+    FROM repos_in_scope
+    LEFT JOIN LATERAL (
+        SELECT id
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos_in_scope.repo_id
+          AND ingest_events.branch = repos_in_scope.default_branch
+          AND ingest_events.status = 'processed'
+          AND ingest_events.openapi_changed = TRUE
+        ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
+        LIMIT 1
+    ) AS latest_openapi ON TRUE
+),
+repo_specs AS (
+    SELECT
+        api_specs.id AS api_spec_id,
+        api_specs.repo_id,
+        api_specs.root_path AS api,
+        api_specs.status,
+        api_specs.display_name
+    FROM api_specs
+    JOIN repos_in_scope ON repos_in_scope.repo_id = api_specs.repo_id
+    WHERE api_specs.status = 'active'
+)
+SELECT
+    repos_in_scope.namespace,
+    repos_in_scope.repo,
+    repo_specs.api_spec_id,
+    repo_specs.api,
+    COALESCE(
+        NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+        NULLIF(TRIM(repo_specs.display_name), ''),
+        TRIM(repo_specs.api)
+    )::TEXT AS title,
+    repo_specs.status,
+    repo_specs.display_name,
+    api_spec_revisions.id AS api_spec_revision_id,
+    ingest_events.id AS ingest_event_id,
+    ingest_events.sha AS ingest_event_sha,
+    ingest_events.branch AS ingest_event_branch,
+    spec_artifacts.etag AS spec_etag,
+    spec_artifacts.size_bytes AS spec_size_bytes,
+    COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
+FROM repos_in_scope
+JOIN repo_specs ON repo_specs.repo_id = repos_in_scope.repo_id
+LEFT JOIN latest_processed_openapi ON latest_processed_openapi.repo_id = repos_in_scope.repo_id
+LEFT JOIN api_spec_revisions
+  ON api_spec_revisions.api_spec_id = repo_specs.api_spec_id
+ AND api_spec_revisions.ingest_event_id = latest_processed_openapi.snapshot_revision_id
+ AND api_spec_revisions.build_status = 'processed'
+LEFT JOIN ingest_events ON ingest_events.id = api_spec_revisions.ingest_event_id
+LEFT JOIN spec_artifacts ON spec_artifacts.api_spec_revision_id = api_spec_revisions.id
+LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS operation_count
+    FROM endpoint_index
+    WHERE endpoint_index.api_spec_revision_id = api_spec_revisions.id
+) AS operation_counts ON TRUE
+ORDER BY repos_in_scope.namespace ASC, repos_in_scope.repo ASC, repo_specs.api ASC;
+
+-- name: ListAPICatalogInventoryPage :many
+WITH repos_in_scope AS (
+    SELECT
+        repos.id AS repo_id,
+        namespaces.namespace,
+        repos.repo,
+        repos.default_branch
+    FROM repos
+    JOIN namespaces ON namespaces.id = repos.namespace_id
+    WHERE (sqlc.arg(namespace)::TEXT = '' OR namespaces.namespace = sqlc.arg(namespace))
+      AND (sqlc.arg(repo)::TEXT = '' OR repos.repo = sqlc.arg(repo))
+      AND EXISTS (
+          SELECT 1
+          FROM api_specs
+          WHERE api_specs.repo_id = repos.id
+            AND api_specs.status = 'active'
+      )
+),
+latest_processed_openapi AS (
+    SELECT
+        repos_in_scope.repo_id,
+        latest_openapi.id AS snapshot_revision_id
+    FROM repos_in_scope
+    LEFT JOIN LATERAL (
+        SELECT id
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos_in_scope.repo_id
+          AND ingest_events.branch = repos_in_scope.default_branch
+          AND ingest_events.status = 'processed'
+          AND ingest_events.openapi_changed = TRUE
+        ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
+        LIMIT 1
+    ) AS latest_openapi ON TRUE
+),
+repo_specs AS (
+    SELECT
+        api_specs.id AS api_spec_id,
+        api_specs.repo_id,
+        api_specs.root_path AS api,
+        api_specs.status,
+        api_specs.display_name
+    FROM api_specs
+    JOIN repos_in_scope ON repos_in_scope.repo_id = api_specs.repo_id
+    WHERE api_specs.status = 'active'
+),
+resolved_rows AS (
+    SELECT
+        repos_in_scope.namespace,
+        repos_in_scope.repo,
+        repo_specs.api_spec_id,
+        repo_specs.api,
+        COALESCE(
+            NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+            NULLIF(TRIM(repo_specs.display_name), ''),
+            TRIM(repo_specs.api)
+        )::TEXT AS title,
+        repo_specs.status,
+        repo_specs.display_name,
+        api_spec_revisions.id AS api_spec_revision_id,
+        ingest_events.id AS ingest_event_id,
+        ingest_events.sha AS ingest_event_sha,
+        ingest_events.branch AS ingest_event_branch,
+        spec_artifacts.etag AS spec_etag,
+        spec_artifacts.size_bytes AS spec_size_bytes,
+        COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
+    FROM repos_in_scope
+    JOIN repo_specs ON repo_specs.repo_id = repos_in_scope.repo_id
+    LEFT JOIN latest_processed_openapi ON latest_processed_openapi.repo_id = repos_in_scope.repo_id
+    LEFT JOIN api_spec_revisions
+      ON api_spec_revisions.api_spec_id = repo_specs.api_spec_id
+     AND api_spec_revisions.ingest_event_id = latest_processed_openapi.snapshot_revision_id
+     AND api_spec_revisions.build_status = 'processed'
+    LEFT JOIN ingest_events ON ingest_events.id = api_spec_revisions.ingest_event_id
+    LEFT JOIN spec_artifacts ON spec_artifacts.api_spec_revision_id = api_spec_revisions.id
+    LEFT JOIN LATERAL (
+        SELECT COUNT(*)::BIGINT AS operation_count
+        FROM endpoint_index
+        WHERE endpoint_index.api_spec_revision_id = api_spec_revisions.id
+    ) AS operation_counts ON TRUE
+    WHERE (
+        sqlc.arg(query_prefix)::TEXT = ''
+        OR COALESCE(
+            NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+            NULLIF(TRIM(repo_specs.display_name), ''),
+            TRIM(repo_specs.api)
+        ) ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+        OR repo_specs.api ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+    )
+)
+SELECT
+    namespace,
+    repo,
+    api_spec_id,
+    api,
+    title,
+    status,
+    display_name,
+    api_spec_revision_id,
+    ingest_event_id,
+    ingest_event_sha,
+    ingest_event_branch,
+    spec_etag,
+    spec_size_bytes,
+    operation_count
+FROM resolved_rows
+ORDER BY namespace ASC, repo ASC, api ASC
+LIMIT sqlc.arg(page_limit)
+OFFSET sqlc.arg(page_offset);
 
 -- name: GetAPISnapshotByRepoRevisionAndAPI :one
 WITH RECURSIVE snapshot_ancestors AS (
@@ -765,6 +1043,128 @@ SELECT
     COUNT(*)::BIGINT AS total_count,
     COALESCE(MAX(CHAR_LENGTH(UPPER(TRIM(method)) || ' ' || TRIM(path))), 0)::BIGINT AS max_item_length
 FROM matched_operations;
+
+-- name: CountAPICatalogInventory :one
+WITH repos_in_scope AS (
+    SELECT
+        repos.id AS repo_id,
+        namespaces.namespace,
+        repos.repo,
+        repos.default_branch
+    FROM repos
+    JOIN namespaces ON namespaces.id = repos.namespace_id
+    WHERE (sqlc.arg(namespace)::TEXT = '' OR namespaces.namespace = sqlc.arg(namespace))
+      AND (sqlc.arg(repo)::TEXT = '' OR repos.repo = sqlc.arg(repo))
+      AND EXISTS (
+          SELECT 1
+          FROM api_specs
+          WHERE api_specs.repo_id = repos.id
+            AND api_specs.status = 'active'
+      )
+),
+latest_processed_openapi AS (
+    SELECT
+        repos_in_scope.repo_id,
+        latest_openapi.id AS snapshot_revision_id
+    FROM repos_in_scope
+    LEFT JOIN LATERAL (
+        SELECT id
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos_in_scope.repo_id
+          AND ingest_events.branch = repos_in_scope.default_branch
+          AND ingest_events.status = 'processed'
+          AND ingest_events.openapi_changed = TRUE
+        ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
+        LIMIT 1
+    ) AS latest_openapi ON TRUE
+),
+repo_specs AS (
+    SELECT
+        api_specs.id AS api_spec_id,
+        api_specs.repo_id,
+        api_specs.root_path AS api,
+        api_specs.status,
+        api_specs.display_name
+    FROM api_specs
+    JOIN repos_in_scope ON repos_in_scope.repo_id = api_specs.repo_id
+    WHERE api_specs.status = 'active'
+),
+resolved_rows AS (
+    SELECT
+        COALESCE(
+            NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+            NULLIF(TRIM(repo_specs.display_name), ''),
+            TRIM(repo_specs.api)
+        )::TEXT AS title,
+        repo_specs.api
+    FROM repos_in_scope
+    JOIN repo_specs ON repo_specs.repo_id = repos_in_scope.repo_id
+    LEFT JOIN latest_processed_openapi ON latest_processed_openapi.repo_id = repos_in_scope.repo_id
+    LEFT JOIN api_spec_revisions
+      ON api_spec_revisions.api_spec_id = repo_specs.api_spec_id
+     AND api_spec_revisions.ingest_event_id = latest_processed_openapi.snapshot_revision_id
+     AND api_spec_revisions.build_status = 'processed'
+    LEFT JOIN spec_artifacts ON spec_artifacts.api_spec_revision_id = api_spec_revisions.id
+)
+SELECT
+    COUNT(*)::BIGINT AS total_count,
+    COALESCE(MAX(CHAR_LENGTH(TRIM(title))), 0)::BIGINT AS max_item_length
+FROM resolved_rows
+WHERE (
+    sqlc.arg(query_prefix)::TEXT = ''
+    OR title ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+    OR api ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+);
+
+-- name: CountAPIInventoryByRepoRevision :one
+WITH RECURSIVE snapshot_ancestors AS (
+    SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
+    FROM ingest_events
+    WHERE ingest_events.repo_id = sqlc.arg(repo_id)
+      AND ingest_events.id = sqlc.arg(snapshot_revision_id)
+    UNION ALL
+    SELECT parent.id, parent.repo_id, parent.sha, parent.parent_sha, snapshot_ancestors.distance + 1
+    FROM ingest_events AS parent
+    JOIN snapshot_ancestors
+      ON parent.repo_id = snapshot_ancestors.repo_id
+     AND parent.sha = snapshot_ancestors.parent_sha
+),
+repo_specs AS (
+    SELECT id, root_path, status, display_name
+    FROM api_specs
+    WHERE api_specs.repo_id = sqlc.arg(repo_id)
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.api_spec_id,
+        api_spec_revisions.id AS api_spec_revision_id
+    FROM api_spec_revisions
+    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+    JOIN snapshot_ancestors ON snapshot_ancestors.id = api_spec_revisions.ingest_event_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, snapshot_ancestors.distance ASC, api_spec_revisions.id DESC
+),
+resolved_rows AS (
+    SELECT
+        COALESCE(
+            NULLIF(TRIM(spec_artifacts.spec_json #>> '{info,title}'), ''),
+            NULLIF(TRIM(repo_specs.display_name), ''),
+            TRIM(repo_specs.root_path)
+        )::TEXT AS title,
+        repo_specs.root_path AS api
+    FROM repo_specs
+    LEFT JOIN latest_processed ON latest_processed.api_spec_id = repo_specs.id
+    LEFT JOIN spec_artifacts ON spec_artifacts.api_spec_revision_id = latest_processed.api_spec_revision_id
+)
+SELECT
+    COUNT(*)::BIGINT AS total_count,
+    COALESCE(MAX(CHAR_LENGTH(TRIM(title))), 0)::BIGINT AS max_item_length
+FROM resolved_rows
+WHERE (
+    sqlc.arg(query_prefix)::TEXT = ''
+    OR title ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+    OR api ILIKE sqlc.arg(query_prefix)::TEXT || '%'
+);
 
 -- name: FindOperationCandidatesByRepoRevisionAndOperationID :many
 WITH RECURSIVE snapshot_ancestors AS (

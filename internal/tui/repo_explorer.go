@@ -52,9 +52,9 @@ func (model *rootModel) updateExplorerKey(msg tea.KeyPressMsg) (tea.Model, tea.C
 
 func (model *rootModel) openRepoExplorer(namespace string, repo string) tea.Cmd {
 	model.setRepoSelection(namespace, repo)
-	model.setHomeSelection(homeItemSpecs)
+	model.setHomeSelection(homeItemAPIs)
 	model.activeRoute = RouteHome
-	return model.ensureSpecCatalogLoadCmd()
+	return model.ensureAPICatalogLoadCmd()
 }
 
 func (model *rootModel) syncExplorerSelection() tea.Cmd {

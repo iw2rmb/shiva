@@ -156,6 +156,51 @@ func (c *Client) CountReposFiltered(ctx context.Context, namespace string, query
 	return c.get(ctx, path)
 }
 
+func (c *Client) CountAPIs(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	query := url.Values{}
+	if strings.TrimSpace(selector.Namespace) != "" {
+		query.Set("namespace", strings.TrimSpace(selector.Namespace))
+	}
+	if strings.TrimSpace(selector.Repo) != "" {
+		query.Set("repo", strings.TrimSpace(selector.Repo))
+	}
+	if selector.RevisionID > 0 {
+		query.Set("revision_id", strconv.FormatInt(selector.RevisionID, 10))
+	}
+	if strings.TrimSpace(selector.SHA) != "" {
+		query.Set("sha", strings.TrimSpace(selector.SHA))
+	}
+	path := "/v1/apis/count"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) CountAPIsFiltered(ctx context.Context, selector request.Envelope, queryPrefix string) ([]byte, error) {
+	values := url.Values{}
+	if strings.TrimSpace(selector.Namespace) != "" {
+		values.Set("namespace", strings.TrimSpace(selector.Namespace))
+	}
+	if strings.TrimSpace(selector.Repo) != "" {
+		values.Set("repo", strings.TrimSpace(selector.Repo))
+	}
+	if selector.RevisionID > 0 {
+		values.Set("revision_id", strconv.FormatInt(selector.RevisionID, 10))
+	}
+	if strings.TrimSpace(selector.SHA) != "" {
+		values.Set("sha", strings.TrimSpace(selector.SHA))
+	}
+	if strings.TrimSpace(queryPrefix) != "" {
+		values.Set("query", strings.TrimSpace(queryPrefix))
+	}
+	path := "/v1/apis/count"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
+}
+
 func (c *Client) CountOperations(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	query := url.Values{}
 	if strings.TrimSpace(selector.Namespace) != "" {
@@ -241,6 +286,45 @@ func (c *Client) GetCatalogStatus(ctx context.Context, repo string) ([]byte, err
 func (c *Client) ListAPIs(ctx context.Context, selector request.Envelope) ([]byte, error) {
 	query := snapshotQuery(selector)
 	return c.get(ctx, "/v1/apis?"+query.Encode())
+}
+
+func (c *Client) ListAPIsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error) {
+	query := snapshotQuery(selector)
+	if limit > 0 {
+		query.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		query.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/apis"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return c.get(ctx, path)
+}
+
+func (c *Client) ListAPIsPageFiltered(
+	ctx context.Context,
+	selector request.Envelope,
+	queryPrefix string,
+	limit int32,
+	offset int32,
+) ([]byte, error) {
+	values := snapshotQuery(selector)
+	if strings.TrimSpace(queryPrefix) != "" {
+		values.Set("query", strings.TrimSpace(queryPrefix))
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.FormatInt(int64(limit), 10))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.FormatInt(int64(offset), 10))
+	}
+	path := "/v1/apis"
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+	return c.get(ctx, path)
 }
 
 func (c *Client) ListOperations(ctx context.Context, selector request.Envelope) ([]byte, error) {

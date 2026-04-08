@@ -159,6 +159,46 @@ func (s *RuntimeService) CountOperationCatalog(
 	return payload, nil
 }
 
+func (s *RuntimeService) CountAPICatalog(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+) (CatalogCount, error) {
+	if s == nil || s.newClient == nil {
+		return CatalogCount{}, fmt.Errorf("CLI service is not configured")
+	}
+
+	normalized, err := normalizeInventorySelector(selector, false, true)
+	if err != nil {
+		return CatalogCount{}, err
+	}
+
+	source, err := s.resolveSource(options.Profile, "")
+	if err != nil {
+		return CatalogCount{}, err
+	}
+
+	client, err := s.newTransportClient(source)
+	if err != nil {
+		return CatalogCount{}, err
+	}
+
+	var payload CatalogCount
+	body, err := client.CountAPIs(ctx, normalized)
+	if strings.TrimSpace(options.Query) != "" {
+		if filtered, ok := client.(filteredCountTransportClient); ok {
+			body, err = filtered.CountAPIsFiltered(ctx, normalized, options.Query)
+		}
+	}
+	if err != nil {
+		return CatalogCount{}, normalizeServiceError(err)
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return CatalogCount{}, fmt.Errorf("decode api count: %w", err)
+	}
+	return payload, nil
+}
+
 func (s *RuntimeService) ListNamespaces(
 	ctx context.Context,
 	options RequestOptions,
@@ -272,7 +312,7 @@ func (s *RuntimeService) ListAPIs(
 		return nil, fmt.Errorf("CLI service is not configured")
 	}
 
-	normalized, err := normalizeInventorySelector(selector, false, false)
+	normalized, err := normalizeInventorySelector(selector, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +327,28 @@ func (s *RuntimeService) ListAPIs(
 		return nil, err
 	}
 
-	body, err := client.ListAPIs(ctx, normalized)
+	var body []byte
+	query := strings.TrimSpace(options.Query)
+	usedServerFiltering := false
+	usedServerPaging := false
+	if query != "" {
+		if filtered, ok := client.(filteredPagedTransportClient); ok {
+			body, err = filtered.ListAPIsPageFiltered(ctx, normalized, query, options.Limit, options.Offset)
+			usedServerFiltering = true
+			usedServerPaging = true
+		} else {
+			body, err = client.ListAPIs(ctx, normalized)
+		}
+	} else if options.Limit > 0 || options.Offset > 0 {
+		if paged, ok := client.(pagedTransportClient); ok {
+			body, err = paged.ListAPIsPage(ctx, normalized, options.Limit, options.Offset)
+			usedServerPaging = true
+		} else {
+			body, err = client.ListAPIs(ctx, normalized)
+		}
+	} else {
+		body, err = client.ListAPIs(ctx, normalized)
+	}
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
@@ -296,9 +357,19 @@ func (s *RuntimeService) ListAPIs(
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("decode api inventory: %w", err)
 	}
+	if !usedServerFiltering {
+		rows = filterAPIRows(rows, query)
+	}
+	if !usedServerPaging {
+		rows = paginateRows(rows, options.Limit, options.Offset)
+	}
 	for index := range rows {
-		rows[index].Namespace = normalized.Namespace
-		rows[index].Repo = normalized.Repo
+		if normalized.Namespace != "" {
+			rows[index].Namespace = normalized.Namespace
+		}
+		if normalized.Repo != "" {
+			rows[index].Repo = normalized.Repo
+		}
 	}
 
 	return clioutput.RenderAPIs(rows, format)
@@ -442,6 +513,22 @@ func filterOperationRowsByQuery(rows []clioutput.OperationRow, query string) []c
 	return filtered
 }
 
+func filterAPIRows(rows []clioutput.APIRow, query string) []clioutput.APIRow {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return rows
+	}
+	filtered := make([]clioutput.APIRow, 0, len(rows))
+	for _, row := range rows {
+		title := strings.ToLower(strings.TrimSpace(row.Title))
+		api := strings.ToLower(strings.TrimSpace(row.API))
+		if strings.HasPrefix(title, query) || strings.HasPrefix(api, query) {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
 func (s *RuntimeService) Sync(
 	ctx context.Context,
 	selector request.Envelope,
@@ -519,15 +606,18 @@ func normalizeInventorySelector(selector request.Envelope, allowAPI bool, allowU
 	revisionID := selector.RevisionID
 	sha := strings.TrimSpace(selector.SHA)
 
-	if allowUnscoped && namespace == "" && repo == "" && api == "" && revisionID == 0 && sha == "" {
-		return request.Envelope{}, nil
-	}
 	if allowUnscoped {
+		if namespace == "" && repo == "" && api == "" && revisionID == 0 && sha == "" {
+			return request.Envelope{}, nil
+		}
 		if repo != "" && namespace == "" {
 			return request.Envelope{}, &InvalidInputError{Message: "namespace is required when repo is provided"}
 		}
 		if (api != "" || revisionID > 0 || sha != "") && (namespace == "" || repo == "") {
 			return request.Envelope{}, &InvalidInputError{Message: "namespace and repo are required when api, revision_id, or sha are provided"}
+		}
+		if namespace != "" && repo == "" && api == "" && revisionID == 0 && sha == "" {
+			return request.Envelope{Namespace: namespace}, nil
 		}
 	}
 

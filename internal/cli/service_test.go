@@ -641,6 +641,7 @@ func TestRuntimeServiceNormalizesAPIAmbiguityIntoAPIError(t *testing.T) {
 type recordingTransportClient struct {
 	namespaceCountBody    []byte
 	repoCountBody         []byte
+	apiCountBody          []byte
 	operationCountBody    []byte
 	namespacesBody        []byte
 	reposBody             []byte
@@ -654,6 +655,7 @@ type recordingTransportClient struct {
 	operationErr          error
 	namespaceCountErr     error
 	repoCountErr          error
+	apiCountErr           error
 	operationCountErr     error
 	namespacesErr         error
 	reposErr              error
@@ -663,6 +665,7 @@ type recordingTransportClient struct {
 	namespacesCalls       int
 	namespaceCountCalls   int
 	repoCountCalls        int
+	apiCountCalls         int
 	operationCountCalls   int
 	reposCalls            int
 	statusCalls           int
@@ -681,6 +684,7 @@ type pagedRecordingTransportClient struct {
 	recordingTransportClient
 	namespacesPageBody []byte
 	reposPageBody      []byte
+	apisPageBody       []byte
 	operationsPageBody []byte
 }
 
@@ -708,6 +712,15 @@ func (c *recordingTransportClient) CountOperations(ctx context.Context, selector
 		return nil, c.operationCountErr
 	}
 	return c.operationCountBody, nil
+}
+
+func (c *recordingTransportClient) CountAPIs(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	c.apiCountCalls++
+	c.lastCountSelector = selector
+	if c.apiCountErr != nil {
+		return nil, c.apiCountErr
+	}
+	return c.apiCountBody, nil
 }
 
 func (c *recordingTransportClient) GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error) {
@@ -797,6 +810,14 @@ func (c *pagedRecordingTransportClient) ListOperationsPage(ctx context.Context, 
 	_ = limit
 	_ = offset
 	return c.operationsPageBody, nil
+}
+
+func (c *pagedRecordingTransportClient) ListAPIsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error) {
+	_ = ctx
+	_ = selector
+	_ = limit
+	_ = offset
+	return c.apisPageBody, nil
 }
 
 func newRuntimeServiceWithTransportClient(client transportClient) *RuntimeService {

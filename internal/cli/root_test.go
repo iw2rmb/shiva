@@ -617,6 +617,42 @@ func (s *fakeService) CountOperationCatalog(
 	return result, nil
 }
 
+func (s *fakeService) CountAPICatalog(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+) (CatalogCount, error) {
+	s.lastOptions = options
+	type apiRow struct {
+		Namespace string `json:"namespace"`
+		Repo      string `json:"repo"`
+		Title     string `json:"title"`
+		API       string `json:"api"`
+	}
+	var apis []apiRow
+	if len(s.listAPIsBody) == 0 || json.Unmarshal(s.listAPIsBody, &apis) != nil {
+		return CatalogCount{}, nil
+	}
+	result := CatalogCount{}
+	for _, row := range apis {
+		if selector.Namespace != "" && row.Namespace != "" && row.Namespace != selector.Namespace {
+			continue
+		}
+		if selector.Repo != "" && row.Repo != "" && row.Repo != selector.Repo {
+			continue
+		}
+		result.TotalCount++
+		title := strings.TrimSpace(row.Title)
+		if title == "" {
+			title = strings.TrimSpace(row.API)
+		}
+		if int64(len(title)) > result.MaxItemLength {
+			result.MaxItemLength = int64(len(title))
+		}
+	}
+	return result, nil
+}
+
 func (s *fakeService) ListRepos(ctx context.Context, options RequestOptions, format output.ListFormat) ([]byte, error) {
 	s.listReposCalls++
 	s.lastListFormat = string(format)

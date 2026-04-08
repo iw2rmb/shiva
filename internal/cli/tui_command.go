@@ -79,7 +79,7 @@ func parseTUIInitialRoute(args []string) (tui.InitialRoute, error) {
 		return tui.InitialRoute{}, &InvalidInputError{Message: "tui selector must be <namespace>/ or <namespace>/<repo>"}
 	}
 	return tui.InitialRoute{
-		Kind:      tui.RouteSpecs,
+		Kind:      tui.RouteAPIs,
 		Namespace: identity.Namespace,
 		Repo:      identity.Repo,
 	}, nil
@@ -150,6 +150,21 @@ func (adapter tuiServiceAdapter) CountOperations(
 	}, nil
 }
 
+func (adapter tuiServiceAdapter) CountAPIs(
+	ctx context.Context,
+	selector request.Envelope,
+	options tui.RequestOptions,
+) (tui.CatalogCount, error) {
+	count, err := adapter.service.CountAPICatalog(ctx, selector, fromTUIRequestOptions(options))
+	if err != nil {
+		return tui.CatalogCount{}, err
+	}
+	return tui.CatalogCount{
+		TotalCount:    count.TotalCount,
+		MaxItemLength: count.MaxItemLength,
+	}, nil
+}
+
 func (adapter tuiServiceAdapter) ListRepos(
 	ctx context.Context,
 	options tui.RequestOptions,
@@ -204,7 +219,7 @@ func (adapter tuiServiceAdapter) GetSpec(
 	case tui.SpecFormatYAML:
 		return adapter.service.GetSpec(ctx, selector, fromTUIRequestOptions(options), SpecFormatYAML)
 	default:
-		return nil, fmt.Errorf("unsupported tui spec format %q", format)
+		return nil, fmt.Errorf("unsupported tui api format %q", format)
 	}
 }
 

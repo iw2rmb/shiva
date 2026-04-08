@@ -285,11 +285,17 @@ Legacy path-segment endpoints were removed:
 
 ### `GET /v1/apis`
 - supported query parameters:
-  - `namespace`
-  - `repo`
+  - optional `namespace`
+  - optional `repo` (requires `namespace`)
   - optional `revision_id` or `sha`
+  - optional `query` (prefix match on resolved `title` and `api`)
+  - optional `limit` (default `200`, max `2000`)
+  - optional `offset` (default `0`)
+- when `revision_id` or `sha` are provided, both `namespace` and `repo` are required
 - response body is an array of API snapshot rows
 - rows include current API status plus resolved snapshot metadata when present:
+  - `namespace` (present for catalog/unscoped rows; omitted for repo-scoped rows)
+  - `repo` (present for catalog/unscoped rows; omitted for repo-scoped rows)
   - `title` (resolved from canonical `spec_json.info.title`, then `display_name`, then `api`)
   - `api`
   - `status`
@@ -304,11 +310,15 @@ Legacy path-segment endpoints were removed:
   - `operation_count`
 
 ### `GET /v1/apis/count`
-- takes no query parameters
-- this endpoint does not accept repo/snapshot selector parameters
+- supported query parameters:
+  - optional `namespace`
+  - optional `repo` (requires `namespace`)
+  - optional `revision_id` or `sha`
+  - optional `query` (prefix match on resolved `title` and `api`)
+- when `revision_id` or `sha` are provided, both `namespace` and `repo` are required
 - response body shape:
-  - `total_count` (`count(api_specs where status='active')`)
-  - `max_item_length` (`max(length(root_path))` across active API specs)
+  - `total_count` (count of API rows in the resolved scope and query)
+  - `max_item_length` (`max(length(title))` in the resolved scope and query)
 
 ### `GET /v1/operations`
 - supported query parameters:

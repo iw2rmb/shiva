@@ -62,7 +62,7 @@ func TestNewRootModelHomeRouteShowsShivaSections(t *testing.T) {
 	if len(model.home.Entries) != 4 {
 		t.Fatalf("expected four home entries, got %d", len(model.home.Entries))
 	}
-	if model.home.Entries[0].Title != "Namespaces" || model.home.Entries[1].Title != "Repos" || model.home.Entries[2].Title != "Specs" || model.home.Entries[3].Title != "Endpoints" {
+	if model.home.Entries[0].Title != "Namespaces" || model.home.Entries[1].Title != "Repos" || model.home.Entries[2].Title != "APIs" || model.home.Entries[3].Title != "Endpoints" {
 		t.Fatalf("unexpected home entries %+v", model.home.Entries)
 	}
 	if model.home.Entries[0].Description != "Total: ..." {
@@ -79,7 +79,7 @@ func TestRootModelHeaderViewUsesProtocolSeparatorAndPaddedSections(t *testing.T)
 	if !strings.Contains(header, "SHIVA :// ") {
 		t.Fatalf("expected header to use :// separator, got %q", header)
 	}
-	for _, section := range []string{" NAMESPACES ", " REPOS ", " SPECS ", " ENDPOINTS "} {
+	for _, section := range []string{" NAMESPACES ", " REPOS ", " APIS ", " ENDPOINTS "} {
 		if !strings.Contains(header, section) {
 			t.Fatalf("expected header to contain padded section %q, got %q", section, header)
 		}
@@ -1006,7 +1006,7 @@ func TestRootModelIgnoresStaleSpecDetailMessages(t *testing.T) {
 	model = updated.(*rootModel)
 
 	if model.explorer.Detail.Spec != nil {
-		t.Fatalf("expected stale spec detail to be ignored, got %+v", model.explorer.Detail.Spec)
+		t.Fatalf("expected stale api detail to be ignored, got %+v", model.explorer.Detail.Spec)
 	}
 
 	updated, _ = model.Update(specDetailLoadedMsg{
@@ -1021,7 +1021,7 @@ func TestRootModelIgnoresStaleSpecDetailMessages(t *testing.T) {
 	model = updated.(*rootModel)
 
 	if model.explorer.Detail.Spec == nil || model.explorer.Detail.Spec.API != "new.yaml" {
-		t.Fatalf("expected latest spec detail to apply, got %+v", model.explorer.Detail.Spec)
+		t.Fatalf("expected latest api detail to apply, got %+v", model.explorer.Detail.Spec)
 	}
 }
 
@@ -1321,45 +1321,49 @@ func TestLayoutScreenPinsFooterToLastTerminalRow(t *testing.T) {
 }
 
 type fakeBrowserService struct {
-	countNamespacesValue CatalogCount
-	countNamespacesErr   error
-	countNamespacesCall  int
-	countReposValue      CatalogCount
-	countReposErr        error
-	countReposCall       int
-	lastCountNamespace   string
-	countOperationsValue CatalogCount
-	countOperationsErr   error
-	countOperationsCall  int
-	lastCountSelector    request.Envelope
-	listNamespacesBody   []byte
-	listNamespacesErr    error
-	listNamespacesCall   int
-	lastListNamespaces   RequestOptions
-	listReposBody        []byte
-	listReposErr         error
-	listReposCall        int
-	lastListRepos        RequestOptions
-	listAPIsBody         []byte
-	listAPIsErr          error
-	listAPIsCall         int
-	lastListAPIs         RequestOptions
-	lastAPIsQuery        request.Envelope
-	listOperationsBody   []byte
-	listOperationsErr    error
-	listOperationsCall   int
-	lastListOperations   RequestOptions
-	lastOperationQuery   request.Envelope
-	getOperationCall     int
-	lastOperationGet     request.Envelope
-	operationBody        []byte
-	operationErr         error
-	getSpecCall          int
-	lastSpecGet          request.Envelope
-	lastSpecFormat       SpecFormat
-	specBody             []byte
-	specErr              error
-	lastContextValue     any
+	countNamespacesValue  CatalogCount
+	countNamespacesErr    error
+	countNamespacesCall   int
+	countReposValue       CatalogCount
+	countReposErr         error
+	countReposCall        int
+	lastCountNamespace    string
+	countAPIsValue        CatalogCount
+	countAPIsErr          error
+	countAPIsCall         int
+	lastAPIsCountSelector request.Envelope
+	countOperationsValue  CatalogCount
+	countOperationsErr    error
+	countOperationsCall   int
+	lastCountSelector     request.Envelope
+	listNamespacesBody    []byte
+	listNamespacesErr     error
+	listNamespacesCall    int
+	lastListNamespaces    RequestOptions
+	listReposBody         []byte
+	listReposErr          error
+	listReposCall         int
+	lastListRepos         RequestOptions
+	listAPIsBody          []byte
+	listAPIsErr           error
+	listAPIsCall          int
+	lastListAPIs          RequestOptions
+	lastAPIsQuery         request.Envelope
+	listOperationsBody    []byte
+	listOperationsErr     error
+	listOperationsCall    int
+	lastListOperations    RequestOptions
+	lastOperationQuery    request.Envelope
+	getOperationCall      int
+	lastOperationGet      request.Envelope
+	operationBody         []byte
+	operationErr          error
+	getSpecCall           int
+	lastSpecGet           request.Envelope
+	lastSpecFormat        SpecFormat
+	specBody              []byte
+	specErr               error
+	lastContextValue      any
 }
 
 func (service *fakeBrowserService) CountNamespaces(
@@ -1394,6 +1398,18 @@ func (service *fakeBrowserService) CountOperations(
 	service.lastCountSelector = selector
 	_ = options
 	return service.countOperationsValue, service.countOperationsErr
+}
+
+func (service *fakeBrowserService) CountAPIs(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+) (CatalogCount, error) {
+	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.countAPIsCall++
+	service.lastAPIsCountSelector = selector
+	_ = options
+	return service.countAPIsValue, service.countAPIsErr
 }
 
 func (service *fakeBrowserService) ListNamespaces(

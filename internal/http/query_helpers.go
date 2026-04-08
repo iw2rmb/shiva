@@ -33,6 +33,8 @@ var supportedHTTPMethods = map[string]struct{}{
 }
 
 type apiSnapshotResponse struct {
+	Namespace         string `json:"namespace,omitempty"`
+	Repo              string `json:"repo,omitempty"`
 	Title             string `json:"title"`
 	API               string `json:"api"`
 	Status            string `json:"status"`
@@ -202,11 +204,16 @@ func writeOperationAmbiguity(c *fiber.Ctx, message string, candidates []store.Op
 func mapAPISnapshots(items []store.APISnapshot) []apiSnapshotResponse {
 	response := make([]apiSnapshotResponse, 0, len(items))
 	for _, item := range items {
-		title := strings.TrimSpace(item.API)
-		if strings.TrimSpace(item.DisplayName) != "" {
+		title := strings.TrimSpace(item.Title)
+		if title == "" {
 			title = strings.TrimSpace(item.DisplayName)
 		}
+		if title == "" {
+			title = strings.TrimSpace(item.API)
+		}
 		response = append(response, apiSnapshotResponse{
+			Namespace:         item.Namespace,
+			Repo:              item.Repo,
 			Title:             title,
 			API:               item.API,
 			Status:            item.Status,

@@ -341,6 +341,7 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 		},
 		apiInventoryResult: []store.APISnapshot{
 			{
+				Title:             "Pets From Info",
 				API:               "apis/pets/openapi.yaml",
 				Status:            "active",
 				DisplayName:       "Pets API",
@@ -354,6 +355,7 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 				OperationCount:    2,
 			},
 			{
+				Title:          "Deleted API",
 				API:            "apis/deleted/openapi.yaml",
 				Status:         "deleted",
 				DisplayName:    "Deleted API",
@@ -381,10 +383,10 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 	}) {
 		t.Fatalf("unexpected snapshot query input: %+v", readStore.resolveReadSnapshotInputs)
 	}
-	if !reflect.DeepEqual(readStore.apiInventoryInputs, []apiInventoryInput{
-		{RepoID: 77, RevisionID: 42},
+	if !reflect.DeepEqual(readStore.apiInventoryPageInputs, []apiInventoryPageInput{
+		{RepoID: 77, RevisionID: 42, QueryPrefix: "", Limit: 200, Offset: 0},
 	}) {
-		t.Fatalf("unexpected api inventory input: %+v", readStore.apiInventoryInputs)
+		t.Fatalf("unexpected api inventory input: %+v", readStore.apiInventoryPageInputs)
 	}
 
 	var body []map[string]any
@@ -399,6 +401,55 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 	}
 	if body[1]["title"] != "Deleted API" {
 		t.Fatalf("expected second row title from display_name fallback, got %#v", body[1]["title"])
+	}
+}
+
+func TestQueryEndpoints_ListAPIs_UnscopedUsesCatalog(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeQueryReadStore{
+		apiCatalogResult: []store.APISnapshot{
+			{
+				Namespace: "acme",
+				Repo:      "platform",
+				API:       "apis/pets/openapi.yaml",
+				Status:    "active",
+			},
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/v1/apis", nil), -1)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if len(readStore.resolveReadSnapshotInputs) != 0 {
+		t.Fatalf("expected no snapshot resolution for unscoped list, got %+v", readStore.resolveReadSnapshotInputs)
+	}
+	if !reflect.DeepEqual(readStore.apiCatalogPageInputs, []store.APIInventoryListInput{{
+		Namespace:   "",
+		Repo:        "",
+		QueryPrefix: "",
+		Limit:       200,
+		Offset:      0,
+	}}) {
+		t.Fatalf("unexpected api catalog inputs: %+v", readStore.apiCatalogPageInputs)
+	}
+
+	var body []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode api list response: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("expected one row, got %d", len(body))
+	}
+	if body[0]["namespace"] != "acme" || body[0]["repo"] != "platform" {
+		t.Fatalf("expected namespace/repo in row, got %+v", body[0])
 	}
 }
 
@@ -427,6 +478,13 @@ func TestQueryEndpoints_CountAPIs_Global(t *testing.T) {
 	}
 	if readStore.apiCatalogCountCalls != 1 {
 		t.Fatalf("expected one count call, got %d", readStore.apiCatalogCountCalls)
+	}
+	if !reflect.DeepEqual(readStore.apiCatalogCountInputs, []store.APIInventoryCountInput{{
+		Namespace:   "",
+		Repo:        "",
+		QueryPrefix: "",
+	}}) {
+		t.Fatalf("unexpected api count inputs: %+v", readStore.apiCatalogCountInputs)
 	}
 	var body struct {
 		TotalCount    int64 `json:"total_count"`
@@ -1037,9 +1095,14 @@ type fakeQueryReadStore struct {
 	specArtifactResult store.SpecArtifact
 	specArtifactErr    error
 
-	apiInventoryInputs []apiInventoryInput
-	apiInventoryResult []store.APISnapshot
-	apiInventoryErr    error
+	apiInventoryInputs     []apiInventoryInput
+	apiInventoryResult     []store.APISnapshot
+	apiInventoryErr        error
+	apiInventoryPageInputs []apiInventoryPageInput
+	apiCatalogInputs       []apiCatalogInput
+	apiCatalogResult       []store.APISnapshot
+	apiCatalogErr          error
+	apiCatalogPageInputs   []store.APIInventoryListInput
 
 	apiSnapshotInputs []apiSnapshotSelectionInput
 	apiSnapshotResult store.APISnapshot
@@ -1062,8 +1125,12 @@ type fakeQueryReadStore struct {
 	operationCatalogCountResult       store.OperationCatalogCount
 	operationCatalogCountErr          error
 	apiCatalogCountCalls              int
+	apiCatalogCountInputs             []store.APIInventoryCountInput
 	apiCatalogCountResult             store.OperationCatalogCount
 	apiCatalogCountErr                error
+	apiInventoryCountInputs           []operationInventoryCountInput
+	apiInventoryCountResult           store.OperationCatalogCount
+	apiInventoryCountErr              error
 	operationInventoryByAPIInputs     []operationInventoryByAPIInput
 	operationInventoryByAPIResult     []store.OperationSnapshot
 	operationInventoryByAPIErr        error
@@ -1097,6 +1164,19 @@ func (f *fakeQueryReadStore) GetRepoByNamespaceAndRepo(
 type apiInventoryInput struct {
 	RepoID     int64
 	RevisionID int64
+}
+
+type apiInventoryPageInput struct {
+	RepoID      int64
+	RevisionID  int64
+	QueryPrefix string
+	Limit       int32
+	Offset      int32
+}
+
+type apiCatalogInput struct {
+	Namespace string
+	Repo      string
 }
 
 type apiSnapshotSelectionInput struct {
@@ -1222,6 +1302,59 @@ func (f *fakeQueryReadStore) ListAPISnapshotInventoryByRepoRevision(
 	}
 	result := make([]store.APISnapshot, len(f.apiInventoryResult))
 	copy(result, f.apiInventoryResult)
+	return result, nil
+}
+
+func (f *fakeQueryReadStore) ListAPISnapshotInventoryByRepoRevisionPage(
+	_ context.Context,
+	repoID int64,
+	snapshotRevisionID int64,
+	queryPrefix string,
+	limit int32,
+	offset int32,
+) ([]store.APISnapshot, error) {
+	f.apiInventoryPageInputs = append(f.apiInventoryPageInputs, apiInventoryPageInput{
+		RepoID:      repoID,
+		RevisionID:  snapshotRevisionID,
+		QueryPrefix: queryPrefix,
+		Limit:       limit,
+		Offset:      offset,
+	})
+	if f.apiInventoryErr != nil {
+		return nil, f.apiInventoryErr
+	}
+	result := make([]store.APISnapshot, len(f.apiInventoryResult))
+	copy(result, f.apiInventoryResult)
+	return result, nil
+}
+
+func (f *fakeQueryReadStore) ListAPICatalogInventory(
+	_ context.Context,
+	namespace string,
+	repo string,
+) ([]store.APISnapshot, error) {
+	f.apiCatalogInputs = append(f.apiCatalogInputs, apiCatalogInput{
+		Namespace: namespace,
+		Repo:      repo,
+	})
+	if f.apiCatalogErr != nil {
+		return nil, f.apiCatalogErr
+	}
+	result := make([]store.APISnapshot, len(f.apiCatalogResult))
+	copy(result, f.apiCatalogResult)
+	return result, nil
+}
+
+func (f *fakeQueryReadStore) ListAPICatalogInventoryPage(
+	_ context.Context,
+	input store.APIInventoryListInput,
+) ([]store.APISnapshot, error) {
+	f.apiCatalogPageInputs = append(f.apiCatalogPageInputs, input)
+	if f.apiCatalogErr != nil {
+		return nil, f.apiCatalogErr
+	}
+	result := make([]store.APISnapshot, len(f.apiCatalogResult))
+	copy(result, f.apiCatalogResult)
 	return result, nil
 }
 
@@ -1352,12 +1485,33 @@ func (f *fakeQueryReadStore) CountOperationCatalogInventory(
 	return f.operationCatalogCountResult, nil
 }
 
-func (f *fakeQueryReadStore) CountAPICatalogInventory(_ context.Context) (store.OperationCatalogCount, error) {
+func (f *fakeQueryReadStore) CountAPICatalogInventory(
+	_ context.Context,
+	input store.APIInventoryCountInput,
+) (store.OperationCatalogCount, error) {
 	f.apiCatalogCountCalls++
+	f.apiCatalogCountInputs = append(f.apiCatalogCountInputs, input)
 	if f.apiCatalogCountErr != nil {
 		return store.OperationCatalogCount{}, f.apiCatalogCountErr
 	}
 	return f.apiCatalogCountResult, nil
+}
+
+func (f *fakeQueryReadStore) CountAPIInventoryByRepoRevision(
+	_ context.Context,
+	repoID int64,
+	snapshotRevisionID int64,
+	queryPrefix string,
+) (store.OperationCatalogCount, error) {
+	f.apiInventoryCountInputs = append(f.apiInventoryCountInputs, operationInventoryCountInput{
+		RepoID:      repoID,
+		RevisionID:  snapshotRevisionID,
+		QueryPrefix: queryPrefix,
+	})
+	if f.apiInventoryCountErr != nil {
+		return store.OperationCatalogCount{}, f.apiInventoryCountErr
+	}
+	return f.apiInventoryCountResult, nil
 }
 
 func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevisionAndAPI(

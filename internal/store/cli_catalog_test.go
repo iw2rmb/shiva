@@ -296,6 +296,7 @@ type fakeCLICatalogQueries struct {
 	namespaceRows        []sqlc.ListNamespaceCatalogInventoryRow
 
 	apiInventoryRows []sqlc.ListAPISnapshotInventoryByRepoRevisionRow
+	apiCatalogRows   []sqlc.ListAPICatalogInventoryRow
 	apiSelectionRow  sqlc.GetAPISnapshotByRepoRevisionAndAPIRow
 	apiSelectionErr  error
 
@@ -348,6 +349,77 @@ func (f *fakeCLICatalogQueries) ListAPISnapshotInventoryByRepoRevision(
 	_ sqlc.ListAPISnapshotInventoryByRepoRevisionParams,
 ) ([]sqlc.ListAPISnapshotInventoryByRepoRevisionRow, error) {
 	return f.apiInventoryRows, nil
+}
+
+func (f *fakeCLICatalogQueries) ListAPISnapshotInventoryByRepoRevisionPage(
+	_ context.Context,
+	_ sqlc.ListAPISnapshotInventoryByRepoRevisionPageParams,
+) ([]sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow, error) {
+	rows := make([]sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow, 0, len(f.apiInventoryRows))
+	for _, row := range f.apiInventoryRows {
+		rows = append(rows, sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow{
+			ApiSpecID:         row.ApiSpecID,
+			Api:               row.Api,
+			Title:             row.Title,
+			Status:            row.Status,
+			DisplayName:       row.DisplayName,
+			ApiSpecRevisionID: row.ApiSpecRevisionID,
+			IngestEventID:     row.IngestEventID,
+			IngestEventSha:    row.IngestEventSha,
+			IngestEventBranch: row.IngestEventBranch,
+			SpecEtag:          row.SpecEtag,
+			SpecSizeBytes:     row.SpecSizeBytes,
+			OperationCount:    row.OperationCount,
+		})
+	}
+	return rows, nil
+}
+
+func (f *fakeCLICatalogQueries) ListAPICatalogInventory(
+	_ context.Context,
+	_ sqlc.ListAPICatalogInventoryParams,
+) ([]sqlc.ListAPICatalogInventoryRow, error) {
+	return f.apiCatalogRows, nil
+}
+
+func (f *fakeCLICatalogQueries) ListAPICatalogInventoryPage(
+	_ context.Context,
+	_ sqlc.ListAPICatalogInventoryPageParams,
+) ([]sqlc.ListAPICatalogInventoryPageRow, error) {
+	rows := make([]sqlc.ListAPICatalogInventoryPageRow, 0, len(f.apiCatalogRows))
+	for _, row := range f.apiCatalogRows {
+		rows = append(rows, sqlc.ListAPICatalogInventoryPageRow{
+			Namespace:         row.Namespace,
+			Repo:              row.Repo,
+			ApiSpecID:         row.ApiSpecID,
+			Api:               row.Api,
+			Title:             row.Title,
+			Status:            row.Status,
+			DisplayName:       row.DisplayName,
+			ApiSpecRevisionID: row.ApiSpecRevisionID,
+			IngestEventID:     row.IngestEventID,
+			IngestEventSha:    row.IngestEventSha,
+			IngestEventBranch: row.IngestEventBranch,
+			SpecEtag:          row.SpecEtag,
+			SpecSizeBytes:     row.SpecSizeBytes,
+			OperationCount:    row.OperationCount,
+		})
+	}
+	return rows, nil
+}
+
+func (f *fakeCLICatalogQueries) CountAPICatalogInventory(
+	_ context.Context,
+	_ sqlc.CountAPICatalogInventoryParams,
+) (sqlc.CountAPICatalogInventoryRow, error) {
+	return sqlc.CountAPICatalogInventoryRow{}, nil
+}
+
+func (f *fakeCLICatalogQueries) CountAPIInventoryByRepoRevision(
+	_ context.Context,
+	_ sqlc.CountAPIInventoryByRepoRevisionParams,
+) (sqlc.CountAPIInventoryByRepoRevisionRow, error) {
+	return sqlc.CountAPIInventoryByRepoRevisionRow{}, nil
 }
 
 func (f *fakeCLICatalogQueries) GetAPISnapshotByRepoRevisionAndAPI(

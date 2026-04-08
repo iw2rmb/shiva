@@ -88,6 +88,27 @@ func loadOperationCountCmd(
 	}
 }
 
+func loadAPICountCmd(
+	ctx context.Context,
+	service BrowserService,
+	selector request.Envelope,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		count, err := service.CountAPIs(ctx, selector, options)
+		if err != nil {
+			return loadFailedMsg{Domain: loadDomainAPICount, Token: token, Err: err}
+		}
+		return apiCountLoadedMsg{
+			Token:     token,
+			Namespace: selector.Namespace,
+			Repo:      selector.Repo,
+			Count:     count,
+		}
+	}
+}
+
 func loadNamespaceCatalogCmd(
 	ctx context.Context,
 	service BrowserService,
@@ -181,7 +202,7 @@ func loadOperationListCmd(
 	}
 }
 
-func loadSpecCatalogCmd(
+func loadAPICatalogCmd(
 	ctx context.Context,
 	service BrowserService,
 	selector request.Envelope,
@@ -189,11 +210,11 @@ func loadSpecCatalogCmd(
 	token RequestToken,
 ) tea.Cmd {
 	return func() tea.Msg {
-		return loadSpecCatalogMsg(ctx, service, selector, options, token)
+		return loadAPICatalogMsg(ctx, service, selector, options, token)
 	}
 }
 
-func loadSpecCatalogMsg(
+func loadAPICatalogMsg(
 	ctx context.Context,
 	service BrowserService,
 	selector request.Envelope,
@@ -202,20 +223,28 @@ func loadSpecCatalogMsg(
 ) tea.Msg {
 	body, err := service.ListAPIs(ctx, selector, options, clioutput.ListFormatJSON)
 	if err != nil {
-		return loadFailedMsg{Domain: loadDomainSpecCatalog, Token: token, Err: err}
+		return loadFailedMsg{Domain: loadDomainAPICatalog, Token: token, Err: err}
 	}
 
 	var rows []clioutput.APIRow
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return loadFailedMsg{
-			Domain: loadDomainSpecCatalog,
+			Domain: loadDomainAPICatalog,
 			Token:  token,
-			Err:    fmt.Errorf("decode spec catalog: %w", err),
+			Err:    fmt.Errorf("decode api catalog: %w", err),
 		}
 	}
 
-	entries := make([]SpecEntry, 0, len(rows))
+	entries := make([]APIEntry, 0, len(rows))
 	for _, row := range rows {
+		namespace := strings.TrimSpace(row.Namespace)
+		if namespace == "" {
+			namespace = selector.Namespace
+		}
+		repo := strings.TrimSpace(row.Repo)
+		if repo == "" {
+			repo = selector.Repo
+		}
 		title := strings.TrimSpace(row.Title)
 		if title == "" {
 			title = strings.TrimSpace(row.DisplayName)
@@ -223,16 +252,21 @@ func loadSpecCatalogMsg(
 		if title == "" {
 			title = strings.TrimSpace(row.API)
 		}
-		entries = append(entries, SpecEntry{
-			Namespace: selector.Namespace,
-			Repo:      selector.Repo,
+		entries = append(entries, APIEntry{
+			Namespace: namespace,
+			Repo:      repo,
 			Title:     title,
 			API:       strings.TrimSpace(row.API),
 			Row:       row,
 		})
 	}
 
-	return specCatalogLoadedMsg{Token: token, Rows: entries}
+	return apiCatalogLoadedMsg{
+		Token:     token,
+		Namespace: selector.Namespace,
+		Repo:      selector.Repo,
+		Rows:      entries,
+	}
 }
 
 func loadOperationListMsg(

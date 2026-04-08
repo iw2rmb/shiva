@@ -24,6 +24,16 @@ type queryReadStore interface {
 		repoID int64,
 		snapshotRevisionID int64,
 	) ([]store.APISnapshot, error)
+	ListAPISnapshotInventoryByRepoRevisionPage(
+		ctx context.Context,
+		repoID int64,
+		snapshotRevisionID int64,
+		queryPrefix string,
+		limit int32,
+		offset int32,
+	) ([]store.APISnapshot, error)
+	ListAPICatalogInventory(ctx context.Context, namespace string, repo string) ([]store.APISnapshot, error)
+	ListAPICatalogInventoryPage(ctx context.Context, input store.APIInventoryListInput) ([]store.APISnapshot, error)
 	GetAPISnapshotByRepoRevisionAndAPI(
 		ctx context.Context,
 		repoID int64,
@@ -67,7 +77,13 @@ type queryReadStore interface {
 		repo string,
 		queryPrefix string,
 	) (store.OperationCatalogCount, error)
-	CountAPICatalogInventory(ctx context.Context) (store.OperationCatalogCount, error)
+	CountAPICatalogInventory(ctx context.Context, input store.APIInventoryCountInput) (store.OperationCatalogCount, error)
+	CountAPIInventoryByRepoRevision(
+		ctx context.Context,
+		repoID int64,
+		snapshotRevisionID int64,
+		queryPrefix string,
+	) (store.OperationCatalogCount, error)
 	ListOperationInventoryByRepoRevisionAndAPI(
 		ctx context.Context,
 		repoID int64,

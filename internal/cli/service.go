@@ -33,6 +33,7 @@ type Service interface {
 	CountNamespaces(ctx context.Context, options RequestOptions) (int64, error)
 	CountNamespaceCatalog(ctx context.Context, options RequestOptions) (CatalogCount, error)
 	CountRepoCatalog(ctx context.Context, namespace string, options RequestOptions) (CatalogCount, error)
+	CountAPICatalog(ctx context.Context, selector request.Envelope, options RequestOptions) (CatalogCount, error)
 	CountOperationCatalog(ctx context.Context, selector request.Envelope, options RequestOptions) (CatalogCount, error)
 	ListNamespaces(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
@@ -50,6 +51,7 @@ type transportClient interface {
 	GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error)
 	CountNamespaces(ctx context.Context) ([]byte, error)
 	CountRepos(ctx context.Context, namespace string) ([]byte, error)
+	CountAPIs(ctx context.Context, selector request.Envelope) ([]byte, error)
 	CountOperations(ctx context.Context, selector request.Envelope) ([]byte, error)
 	ListNamespaces(ctx context.Context) ([]byte, error)
 	ListRepos(ctx context.Context) ([]byte, error)
@@ -62,18 +64,21 @@ type transportClient interface {
 type pagedTransportClient interface {
 	ListNamespacesPage(ctx context.Context, limit int32, offset int32) ([]byte, error)
 	ListReposPage(ctx context.Context, namespace string, limit int32, offset int32) ([]byte, error)
+	ListAPIsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error)
 	ListOperationsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error)
 }
 
 type filteredPagedTransportClient interface {
 	ListNamespacesPageFiltered(ctx context.Context, query string, limit int32, offset int32) ([]byte, error)
 	ListReposPageFiltered(ctx context.Context, namespace string, query string, limit int32, offset int32) ([]byte, error)
+	ListAPIsPageFiltered(ctx context.Context, selector request.Envelope, query string, limit int32, offset int32) ([]byte, error)
 	ListOperationsPageFiltered(ctx context.Context, selector request.Envelope, query string, limit int32, offset int32) ([]byte, error)
 }
 
 type filteredCountTransportClient interface {
 	CountNamespacesFiltered(ctx context.Context, query string) ([]byte, error)
 	CountReposFiltered(ctx context.Context, namespace string, query string) ([]byte, error)
+	CountAPIsFiltered(ctx context.Context, selector request.Envelope, query string) ([]byte, error)
 	CountOperationsFiltered(ctx context.Context, selector request.Envelope, query string) ([]byte, error)
 }
 

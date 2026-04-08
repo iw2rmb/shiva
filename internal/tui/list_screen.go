@@ -43,10 +43,10 @@ func newRepoList() list.Model {
 	return model
 }
 
-func newSpecList() list.Model {
+func newAPIList() list.Model {
 	delegate := list.NewDefaultDelegate()
 	model := list.New(nil, delegate, defaultListWidth, defaultViewportHeight)
-	configureList(&model, "SPECS", "spec", "specs")
+	configureList(&model, "APIS", "api", "apis")
 	model.SetFilteringEnabled(true)
 	model.SetShowFilter(true)
 	model.Filter = passthroughFilter
@@ -150,12 +150,12 @@ func defaultHomeEntries() []HomeEntry {
 			Description: "Total: ...",
 		},
 		{
-			Title:       "Specs",
+			Title:       "APIs",
 			Description: "Select repo",
 		},
 		{
 			Title:       "Endpoints",
-			Description: "Select spec",
+			Description: "Select api",
 		},
 	}
 }
@@ -352,17 +352,23 @@ func endpointItems(entries []EndpointEntry) []list.Item {
 	return items
 }
 
-func specItems(entries []SpecEntry) []list.Item {
+func apiItems(entries []APIEntry) []list.Item {
 	items := make([]list.Item, 0, len(entries))
 	for _, entry := range entries {
 		title := strings.TrimSpace(entry.Title)
 		if title == "" {
 			title = strings.TrimSpace(entry.API)
 		}
+		description := strings.TrimSpace(entry.API)
+		if strings.TrimSpace(entry.Namespace) != "" && strings.TrimSpace(entry.Repo) != "" {
+			description = strings.TrimSpace(entry.Namespace) + "/" + strings.TrimSpace(entry.Repo) + "  " + description
+		}
 		items = append(items, repoListItem{
 			title:       title,
-			description: strings.TrimSpace(entry.API),
-			filter:      strings.TrimSpace(entry.Title) + " " + strings.TrimSpace(entry.API),
+			description: description,
+			filter: strings.TrimSpace(entry.Title) + " " +
+				strings.TrimSpace(entry.Namespace) + "/" + strings.TrimSpace(entry.Repo) + " " +
+				strings.TrimSpace(entry.API),
 		})
 	}
 	return items

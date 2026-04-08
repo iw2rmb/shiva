@@ -56,7 +56,17 @@ type operationsCatalogCountQuery struct {
 	Query     string
 }
 
-type apisCatalogCountQuery struct{}
+type apisCatalogQuery struct {
+	Snapshot store.ResolveReadSnapshotInput
+	Query    string
+	Limit    int32
+	Offset   int32
+}
+
+type apisCatalogCountQuery struct {
+	Snapshot store.ResolveReadSnapshotInput
+	Query    string
+}
 
 type operationsCatalogQuery struct {
 	Snapshot store.ResolveReadSnapshotInput
@@ -70,6 +80,8 @@ const (
 	maxNamespacesPageLimit     int32 = 1000
 	defaultReposPageLimit      int32 = 100
 	maxReposPageLimit          int32 = 1000
+	defaultAPIsPageLimit       int32 = 200
+	maxAPIsPageLimit           int32 = 2000
 	defaultOperationsPageLimit int32 = 200
 	maxOperationsPageLimit     int32 = 2000
 )
@@ -148,11 +160,61 @@ func parseOperationEndpointQuery(c *fiber.Ctx) (request.Envelope, error) {
 	return envelope, nil
 }
 
-func parseAPIsQuery(c *fiber.Ctx) (store.ResolveReadSnapshotInput, error) {
+func parseAPIsQuery(c *fiber.Ctx) (apisCatalogQuery, error) {
 	if err := rejectUnsupportedQueryParams(c, "api", "operation_id", "method", "path", "format"); err != nil {
-		return store.ResolveReadSnapshotInput{}, err
+		return apisCatalogQuery{}, err
 	}
-	return parseSnapshotQuery(c, snapshotQueryOptions{})
+
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	repo := strings.TrimSpace(c.Query("repo"))
+	queryPrefix := strings.TrimSpace(c.Query("query"))
+	if hasQueryParam(c, "namespace") && namespace == "" {
+		return apisCatalogQuery{}, invalidQuery("namespace must not be empty")
+	}
+	if hasQueryParam(c, "repo") && repo == "" {
+		return apisCatalogQuery{}, invalidQuery("repo must not be empty")
+	}
+	if repo != "" && namespace == "" {
+		return apisCatalogQuery{}, invalidQuery("namespace is required when repo is provided")
+	}
+	if hasQueryParam(c, "query") && queryPrefix == "" {
+		return apisCatalogQuery{}, invalidQuery("query must not be empty")
+	}
+
+	revisionID, err := parseOptionalPositiveInt64Query(c, "revision_id")
+	if err != nil {
+		return apisCatalogQuery{}, err
+	}
+	sha := strings.TrimSpace(c.Query("sha"))
+	if hasQueryParam(c, "sha") && sha == "" {
+		return apisCatalogQuery{}, invalidQuery("sha must not be empty")
+	}
+	if revisionID > 0 && sha != "" {
+		return apisCatalogQuery{}, invalidQuery("revision_id and sha are mutually exclusive")
+	}
+	if sha != "" && !request.IsShortSHA(sha) {
+		return apisCatalogQuery{}, invalidQuery("sha must be exactly 8 lowercase hex characters")
+	}
+	if (revisionID > 0 || sha != "") && (namespace == "" || repo == "") {
+		return apisCatalogQuery{}, invalidQuery("namespace and repo are required when revision_id or sha are provided")
+	}
+
+	limit, offset, err := parsePaginationQuery(c, defaultAPIsPageLimit, maxAPIsPageLimit)
+	if err != nil {
+		return apisCatalogQuery{}, err
+	}
+
+	return apisCatalogQuery{
+		Snapshot: store.ResolveReadSnapshotInput{
+			Namespace:  namespace,
+			Repo:       repo,
+			RevisionID: revisionID,
+			SHA:        sha,
+		},
+		Query:  queryPrefix,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
 }
 
 func parseOperationsQuery(c *fiber.Ctx) (operationsCatalogQuery, error) {
@@ -384,22 +446,60 @@ func parseOperationsCountQuery(c *fiber.Ctx) (operationsCatalogCountQuery, error
 func parseAPIsCountQuery(c *fiber.Ctx) (apisCatalogCountQuery, error) {
 	if err := rejectUnsupportedQueryParams(
 		c,
-		"namespace",
-		"repo",
 		"api",
-		"revision_id",
-		"sha",
 		"operation_id",
 		"method",
 		"path",
 		"format",
-		"query",
 		"limit",
 		"offset",
 	); err != nil {
 		return apisCatalogCountQuery{}, err
 	}
-	return apisCatalogCountQuery{}, nil
+
+	namespace := strings.TrimSpace(c.Query("namespace"))
+	repo := strings.TrimSpace(c.Query("repo"))
+	queryPrefix := strings.TrimSpace(c.Query("query"))
+	if hasQueryParam(c, "namespace") && namespace == "" {
+		return apisCatalogCountQuery{}, invalidQuery("namespace must not be empty")
+	}
+	if hasQueryParam(c, "repo") && repo == "" {
+		return apisCatalogCountQuery{}, invalidQuery("repo must not be empty")
+	}
+	if repo != "" && namespace == "" {
+		return apisCatalogCountQuery{}, invalidQuery("namespace is required when repo is provided")
+	}
+	if hasQueryParam(c, "query") && queryPrefix == "" {
+		return apisCatalogCountQuery{}, invalidQuery("query must not be empty")
+	}
+
+	revisionID, err := parseOptionalPositiveInt64Query(c, "revision_id")
+	if err != nil {
+		return apisCatalogCountQuery{}, err
+	}
+	sha := strings.TrimSpace(c.Query("sha"))
+	if hasQueryParam(c, "sha") && sha == "" {
+		return apisCatalogCountQuery{}, invalidQuery("sha must not be empty")
+	}
+	if revisionID > 0 && sha != "" {
+		return apisCatalogCountQuery{}, invalidQuery("revision_id and sha are mutually exclusive")
+	}
+	if sha != "" && !request.IsShortSHA(sha) {
+		return apisCatalogCountQuery{}, invalidQuery("sha must be exactly 8 lowercase hex characters")
+	}
+	if (revisionID > 0 || sha != "") && (namespace == "" || repo == "") {
+		return apisCatalogCountQuery{}, invalidQuery("namespace and repo are required when revision_id or sha are provided")
+	}
+
+	return apisCatalogCountQuery{
+		Snapshot: store.ResolveReadSnapshotInput{
+			Namespace:  namespace,
+			Repo:       repo,
+			RevisionID: revisionID,
+			SHA:        sha,
+		},
+		Query: queryPrefix,
+	}, nil
 }
 
 type snapshotQueryOptions struct {

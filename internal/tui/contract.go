@@ -26,6 +26,7 @@ const (
 type BrowserService interface {
 	CountNamespaces(ctx context.Context, options RequestOptions) (CatalogCount, error)
 	CountRepos(ctx context.Context, namespace string, options RequestOptions) (CatalogCount, error)
+	CountAPIs(ctx context.Context, selector request.Envelope, options RequestOptions) (CatalogCount, error)
 	CountOperations(ctx context.Context, selector request.Envelope, options RequestOptions) (CatalogCount, error)
 	ListNamespaces(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListRepos(ctx context.Context, options RequestOptions, format clioutput.ListFormat) ([]byte, error)

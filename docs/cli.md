@@ -118,11 +118,11 @@ Rules:
   - initial route is selected by the optional argument:
     - no selector starts with header focus on `NAMESPACES`
     - `<namespace>/` seeds namespace selection and starts focused on `REPOS`
-    - `<namespace>/<repo>` seeds namespace+repo selection and starts focused on `SPECS`
+    - `<namespace>/<repo>` seeds namespace+repo selection and starts focused on `APIS`
   - startup preloads namespace count from `/v1/namespaces/count` and namespace catalog from `/v1/namespaces`
-  - repo, spec, and endpoint catalogs load lazily as the active scope changes
+  - repo, API, and endpoint catalogs load lazily as the active scope changes
   - layout uses a header-first shell:
-    - top header is `SHIVA :// NAMESPACES / REPOS / SPECS / ENDPOINTS`
+    - top header is `SHIVA :// NAMESPACES / REPOS / APIS / ENDPOINTS`
     - active header item determines which list preview is rendered below
     - in `ENDPOINTS`, the screen is split:
       - left pane: global header + endpoints list
@@ -144,17 +144,21 @@ Rules:
     - focus target is either `header` or the active list
     - in header focus: `left/right` and `tab/shift+tab` switch header item, `enter` focuses list
     - in list focus: `esc` returns focus to header
-    - `enter` in list commits selection and auto-advances (`NAMESPACES -> REPOS -> SPECS -> ENDPOINTS`) while keeping list focus
+    - `enter` in list commits selection and auto-advances (`NAMESPACES -> REPOS -> APIS -> ENDPOINTS`) while keeping list focus
     - `backspace` on header clears active selection scope
-      - clearing `Namespaces` clears namespace+repo+spec+endpoint
-      - clearing `Repos` clears repo+spec+endpoint
-      - clearing `Specs` clears spec+endpoint
+      - clearing `Namespaces` clears namespace+repo+api+endpoint
+      - clearing `Repos` clears repo+api+endpoint
+      - clearing `APIS` clears api+endpoint
       - clearing `Endpoints` clears endpoint only
   - filtering and sync:
     - namespace list keeps built-in list filtering
     - selecting a repo auto-sets namespace
-    - selecting a spec auto-sets repo and namespace
+    - selecting an API auto-sets repo and namespace
     - selecting an endpoint auto-sets repo and namespace
+    - APIs scope follows current repo/namespace selection:
+      - selected repo -> APIs for that repo
+      - selected namespace without repo -> APIs for that namespace
+      - no namespace/repo selection -> APIs across all repos
   - endpoint catalog loading:
     - endpoint rows are sorted by path, method, operation id, then API
     - endpoint rows render method chips using one-dark palette mapping: `GET` blue, `POST` green, `PUT` yellow, `PATCH` orange, `DELETE` red, `OPTIONS`/`HEAD` neutral gray
@@ -165,11 +169,12 @@ Rules:
       - `#<operationId> <summary>` when operation id exists
       - `<summary>` when operation id is empty
     - endpoint catalog loading is lazy and progressive with bounded concurrency
-    - scope is selected spec when present; otherwise selected repo, selected namespace, then all repos
+    - scope is selected API when present; otherwise selected repo, selected namespace, then all repos
     - list queries are paged by visible capacity:
       - `limit = items_per_page_for_current_height`
       - `offset = current_page * limit`
-      - applies to namespace, repo, and endpoint catalog requests
+      - applies to namespace, repo, API, and endpoint catalog requests
+      - API list requests use paged `/v1/apis` reads directly
       - endpoint list requests use paged `/v1/operations` reads directly when paging is requested
       - active catalog auto-reloads on terminal resize when visible page size changes
     - operation detail loads lazily for selected endpoint and is cached by endpoint identity

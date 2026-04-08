@@ -11,7 +11,7 @@ const (
 	RouteHome         RouteKind = "home"
 	RouteNamespaces   RouteKind = "namespaces"
 	RouteRepos        RouteKind = "repos"
-	RouteSpecs        RouteKind = "specs"
+	RouteAPIs         RouteKind = "apis"
 	RouteRepoExplorer RouteKind = "repo_explorer"
 )
 
@@ -41,7 +41,7 @@ func (route InitialRoute) Validate() error {
 		if route.Repo != "" {
 			return fmt.Errorf("repo must be empty for %q route", route.Kind)
 		}
-	case RouteSpecs:
+	case RouteAPIs:
 		if strings.TrimSpace(route.Namespace) == "" || strings.TrimSpace(route.Repo) == "" {
 			return fmt.Errorf("namespace and repo must not be empty for %q route", route.Kind)
 		}

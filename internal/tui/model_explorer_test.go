@@ -54,12 +54,12 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 	if cmd == nil {
-		t.Fatalf("expected spec list load command")
+		t.Fatalf("expected api list load command")
 	}
-	var specsLoaded specCatalogLoadedMsg
+	var specsLoaded apiCatalogLoadedMsg
 	foundSpecs := false
 	for _, msg := range collectCmdMessages(cmd) {
-		typed, ok := msg.(specCatalogLoadedMsg)
+		typed, ok := msg.(apiCatalogLoadedMsg)
 		if !ok {
 			continue
 		}
@@ -68,7 +68,7 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 		break
 	}
 	if !foundSpecs {
-		t.Fatalf("expected specCatalogLoadedMsg in command batch")
+		t.Fatalf("expected apiCatalogLoadedMsg in command batch")
 	}
 	updated, _ = model.Update(specsLoaded)
 	model = updated.(*rootModel)
@@ -170,8 +170,8 @@ func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 		model = updated.(*rootModel)
 	}
 
-	if model.activeRoute != RouteSpecs {
-		t.Fatalf("expected active route %q, got %q", RouteSpecs, model.activeRoute)
+	if model.activeRoute != RouteAPIs {
+		t.Fatalf("expected active route %q, got %q", RouteAPIs, model.activeRoute)
 	}
 	for _, msg := range collectCmdMessages(cmd) {
 		if _, ok := msg.(operationListLoadedMsg); ok {
@@ -186,8 +186,8 @@ func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 	}
 
 	got := stripANSI(model.View().Content)
-	if !strings.Contains(got, "No specs found for current repository.") {
-		t.Fatalf("expected empty spec catalog message, got %q", got)
+	if !strings.Contains(got, "No APIs found for current scope.") {
+		t.Fatalf("expected empty api catalog message, got %q", got)
 	}
 }
 
@@ -257,7 +257,7 @@ func TestRootModelExplorerEscReturnsToRepoList(t *testing.T) {
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 	if cmd == nil {
-		t.Fatalf("expected spec list command")
+		t.Fatalf("expected api list command")
 	}
 	for _, msg := range collectCmdMessages(cmd) {
 		updated, _ = model.Update(msg)
@@ -377,7 +377,7 @@ func TestRootModelExplorerLoadsSelectedEndpointDetailUsingExactIdentity(t *testi
 	updated, specCmd := model.Update(msg)
 	model = updated.(*rootModel)
 	if specCmd != nil {
-		t.Fatalf("expected endpoints tab load to skip spec command")
+		t.Fatalf("expected endpoints tab load to skip api command")
 	}
 	if model.explorer.Detail.Operation == nil {
 		t.Fatalf("expected operation detail to be set")
@@ -482,7 +482,7 @@ func TestRootModelExplorerLoadsOnlyOperationDetailAcrossTabs(t *testing.T) {
 				t.Fatalf("expected no follow-up detail command")
 			}
 			if service.getSpecCall != 0 {
-				t.Fatalf("expected no spec calls, got %d", service.getSpecCall)
+				t.Fatalf("expected no api calls, got %d", service.getSpecCall)
 			}
 			if model.explorer.Detail.Operation == nil {
 				t.Fatalf("expected operation detail to be set")
