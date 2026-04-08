@@ -47,6 +47,8 @@ type apiSnapshotResponse struct {
 }
 
 type operationSnapshotResponse struct {
+	Namespace         string          `json:"namespace,omitempty"`
+	Repo              string          `json:"repo,omitempty"`
 	API               string          `json:"api"`
 	Status            string          `json:"status"`
 	APISpecRevisionID int64           `json:"api_spec_revision_id"`
@@ -220,6 +222,8 @@ func mapOperationSnapshots(items []store.OperationSnapshot, includeOperation boo
 	response := make([]operationSnapshotResponse, 0, len(items))
 	for _, item := range items {
 		row := operationSnapshotResponse{
+			Namespace:         item.Namespace,
+			Repo:              item.Repo,
 			API:               item.API,
 			Status:            item.Status,
 			APISpecRevisionID: item.APISpecRevisionID,

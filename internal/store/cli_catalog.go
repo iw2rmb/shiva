@@ -71,6 +71,8 @@ type APISnapshot struct {
 }
 
 type OperationSnapshot struct {
+	Namespace         string
+	Repo              string
 	APISpecID         int64
 	API               string
 	Status            string
@@ -1285,6 +1287,8 @@ func mapOperationInventoryByAPIPageRow(row sqlc.ListOperationInventoryByRepoRevi
 
 func mapOperationCatalogInventoryRow(row sqlc.ListOperationCatalogInventoryRow) OperationSnapshot {
 	return OperationSnapshot{
+		Namespace:         row.Namespace,
+		Repo:              row.Repo,
 		APISpecID:         row.ApiSpecID,
 		API:               row.Api,
 		Status:            row.Status,
@@ -1303,6 +1307,8 @@ func mapOperationCatalogInventoryRow(row sqlc.ListOperationCatalogInventoryRow) 
 
 func mapOperationCatalogInventoryPageRow(row sqlc.ListOperationCatalogInventoryPageRow) OperationSnapshot {
 	return OperationSnapshot{
+		Namespace:         row.Namespace,
+		Repo:              row.Repo,
 		APISpecID:         row.ApiSpecID,
 		API:               row.Api,
 		Status:            row.Status,

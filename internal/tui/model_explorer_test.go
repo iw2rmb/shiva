@@ -341,6 +341,63 @@ func TestRootModelExplorerLoadsSelectedEndpointDetailUsingExactIdentity(t *testi
 	}
 }
 
+func TestRootModelUnscopedOperationsSelectionUsesRowIdentityForDetails(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBrowserService{
+		operationBody: []byte(`{"operationId":"listPets"}`),
+	}
+	model := newRootModel(service, InitialRoute{Kind: RouteHome}, RequestOptions{})
+	model.setHomeSelection(homeItemEndpoints)
+
+	token := model.beginOperationListLoad()
+	updated, cmd := model.Update(operationListLoadedMsg{
+		Token: token,
+		Entries: []EndpointEntry{
+			{
+				Identity: EndpointIdentity{
+					Namespace:   "acme",
+					Repo:        "platform",
+					API:         "pets.yaml",
+					Method:      "get",
+					Path:        "/pets",
+					OperationID: "listPets",
+				},
+			},
+		},
+	})
+	model = updated.(*rootModel)
+
+	if cmd == nil {
+		t.Fatalf("expected operation detail load command")
+	}
+	var msg tea.Msg
+	found := false
+	for _, candidate := range collectCmdMessages(cmd) {
+		if _, ok := candidate.(operationDetailLoadedMsg); !ok {
+			continue
+		}
+		msg = candidate
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("expected operationDetailLoadedMsg in command batch")
+	}
+	if service.getOperationCall != 1 {
+		t.Fatalf("expected one operation detail call, got %d", service.getOperationCall)
+	}
+	if service.lastOperationGet.Namespace != "acme" || service.lastOperationGet.Repo != "platform" {
+		t.Fatalf("expected operation detail selector namespace/repo from row identity, got %+v", service.lastOperationGet)
+	}
+
+	updated, _ = model.Update(msg)
+	model = updated.(*rootModel)
+	if model.explorer.Detail.Operation == nil {
+		t.Fatalf("expected operation detail to be set")
+	}
+}
+
 func TestRootModelExplorerLazySpecLoadForServersTab(t *testing.T) {
 	t.Parallel()
 

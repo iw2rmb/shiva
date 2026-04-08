@@ -71,7 +71,7 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	var itemsResponse []operationSnapshotResponse
+	var items []store.OperationSnapshot
 	if snapshotQuery.APIPath != "" {
 		apiSnapshot, found, err := s.readStore.GetAPISnapshotByRepoRevisionAndAPI(
 			c.Context(),
@@ -89,7 +89,7 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 			)
 		}
 
-		items, err := s.readStore.ListOperationInventoryByRepoRevisionAndAPIPage(
+		items, err = s.readStore.ListOperationInventoryByRepoRevisionAndAPIPage(
 			c.Context(),
 			resolved.Repo.ID,
 			snapshotQuery.APIPath,
@@ -102,12 +102,8 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 			return s.writeQueryError(c, err)
 		}
 
-		itemsResponse, err = mapOperationSnapshots(items, true)
-		if err != nil {
-			return s.writeQueryError(c, err)
-		}
 	} else {
-		items, err := s.readStore.ListOperationInventoryByRepoRevisionPage(
+		items, err = s.readStore.ListOperationInventoryByRepoRevisionPage(
 			c.Context(),
 			resolved.Repo.ID,
 			resolved.Revision.ID,
@@ -119,13 +115,27 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 			return s.writeQueryError(c, err)
 		}
 
-		itemsResponse, err = mapOperationSnapshots(items, true)
-		if err != nil {
-			return s.writeQueryError(c, err)
-		}
+	}
+	items = withOperationRepoIdentity(items, resolved.Repo.Namespace, resolved.Repo.Repo)
+	itemsResponse, err := mapOperationSnapshots(items, true)
+	if err != nil {
+		return s.writeQueryError(c, err)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(itemsResponse)
+}
+
+func withOperationRepoIdentity(items []store.OperationSnapshot, namespace string, repo string) []store.OperationSnapshot {
+	if len(items) == 0 {
+		return items
+	}
+	enriched := make([]store.OperationSnapshot, len(items))
+	copy(enriched, items)
+	for index := range enriched {
+		enriched[index].Namespace = namespace
+		enriched[index].Repo = repo
+	}
+	return enriched
 }
 
 func (s *Server) handleListRepos(c *fiber.Ctx) error {

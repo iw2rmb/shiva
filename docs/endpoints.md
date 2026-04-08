@@ -310,6 +310,8 @@ Legacy path-segment endpoints were removed:
 - when `api`, `revision_id`, or `sha` are provided, both `namespace` and `repo` are required
 - response body is an array of operation inventory rows
 - rows include:
+  - `namespace`
+  - `repo`
   - `api`
   - `status`
   - `api_spec_revision_id`

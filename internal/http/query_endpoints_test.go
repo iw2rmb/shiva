@@ -401,6 +401,8 @@ func TestQueryEndpoints_ListOperations_ValidatesExplicitAPI(t *testing.T) {
 		apiSnapshotFound: true,
 		operationInventoryByAPIResult: []store.OperationSnapshot{
 			{
+				Namespace:         "acme",
+				Repo:              "platform",
 				API:               "apis/pets/openapi.yaml",
 				Status:            "active",
 				APISpecRevisionID: 501,
@@ -454,6 +456,9 @@ func TestQueryEndpoints_ListOperations_ValidatesExplicitAPI(t *testing.T) {
 	if len(rows) != 1 || len(rows[0].Operation) == 0 {
 		t.Fatalf("unexpected operations payload: %+v", rows)
 	}
+	if rows[0].Namespace != "acme" || rows[0].Repo != "platform" {
+		t.Fatalf("expected operation row identity acme/platform, got namespace=%q repo=%q", rows[0].Namespace, rows[0].Repo)
+	}
 }
 
 func TestQueryEndpoints_ListOperations_AllowsGlobalAndNamespaceScope(t *testing.T) {
@@ -465,6 +470,8 @@ func TestQueryEndpoints_ListOperations_AllowsGlobalAndNamespaceScope(t *testing.
 		readStore := &fakeQueryReadStore{
 			operationCatalogInventoryResult: []store.OperationSnapshot{
 				{
+					Namespace:         "acme",
+					Repo:              "platform",
 					API:               "apis/pets/openapi.yaml",
 					Status:            "active",
 					APISpecRevisionID: 501,
@@ -501,13 +508,38 @@ func TestQueryEndpoints_ListOperations_AllowsGlobalAndNamespaceScope(t *testing.
 		if len(readStore.resolveReadSnapshotInputs) != 0 {
 			t.Fatalf("did not expect snapshot resolution, got %+v", readStore.resolveReadSnapshotInputs)
 		}
+		var rows []operationSnapshotResponse
+		if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode operations response: %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("expected one operation row, got %d", len(rows))
+		}
+		if rows[0].Namespace != "acme" || rows[0].Repo != "platform" {
+			t.Fatalf("expected operation row identity acme/platform, got namespace=%q repo=%q", rows[0].Namespace, rows[0].Repo)
+		}
 	})
 
 	t.Run("namespace scoped", func(t *testing.T) {
 		t.Parallel()
 
 		readStore := &fakeQueryReadStore{
-			operationCatalogInventoryResult: []store.OperationSnapshot{},
+			operationCatalogInventoryResult: []store.OperationSnapshot{
+				{
+					Namespace:         "acme",
+					Repo:              "gateway",
+					API:               "apis/gateway/openapi.yaml",
+					Status:            "active",
+					APISpecRevisionID: 9001,
+					IngestEventID:     777,
+					IngestEventSHA:    "deadbeef",
+					IngestEventBranch: "main",
+					Method:            "get",
+					Path:              "/health",
+					OperationID:       "health",
+					RawJSON:           []byte(`{"operationId":"health"}`),
+				},
+			},
 		}
 		server := newQueryTestServer(readStore)
 
@@ -531,6 +563,16 @@ func TestQueryEndpoints_ListOperations_AllowsGlobalAndNamespaceScope(t *testing.
 		}
 		if len(readStore.resolveReadSnapshotInputs) != 0 {
 			t.Fatalf("did not expect snapshot resolution, got %+v", readStore.resolveReadSnapshotInputs)
+		}
+		var rows []operationSnapshotResponse
+		if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode operations response: %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("expected one operation row, got %d", len(rows))
+		}
+		if rows[0].Namespace != "acme" || rows[0].Repo != "gateway" {
+			t.Fatalf("expected operation row identity acme/gateway, got namespace=%q repo=%q", rows[0].Namespace, rows[0].Repo)
 		}
 	})
 }
