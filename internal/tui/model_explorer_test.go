@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"regexp"
 	"strings"
@@ -648,6 +649,46 @@ func TestRootModelExplorerResizeRerendersUsingViewportWidth(t *testing.T) {
 	}
 }
 
+func TestRootModelExplorerShowsOperationDetailLoadErrorInDetailsPane(t *testing.T) {
+	t.Parallel()
+
+	model, _ := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	token := model.beginOperationDetailLoad()
+	updated, _ := model.Update(loadFailedMsg{
+		Domain: loadDomainOperationDetail,
+		Token:  token,
+		Err:    errors.New("operation detail request failed"),
+	})
+	model = updated.(*rootModel)
+
+	rendered := normalizeViewportText(stripANSI(model.explorer.Detail.Viewport.GetContent()))
+	if !strings.Contains(rendered, "Failed to load detail: operation detail request failed") {
+		t.Fatalf("expected operation detail load error in details pane, got %q", rendered)
+	}
+}
+
+func TestRootModelExplorerShowsSpecDetailLoadErrorInServersTab(t *testing.T) {
+	t.Parallel()
+
+	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabServers)
+	model.explorer.Detail.Operation = &OperationDetail{
+		Endpoint: selected,
+		Body:     json.RawMessage(`{"operationId":"listPets"}`),
+	}
+	token := model.beginSpecDetailLoad()
+	updated, _ := model.Update(loadFailedMsg{
+		Domain: loadDomainSpecDetail,
+		Token:  token,
+		Err:    errors.New("spec detail request failed"),
+	})
+	model = updated.(*rootModel)
+
+	rendered := normalizeViewportText(stripANSI(model.explorer.Detail.Viewport.GetContent()))
+	if !strings.Contains(rendered, "Failed to load detail: spec detail request failed") {
+		t.Fatalf("expected spec detail load error in servers pane, got %q", rendered)
+	}
+}
+
 func newExplorerModelWithSingleEndpoint(
 	service *fakeBrowserService,
 	tab DetailTab,
@@ -679,4 +720,10 @@ func newExplorerModelWithSingleEndpoint(
 func stripANSI(value string) string {
 	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	return re.ReplaceAllString(value, "")
+}
+
+func normalizeViewportText(value string) string {
+	value = strings.ReplaceAll(value, "\u00a0", " ")
+	value = strings.Join(strings.Fields(value), " ")
+	return value
 }

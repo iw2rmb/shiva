@@ -156,6 +156,7 @@ Rules:
       - active catalog auto-reloads on terminal resize when visible page size changes
     - operation detail loads lazily for selected endpoint and is cached by endpoint identity
     - spec detail loads only for `Servers` when operation-level servers are missing/empty and is cached by `(namespace, repo, api)`
+    - detail pane renders inline load failures for operation/spec detail requests
     - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)
     - `tab` and `shift+tab` switch detail tabs
     - `pgup`, `pgdown`, `home`, `end`, `ctrl+u`, and `ctrl+d` scroll the detail viewport

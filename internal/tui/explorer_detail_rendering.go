@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
@@ -36,6 +37,9 @@ func (model *rootModel) explorerDetailMarkdown() string {
 	switch model.explorer.Detail.ActiveTab {
 	case DetailTabEndpoints:
 		if model.explorer.Detail.Operation == nil {
+			if model.async.OperationDetail.LastError != nil {
+				return renderDetailLoadError("Endpoint", model.async.OperationDetail.LastError)
+			}
 			if model.async.OperationDetail.Loading {
 				return strings.Join([]string{
 					"## Endpoint",
@@ -56,6 +60,9 @@ func (model *rootModel) explorerDetailMarkdown() string {
 		})
 	case DetailTabServers:
 		if model.explorer.Detail.Operation == nil {
+			if model.async.OperationDetail.LastError != nil {
+				return renderDetailLoadError("Servers", model.async.OperationDetail.LastError)
+			}
 			if model.async.OperationDetail.Loading {
 				return strings.Join([]string{
 					"## Servers",
@@ -66,6 +73,9 @@ func (model *rootModel) explorerDetailMarkdown() string {
 			return markdown.BuildEmptyServers()
 		}
 		if model.shouldLoadSelectedSpecDetail() && model.explorer.Detail.Spec == nil {
+			if model.async.SpecDetail.LastError != nil {
+				return renderDetailLoadError("Servers", model.async.SpecDetail.LastError)
+			}
 			if model.async.SpecDetail.Loading {
 				return strings.Join([]string{
 					"## Servers",
@@ -83,6 +93,9 @@ func (model *rootModel) explorerDetailMarkdown() string {
 		return markdown.BuildServers(model.explorer.Detail.Operation.Body, specBody)
 	case DetailTabErrors:
 		if model.explorer.Detail.Operation == nil {
+			if model.async.OperationDetail.LastError != nil {
+				return renderDetailLoadError("Errors", model.async.OperationDetail.LastError)
+			}
 			if model.async.OperationDetail.Loading {
 				return strings.Join([]string{
 					"## Errors",
@@ -96,4 +109,12 @@ func (model *rootModel) explorerDetailMarkdown() string {
 	default:
 		return "## Details"
 	}
+}
+
+func renderDetailLoadError(title string, err error) string {
+	return strings.Join([]string{
+		fmt.Sprintf("## %s", title),
+		"",
+		fmt.Sprintf("Failed to load detail: `%s`", strings.TrimSpace(err.Error())),
+	}, "\n")
 }
