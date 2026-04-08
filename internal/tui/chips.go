@@ -29,7 +29,7 @@ func methodChip(method string) string {
 	case "POST":
 		style = style.Background(lipgloss.Color("#6d8f56"))
 	case "PUT":
-		style = style.Background(lipgloss.Color("180"))
+		style = style.Background(lipgloss.Color("#d5a622"))
 	case "PATCH":
 		style = style.Background(lipgloss.Color("173"))
 	case "DELETE":
