@@ -134,7 +134,9 @@ Rules:
       - endpoints scope shows `...` while `/v1/operations/count` is still in-flight
       - help footer row
     - details header row renders `/ REQUEST / RESPONSE <2xx chips> / ERRORS <non-2xx/default chips>`
-    - details pane has no top border and uses a dimmed left border
+    - details pane has no top border and uses a dark-gray left border
+    - request tab body omits the `## Request` heading and omits the ``Summary:`` label
+    - when operation description is empty, request tab shows gray italic `No decsription`
   - focus/input model:
     - focus target is either `header` or the active list
     - in header focus: `left/right` and `tab/shift+tab` switch header item, `enter` focuses list

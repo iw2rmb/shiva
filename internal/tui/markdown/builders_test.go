@@ -189,7 +189,6 @@ func TestBuildRequest(t *testing.T) {
 	})
 
 	for _, part := range []string{
-		"## Request",
 		"`Operation ID:` `listPets`",
 		"### Parameters",
 		"### Request Body",
@@ -200,6 +199,25 @@ func TestBuildRequest(t *testing.T) {
 	}
 	if strings.Contains(output, "### Responses") {
 		t.Fatalf("expected request markdown to exclude responses; output:\n%s", output)
+	}
+	if strings.Contains(output, "`Summary:`") {
+		t.Fatalf("expected request markdown to exclude summary label; output:\n%s", output)
+	}
+}
+
+func TestBuildRequest_NoDescriptionFallback(t *testing.T) {
+	t.Parallel()
+
+	output := BuildRequest(EndpointInput{
+		Method: "get",
+		Path:   "/pets/{petId}",
+		Operation: mustRawJSON(t, map[string]any{
+			"operationId": "listPets",
+		}),
+	})
+
+	if !strings.Contains(output, "No decsription") {
+		t.Fatalf("expected request markdown to include missing-description fallback; output:\n%s", output)
 	}
 }
 

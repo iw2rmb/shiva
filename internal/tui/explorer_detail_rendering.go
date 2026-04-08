@@ -42,14 +42,10 @@ func (model *rootModel) explorerDetailMarkdown() string {
 			}
 			if model.async.OperationDetail.Loading {
 				return strings.Join([]string{
-					"## Request",
-					"",
 					"Loading request detail...",
 				}, "\n")
 			}
 			return strings.Join([]string{
-				"## Request",
-				"",
 				"No request detail available for the selected endpoint.",
 			}, "\n")
 		}

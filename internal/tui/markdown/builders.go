@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"charm.land/lipgloss/v2"
 )
 
 type EndpointInput struct {
@@ -132,21 +134,18 @@ func BuildRequest(input EndpointInput) string {
 	operation, ok := decodeOperation(input.Operation)
 	if !ok {
 		return strings.Join([]string{
-			"## Request",
-			"",
 			"_Failed to decode operation payload._",
 		}, "\n")
 	}
 
-	sections := []string{"## Request"}
+	sections := make([]string, 0, 6)
 	if operation.OperationID != "" {
 		sections = append(sections, fmt.Sprintf("`Operation ID:` `%s`", operation.OperationID))
 	}
-	if operation.Summary != "" {
-		sections = append(sections, fmt.Sprintf("`Summary:` %s", operation.Summary))
-	}
 	if operation.Description != "" {
 		sections = append(sections, operation.Description)
+	} else {
+		sections = append(sections, lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true).Render("No decsription"))
 	}
 	if operation.Deprecated {
 		sections = append(sections, "`Deprecated:` `true`")
