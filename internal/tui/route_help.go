@@ -63,6 +63,15 @@ func reposRouteHelp() routeHelpKeyMap {
 	return routeHelpKeyMap{short: short}
 }
 
+func specsRouteHelp() routeHelpKeyMap {
+	short := []key.Binding{
+		keyHelp("enter", "select spec"),
+		keyHelp("esc", "back"),
+		keyHelp("q", "quit"),
+	}
+	return routeHelpKeyMap{short: short}
+}
+
 func explorerRouteHelp() routeHelpKeyMap {
 	short := []key.Binding{
 		keyHelp("enter", "select endpoint"),
@@ -82,6 +91,8 @@ func (model *rootModel) routeHelp() routeHelpKeyMap {
 		return namespaceRouteHelp()
 	case RouteRepos:
 		return reposRouteHelp()
+	case RouteSpecs:
+		return specsRouteHelp()
 	case RouteRepoExplorer:
 		return explorerRouteHelp()
 	default:

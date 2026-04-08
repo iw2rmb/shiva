@@ -43,6 +43,16 @@ func newRepoList() list.Model {
 	return model
 }
 
+func newSpecList() list.Model {
+	delegate := list.NewDefaultDelegate()
+	model := list.New(nil, delegate, defaultListWidth, defaultViewportHeight)
+	configureList(&model, "SPECS", "spec", "specs")
+	model.SetFilteringEnabled(true)
+	model.SetShowFilter(true)
+	model.Filter = passthroughFilter
+	return model
+}
+
 func newEndpointList() list.Model {
 	delegate := list.NewDefaultDelegate()
 	delegate.Styles.NormalTitle = lipgloss.NewStyle().Padding(0, 0, 0, 2).Faint(true)
@@ -140,8 +150,12 @@ func defaultHomeEntries() []HomeEntry {
 			Description: "Total: ...",
 		},
 		{
+			Title:       "Specs",
+			Description: "Select repo",
+		},
+		{
 			Title:       "Endpoints",
-			Description: "Coming soon",
+			Description: "Select spec",
 		},
 	}
 }
@@ -333,6 +347,22 @@ func endpointItems(entries []EndpointEntry) []list.Item {
 			title:       title,
 			description: description,
 			filter:      entry.Identity.Method + " " + entry.Identity.Path + " " + entry.Identity.OperationID + " " + entry.Identity.API,
+		})
+	}
+	return items
+}
+
+func specItems(entries []SpecEntry) []list.Item {
+	items := make([]list.Item, 0, len(entries))
+	for _, entry := range entries {
+		title := strings.TrimSpace(entry.Title)
+		if title == "" {
+			title = strings.TrimSpace(entry.API)
+		}
+		items = append(items, repoListItem{
+			title:       title,
+			description: strings.TrimSpace(entry.API),
+			filter:      strings.TrimSpace(entry.Title) + " " + strings.TrimSpace(entry.API),
 		})
 	}
 	return items

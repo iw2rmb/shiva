@@ -59,10 +59,10 @@ func TestNewRootModelHomeRouteShowsShivaSections(t *testing.T) {
 	if model.home.List.Title != "SHIVA" {
 		t.Fatalf("expected home list title SHIVA, got %q", model.home.List.Title)
 	}
-	if len(model.home.Entries) != 3 {
-		t.Fatalf("expected three home entries, got %d", len(model.home.Entries))
+	if len(model.home.Entries) != 4 {
+		t.Fatalf("expected four home entries, got %d", len(model.home.Entries))
 	}
-	if model.home.Entries[0].Title != "Namespaces" || model.home.Entries[1].Title != "Repos" || model.home.Entries[2].Title != "Endpoints" {
+	if model.home.Entries[0].Title != "Namespaces" || model.home.Entries[1].Title != "Repos" || model.home.Entries[2].Title != "Specs" || model.home.Entries[3].Title != "Endpoints" {
 		t.Fatalf("unexpected home entries %+v", model.home.Entries)
 	}
 	if model.home.Entries[0].Description != "Total: ..." {
@@ -79,7 +79,7 @@ func TestRootModelHeaderViewUsesProtocolSeparatorAndPaddedSections(t *testing.T)
 	if !strings.Contains(header, "SHIVA :// ") {
 		t.Fatalf("expected header to use :// separator, got %q", header)
 	}
-	for _, section := range []string{" NAMESPACES ", " REPOS ", " ENDPOINTS "} {
+	for _, section := range []string{" NAMESPACES ", " REPOS ", " SPECS ", " ENDPOINTS "} {
 		if !strings.Contains(header, section) {
 			t.Fatalf("expected header to contain padded section %q, got %q", section, header)
 		}
@@ -1340,6 +1340,11 @@ type fakeBrowserService struct {
 	listReposErr         error
 	listReposCall        int
 	lastListRepos        RequestOptions
+	listAPIsBody         []byte
+	listAPIsErr          error
+	listAPIsCall         int
+	lastListAPIs         RequestOptions
+	lastAPIsQuery        request.Envelope
 	listOperationsBody   []byte
 	listOperationsErr    error
 	listOperationsCall   int
@@ -1413,6 +1418,20 @@ func (service *fakeBrowserService) ListRepos(
 	service.lastListRepos = options
 	_ = format
 	return service.listReposBody, service.listReposErr
+}
+
+func (service *fakeBrowserService) ListAPIs(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+	format clioutput.ListFormat,
+) ([]byte, error) {
+	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.listAPIsCall++
+	service.lastAPIsQuery = selector
+	service.lastListAPIs = options
+	_ = format
+	return service.listAPIsBody, service.listAPIsErr
 }
 
 func (service *fakeBrowserService) ListOperations(

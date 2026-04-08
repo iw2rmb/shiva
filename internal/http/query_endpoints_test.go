@@ -336,6 +336,9 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 			Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
 			Revision: store.Revision{ID: 42},
 		},
+		specArtifactResult: store.SpecArtifact{
+			SpecJSON: []byte(`{"openapi":"3.1.0","info":{"title":"Pets From Info"}}`),
+		},
 		apiInventoryResult: []store.APISnapshot{
 			{
 				API:               "apis/pets/openapi.yaml",
@@ -382,6 +385,58 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 		{RepoID: 77, RevisionID: 42},
 	}) {
 		t.Fatalf("unexpected api inventory input: %+v", readStore.apiInventoryInputs)
+	}
+
+	var body []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode api list response: %v", err)
+	}
+	if len(body) != 2 {
+		t.Fatalf("expected two api rows, got %d", len(body))
+	}
+	if body[0]["title"] != "Pets From Info" {
+		t.Fatalf("expected first row title from spec info.title, got %#v", body[0]["title"])
+	}
+	if body[1]["title"] != "Deleted API" {
+		t.Fatalf("expected second row title from display_name fallback, got %#v", body[1]["title"])
+	}
+}
+
+func TestQueryEndpoints_CountAPIs_Global(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeQueryReadStore{
+		apiCatalogCountResult: store.OperationCatalogCount{
+			TotalCount:    13,
+			MaxItemLength: 27,
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(
+		httptest.NewRequest(http.MethodGet, "/v1/apis/count", nil),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if readStore.apiCatalogCountCalls != 1 {
+		t.Fatalf("expected one count call, got %d", readStore.apiCatalogCountCalls)
+	}
+	var body struct {
+		TotalCount    int64 `json:"total_count"`
+		MaxItemLength int64 `json:"max_item_length"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode count response: %v", err)
+	}
+	if body.TotalCount != 13 || body.MaxItemLength != 27 {
+		t.Fatalf("unexpected body %+v", body)
 	}
 }
 
@@ -1006,6 +1061,9 @@ type fakeQueryReadStore struct {
 	operationCatalogCountInputs       []operationCatalogCountInput
 	operationCatalogCountResult       store.OperationCatalogCount
 	operationCatalogCountErr          error
+	apiCatalogCountCalls              int
+	apiCatalogCountResult             store.OperationCatalogCount
+	apiCatalogCountErr                error
 	operationInventoryByAPIInputs     []operationInventoryByAPIInput
 	operationInventoryByAPIResult     []store.OperationSnapshot
 	operationInventoryByAPIErr        error
@@ -1292,6 +1350,14 @@ func (f *fakeQueryReadStore) CountOperationCatalogInventory(
 		return store.OperationCatalogCount{}, f.operationCatalogCountErr
 	}
 	return f.operationCatalogCountResult, nil
+}
+
+func (f *fakeQueryReadStore) CountAPICatalogInventory(_ context.Context) (store.OperationCatalogCount, error) {
+	f.apiCatalogCountCalls++
+	if f.apiCatalogCountErr != nil {
+		return store.OperationCatalogCount{}, f.apiCatalogCountErr
+	}
+	return f.apiCatalogCountResult, nil
 }
 
 func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevisionAndAPI(

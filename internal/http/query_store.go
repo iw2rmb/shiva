@@ -67,6 +67,7 @@ type queryReadStore interface {
 		repo string,
 		queryPrefix string,
 	) (store.OperationCatalogCount, error)
+	CountAPICatalogInventory(ctx context.Context) (store.OperationCatalogCount, error)
 	ListOperationInventoryByRepoRevisionAndAPI(
 		ctx context.Context,
 		repoID int64,

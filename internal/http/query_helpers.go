@@ -33,6 +33,7 @@ var supportedHTTPMethods = map[string]struct{}{
 }
 
 type apiSnapshotResponse struct {
+	Title             string `json:"title"`
 	API               string `json:"api"`
 	Status            string `json:"status"`
 	DisplayName       string `json:"display_name,omitempty"`
@@ -201,7 +202,12 @@ func writeOperationAmbiguity(c *fiber.Ctx, message string, candidates []store.Op
 func mapAPISnapshots(items []store.APISnapshot) []apiSnapshotResponse {
 	response := make([]apiSnapshotResponse, 0, len(items))
 	for _, item := range items {
+		title := strings.TrimSpace(item.API)
+		if strings.TrimSpace(item.DisplayName) != "" {
+			title = strings.TrimSpace(item.DisplayName)
+		}
 		response = append(response, apiSnapshotResponse{
+			Title:             title,
 			API:               item.API,
 			Status:            item.Status,
 			DisplayName:       item.DisplayName,
@@ -216,6 +222,52 @@ func mapAPISnapshots(items []store.APISnapshot) []apiSnapshotResponse {
 		})
 	}
 	return response
+}
+
+func applyAPISnapshotTitles(rows []apiSnapshotResponse, titlesByRevision map[int64]string) []apiSnapshotResponse {
+	if len(rows) == 0 || len(titlesByRevision) == 0 {
+		return rows
+	}
+	updated := make([]apiSnapshotResponse, len(rows))
+	copy(updated, rows)
+	for i := range updated {
+		if updated[i].APISpecRevisionID < 1 {
+			continue
+		}
+		title := strings.TrimSpace(titlesByRevision[updated[i].APISpecRevisionID])
+		if title == "" {
+			continue
+		}
+		updated[i].Title = title
+	}
+	return updated
+}
+
+func extractSpecTitle(specJSON []byte) string {
+	if len(bytes.TrimSpace(specJSON)) == 0 || !json.Valid(specJSON) {
+		return ""
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(specJSON, &document); err != nil {
+		return ""
+	}
+	infoRaw, ok := document["info"]
+	if !ok || len(bytes.TrimSpace(infoRaw)) == 0 || !json.Valid(infoRaw) {
+		return ""
+	}
+	var info map[string]json.RawMessage
+	if err := json.Unmarshal(infoRaw, &info); err != nil {
+		return ""
+	}
+	titleRaw, ok := info["title"]
+	if !ok || len(titleRaw) == 0 {
+		return ""
+	}
+	var title string
+	if err := json.Unmarshal(titleRaw, &title); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(title)
 }
 
 func mapOperationSnapshots(items []store.OperationSnapshot, includeOperation bool) ([]operationSnapshotResponse, error) {

@@ -16,6 +16,11 @@ type namespaceCatalogLoadedMsg struct {
 	Rows   []NamespaceEntry
 }
 
+type specCatalogLoadedMsg struct {
+	Token RequestToken
+	Rows  []SpecEntry
+}
+
 type namespaceCountLoadedMsg struct {
 	Token RequestToken
 	Count CatalogCount

@@ -26,7 +26,10 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 		t.Fatalf("marshal operation rows: %v", err)
 	}
 
-	service := &fakeBrowserService{listOperationsBody: operationBody}
+	service := &fakeBrowserService{
+		listAPIsBody:       []byte(`[{"api":"a.yaml","title":"A"},{"api":"z.yaml","title":"Z"}]`),
+		listOperationsBody: operationBody,
+	}
 	model := newRootModel(service, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
 
 	repoToken := model.beginRepoCatalogLoad()
@@ -49,6 +52,28 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	model = next.(*rootModel)
 
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = next.(*rootModel)
+	if cmd == nil {
+		t.Fatalf("expected spec list load command")
+	}
+	var specsLoaded specCatalogLoadedMsg
+	foundSpecs := false
+	for _, msg := range collectCmdMessages(cmd) {
+		typed, ok := msg.(specCatalogLoadedMsg)
+		if !ok {
+			continue
+		}
+		specsLoaded = typed
+		foundSpecs = true
+		break
+	}
+	if !foundSpecs {
+		t.Fatalf("expected specCatalogLoadedMsg in command batch")
+	}
+	updated, _ = model.Update(specsLoaded)
+	model = updated.(*rootModel)
+
+	next, cmd = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 
 	if model.activeRoute != RouteRepoExplorer {
@@ -81,8 +106,8 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 	if service.lastOperationQuery.Namespace != "acme" || service.lastOperationQuery.Repo != "platform" {
 		t.Fatalf("unexpected selector %+v", service.lastOperationQuery)
 	}
-	if service.lastOperationQuery.API != "" {
-		t.Fatalf("expected repo-level operation list without API filter, got %q", service.lastOperationQuery.API)
+	if service.lastOperationQuery.API != "a.yaml" {
+		t.Fatalf("expected spec-scoped operation list, got api=%q", service.lastOperationQuery.API)
 	}
 	if loaded.Token != model.async.OperationList.ActiveToken {
 		t.Fatalf("expected token %d, got %d", model.async.OperationList.ActiveToken, loaded.Token)
@@ -114,7 +139,9 @@ func TestRootModelEnterRepoStartsExplorerOperationLoad(t *testing.T) {
 func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 	t.Parallel()
 
-	service := &fakeBrowserService{}
+	service := &fakeBrowserService{
+		listAPIsBody: []byte(`[]`),
+	}
 	model := newRootModel(service, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
 
 	repoToken := model.beginRepoCatalogLoad()
@@ -138,9 +165,13 @@ func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
+	for _, msg := range collectCmdMessages(cmd) {
+		updated, _ = model.Update(msg)
+		model = updated.(*rootModel)
+	}
 
-	if model.activeRoute != RouteRepoExplorer {
-		t.Fatalf("expected active route %q, got %q", RouteRepoExplorer, model.activeRoute)
+	if model.activeRoute != RouteSpecs {
+		t.Fatalf("expected active route %q, got %q", RouteSpecs, model.activeRoute)
 	}
 	for _, msg := range collectCmdMessages(cmd) {
 		if _, ok := msg.(operationListLoadedMsg); ok {
@@ -155,8 +186,8 @@ func TestRootModelEnterRepoWithoutSnapshotSkipsOperationLoad(t *testing.T) {
 	}
 
 	got := stripANSI(model.View().Content)
-	if !strings.Contains(got, "No endpoints found for current scope.") {
-		t.Fatalf("expected empty operation catalog message, got %q", got)
+	if !strings.Contains(got, "No specs found for current repository.") {
+		t.Fatalf("expected empty spec catalog message, got %q", got)
 	}
 }
 
@@ -203,7 +234,7 @@ func TestRootModelExplorerArrowKeysUpdateSelection(t *testing.T) {
 func TestRootModelExplorerEscReturnsToRepoList(t *testing.T) {
 	t.Parallel()
 
-	model := newRootModel(&fakeBrowserService{}, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
+	model := newRootModel(&fakeBrowserService{listAPIsBody: []byte(`[{"api":"a.yaml","title":"A"}]`)}, InitialRoute{Kind: RouteRepos, Namespace: "acme"}, RequestOptions{})
 	repoToken := model.beginRepoCatalogLoad()
 	updated, _ := model.Update(repoCatalogLoadedMsg{
 		Token: repoToken,
@@ -226,10 +257,22 @@ func TestRootModelExplorerEscReturnsToRepoList(t *testing.T) {
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	model = next.(*rootModel)
 	if cmd == nil {
+		t.Fatalf("expected spec list command")
+	}
+	for _, msg := range collectCmdMessages(cmd) {
+		updated, _ = model.Update(msg)
+		model = updated.(*rootModel)
+	}
+
+	next, cmd = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = next.(*rootModel)
+	if cmd == nil {
 		t.Fatalf("expected operation list command")
 	}
-	updated, _ = model.Update(cmd())
-	model = updated.(*rootModel)
+	for _, msg := range collectCmdMessages(cmd) {
+		updated, _ = model.Update(msg)
+		model = updated.(*rootModel)
+	}
 
 	if model.activeRoute != RouteRepoExplorer {
 		t.Fatalf("expected route %q, got %q", RouteRepoExplorer, model.activeRoute)

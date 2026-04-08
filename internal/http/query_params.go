@@ -56,6 +56,8 @@ type operationsCatalogCountQuery struct {
 	Query     string
 }
 
+type apisCatalogCountQuery struct{}
+
 type operationsCatalogQuery struct {
 	Snapshot store.ResolveReadSnapshotInput
 	Query    string
@@ -377,6 +379,27 @@ func parseOperationsCountQuery(c *fiber.Ctx) (operationsCatalogCountQuery, error
 		Repo:      repo,
 		Query:     queryPrefix,
 	}, nil
+}
+
+func parseAPIsCountQuery(c *fiber.Ctx) (apisCatalogCountQuery, error) {
+	if err := rejectUnsupportedQueryParams(
+		c,
+		"namespace",
+		"repo",
+		"api",
+		"revision_id",
+		"sha",
+		"operation_id",
+		"method",
+		"path",
+		"format",
+		"query",
+		"limit",
+		"offset",
+	); err != nil {
+		return apisCatalogCountQuery{}, err
+	}
+	return apisCatalogCountQuery{}, nil
 }
 
 type snapshotQueryOptions struct {

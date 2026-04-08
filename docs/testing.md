@@ -48,7 +48,7 @@ Current baseline should be validated by running `go test ./...`.
 - CLI live query transport for repo/API/operation inventories, candidate-preserving operation lookup, and selector mapping.
 - CLI request-input parsing, selector-driven `ls` rendering, `batch` NDJSON execution, and `tui` route/flag validation.
 - TUI model behavior:
-  namespace/repo/explorer route transitions, route-local help content, endpoint selection syncing, tab switching (`REQUEST/RESPONSE/ERRORS`), response-code chip rendering, viewport scroll behavior, resize-driven rerendering, stale async-response rejection, and lazy operation-detail loading with endpoint cache reuse.
+  namespace/repo/spec/explorer route transitions, route-local help content, endpoint selection syncing, tab switching (`REQUEST/RESPONSE/ERRORS`), response-code chip rendering, viewport scroll behavior, resize-driven rerendering, stale async-response rejection, and lazy operation-detail loading with endpoint cache reuse.
 - Endpoint contract tests for:
   - `/internal/gitlab/ci/validate` request validation, service-unconfigured behavior, and both response formats,
   - `/gl/*` repo-path parsing, selector resolution, method/path normalization, ambiguity handling, request validation, fallback `400` behavior, and deterministic stub responses,
@@ -56,7 +56,7 @@ Current baseline should be validated by running `go test ./...`.
   - `/v1/spec` format and `ETag` behavior,
   - `/v1/operation` operation-id vs method/path resolution rules,
   - `/v1/call` request-envelope validation, ambiguity reporting, and resolved planning payloads,
-  - `/v1/apis`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, and `/v1/catalog/status` response shapes,
+  - `/v1/apis`, `/v1/apis/count`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, and `/v1/catalog/status` response shapes,
   - removal of legacy `/v1/specs` and `/v1/routes` read surfaces.
 - Internal CI validation service tests cover no-spec compare responses, impacted-root validation, fallback discovery, and repository discovery without `parent_sha`.
 - Source-layout vacuum tests cover repo-relative file remapping from temp workspaces and input validation.

@@ -31,7 +31,7 @@ func TestTUICommandParsesValidEntryRoutes(t *testing.T) {
 		{
 			name:          "repo selector starts in repo explorer",
 			args:          []string{"tui", "--profile", "work", "--offline", "acme/platform"},
-			expectedRoute: tui.InitialRoute{Kind: tui.RouteRepoExplorer, Namespace: "acme", Repo: "platform"},
+			expectedRoute: tui.InitialRoute{Kind: tui.RouteSpecs, Namespace: "acme", Repo: "platform"},
 			expectedOption: tui.RequestOptions{
 				Profile: "work",
 				Offline: true,

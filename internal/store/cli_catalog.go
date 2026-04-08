@@ -578,6 +578,29 @@ func (s *Store) CountOperationCatalogInventory(
 	)
 }
 
+func (s *Store) CountAPICatalogInventory(ctx context.Context) (OperationCatalogCount, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return OperationCatalogCount{}, ErrStoreNotConfigured
+	}
+
+	row := s.pool.QueryRow(
+		ctx,
+		`
+		SELECT
+			COUNT(*)::BIGINT AS total_count,
+			COALESCE(MAX(CHAR_LENGTH(TRIM(root_path))), 0)::BIGINT AS max_item_length
+		FROM api_specs
+		WHERE status = 'active'
+		`,
+	)
+
+	var count OperationCatalogCount
+	if err := row.Scan(&count.TotalCount, &count.MaxItemLength); err != nil {
+		return OperationCatalogCount{}, fmt.Errorf("count api catalog inventory: %w", err)
+	}
+	return count, nil
+}
+
 func listOperationCatalogInventory(
 	ctx context.Context,
 	queries operationInventoryQueries,

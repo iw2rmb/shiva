@@ -36,7 +36,31 @@ func (s *Server) handleListAPIs(c *fiber.Ctx) error {
 		return s.writeQueryError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(mapAPISnapshots(items))
+	rows := mapAPISnapshots(items)
+	if len(rows) == 0 {
+		return c.Status(fiber.StatusOK).JSON(rows)
+	}
+
+	titlesByRevision := make(map[int64]string)
+	for _, row := range rows {
+		if row.APISpecRevisionID < 1 {
+			continue
+		}
+		if _, exists := titlesByRevision[row.APISpecRevisionID]; exists {
+			continue
+		}
+		artifact, artifactErr := s.readStore.GetSpecArtifactByAPISpecRevisionID(c.Context(), row.APISpecRevisionID)
+		if artifactErr != nil {
+			continue
+		}
+		title := extractSpecTitle(artifact.SpecJSON)
+		if title == "" {
+			continue
+		}
+		titlesByRevision[row.APISpecRevisionID] = title
+	}
+
+	return c.Status(fiber.StatusOK).JSON(applyAPISnapshotTitles(rows, titlesByRevision))
 }
 
 func (s *Server) handleListOperations(c *fiber.Ctx) error {
@@ -295,6 +319,22 @@ func (s *Server) handleCountOperations(c *fiber.Ctx) error {
 	if countErr != nil {
 		return s.writeQueryError(c, countErr)
 	}
+	return c.Status(fiber.StatusOK).JSON(catalogCountResponse{
+		TotalCount:    count.TotalCount,
+		MaxItemLength: count.MaxItemLength,
+	})
+}
+
+func (s *Server) handleCountAPIs(c *fiber.Ctx) error {
+	if _, err := parseAPIsCountQuery(c); err != nil {
+		return s.writeQueryError(c, err)
+	}
+
+	count, err := s.readStore.CountAPICatalogInventory(c.Context())
+	if err != nil {
+		return s.writeQueryError(c, err)
+	}
+
 	return c.Status(fiber.StatusOK).JSON(catalogCountResponse{
 		TotalCount:    count.TotalCount,
 		MaxItemLength: count.MaxItemLength,

@@ -35,6 +35,14 @@ type RepoEntry struct {
 	Row       clioutput.RepoRow
 }
 
+type SpecEntry struct {
+	Namespace string
+	Repo      string
+	Title     string
+	API       string
+	Row       clioutput.APIRow
+}
+
 type EndpointIdentity struct {
 	Namespace   string
 	Repo        string
@@ -99,6 +107,16 @@ type RepoRouteState struct {
 	Query     string
 }
 
+type SpecRouteState struct {
+	Namespace string
+	Repo      string
+	Entries   []SpecEntry
+	Selected  int
+	List      list.Model
+	Pager     paginator.Model
+	Query     string
+}
+
 type RepoExplorerRouteState struct {
 	Namespace      string
 	Repo           string
@@ -127,6 +145,7 @@ const (
 	loadDomainOperationCount  loadDomain = "operation_count"
 	loadDomainNamespaces      loadDomain = "namespaces"
 	loadDomainRepoCatalog     loadDomain = "repo_catalog"
+	loadDomainSpecCatalog     loadDomain = "spec_catalog"
 	loadDomainOperationList   loadDomain = "operation_list"
 	loadDomainOperationDetail loadDomain = "operation_detail"
 	loadDomainSpecDetail      loadDomain = "spec_detail"
@@ -145,6 +164,7 @@ type AsyncState struct {
 	OperationCount  asyncLoadState
 	Namespaces      asyncLoadState
 	RepoCatalog     asyncLoadState
+	SpecCatalog     asyncLoadState
 	OperationList   asyncLoadState
 	OperationDetail asyncLoadState
 	SpecDetail      asyncLoadState

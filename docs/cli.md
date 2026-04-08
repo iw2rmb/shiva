@@ -118,20 +118,17 @@ Rules:
   - initial route is selected by the optional argument:
     - no selector starts with header focus on `NAMESPACES`
     - `<namespace>/` seeds namespace selection and starts focused on `REPOS`
-    - `<namespace>/<repo>` seeds namespace+repo selection and starts focused on `ENDPOINTS`
+    - `<namespace>/<repo>` seeds namespace+repo selection and starts focused on `SPECS`
   - startup preloads namespace count from `/v1/namespaces/count` and namespace catalog from `/v1/namespaces`
-  - startup also loads scoped width/count metadata from:
-    - `/v1/repos/count`
-    - `/v1/operations/count`
+  - repo, spec, and endpoint catalogs load lazily as the active scope changes
   - layout uses a header-first shell:
-    - top header is `SHIVA :// NAMESPACES / REPOS / ENDPOINTS`
+    - top header is `SHIVA :// NAMESPACES / REPOS / SPECS / ENDPOINTS`
     - active header item determines which list preview is rendered below
     - in `ENDPOINTS`, the screen is split:
       - left pane: global header + endpoints list
       - right pane: details pane starts at row 1 with `/ REQUEST / RESPONSE / ERRORS` and uses width `max(viewport_width/3, 90)` when side-by-side layout fits
     - bottom rows are fixed as:
       - paginator row (`<current>/<total>`) for the active list scope
-      - endpoints scope shows `...` while `/v1/operations/count` is still in-flight
       - help footer row
     - details header row renders `/ REQUEST / RESPONSE <2xx chips> / ERRORS <non-2xx/default chips>`
     - details pane has no top border and uses a dark-gray left border
@@ -147,14 +144,16 @@ Rules:
     - focus target is either `header` or the active list
     - in header focus: `left/right` and `tab/shift+tab` switch header item, `enter` focuses list
     - in list focus: `esc` returns focus to header
-    - `enter` in list commits selection and auto-advances (`NAMESPACES -> REPOS -> ENDPOINTS`) while keeping list focus
+    - `enter` in list commits selection and auto-advances (`NAMESPACES -> REPOS -> SPECS -> ENDPOINTS`) while keeping list focus
     - `backspace` on header clears active selection scope
-      - clearing `Namespaces` clears namespace+repo+endpoint
-      - clearing `Repos` clears repo+endpoint
+      - clearing `Namespaces` clears namespace+repo+spec+endpoint
+      - clearing `Repos` clears repo+spec+endpoint
+      - clearing `Specs` clears spec+endpoint
       - clearing `Endpoints` clears endpoint only
   - filtering and sync:
     - namespace list keeps built-in list filtering
     - selecting a repo auto-sets namespace
+    - selecting a spec auto-sets repo and namespace
     - selecting an endpoint auto-sets repo and namespace
   - endpoint catalog loading:
     - endpoint rows are sorted by path, method, operation id, then API
@@ -166,7 +165,7 @@ Rules:
       - `#<operationId> <summary>` when operation id exists
       - `<summary>` when operation id is empty
     - endpoint catalog loading is lazy and progressive with bounded concurrency
-    - scope is selected repo, else selected namespace, else all repos
+    - scope is selected spec when present; otherwise selected repo, selected namespace, then all repos
     - list queries are paged by visible capacity:
       - `limit = items_per_page_for_current_height`
       - `offset = current_page * limit`

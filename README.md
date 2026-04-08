@@ -20,8 +20,13 @@ Shiva is a Go service that ingests GitLab push events, detects OpenAPI changes, 
 - `GET /v1/operation`
 - `POST /v1/call`
 - `GET /v1/apis`
+- `GET /v1/apis/count`
 - `GET /v1/operations`
+- `GET /v1/operations/count`
+- `GET /v1/namespaces`
+- `GET /v1/namespaces/count`
 - `GET /v1/repos`
+- `GET /v1/repos/count`
 - `GET /v1/catalog/status`
 
 Query semantics:

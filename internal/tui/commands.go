@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
@@ -178,6 +179,60 @@ func loadOperationListCmd(
 	return func() tea.Msg {
 		return loadOperationListMsg(ctx, service, selector, options, offset, token)
 	}
+}
+
+func loadSpecCatalogCmd(
+	ctx context.Context,
+	service BrowserService,
+	selector request.Envelope,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		return loadSpecCatalogMsg(ctx, service, selector, options, token)
+	}
+}
+
+func loadSpecCatalogMsg(
+	ctx context.Context,
+	service BrowserService,
+	selector request.Envelope,
+	options RequestOptions,
+	token RequestToken,
+) tea.Msg {
+	body, err := service.ListAPIs(ctx, selector, options, clioutput.ListFormatJSON)
+	if err != nil {
+		return loadFailedMsg{Domain: loadDomainSpecCatalog, Token: token, Err: err}
+	}
+
+	var rows []clioutput.APIRow
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return loadFailedMsg{
+			Domain: loadDomainSpecCatalog,
+			Token:  token,
+			Err:    fmt.Errorf("decode spec catalog: %w", err),
+		}
+	}
+
+	entries := make([]SpecEntry, 0, len(rows))
+	for _, row := range rows {
+		title := strings.TrimSpace(row.Title)
+		if title == "" {
+			title = strings.TrimSpace(row.DisplayName)
+		}
+		if title == "" {
+			title = strings.TrimSpace(row.API)
+		}
+		entries = append(entries, SpecEntry{
+			Namespace: selector.Namespace,
+			Repo:      selector.Repo,
+			Title:     title,
+			API:       strings.TrimSpace(row.API),
+			Row:       row,
+		})
+	}
+
+	return specCatalogLoadedMsg{Token: token, Rows: entries}
 }
 
 func loadOperationListMsg(

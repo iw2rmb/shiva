@@ -79,7 +79,7 @@ func parseTUIInitialRoute(args []string) (tui.InitialRoute, error) {
 		return tui.InitialRoute{}, &InvalidInputError{Message: "tui selector must be <namespace>/ or <namespace>/<repo>"}
 	}
 	return tui.InitialRoute{
-		Kind:      tui.RouteRepoExplorer,
+		Kind:      tui.RouteSpecs,
 		Namespace: identity.Namespace,
 		Repo:      identity.Repo,
 	}, nil
@@ -173,6 +173,15 @@ func (adapter tuiServiceAdapter) ListOperations(
 	format clioutput.ListFormat,
 ) ([]byte, error) {
 	return adapter.service.ListOperations(ctx, selector, fromTUIRequestOptions(options), format)
+}
+
+func (adapter tuiServiceAdapter) ListAPIs(
+	ctx context.Context,
+	selector request.Envelope,
+	options tui.RequestOptions,
+	format clioutput.ListFormat,
+) ([]byte, error) {
+	return adapter.service.ListAPIs(ctx, selector, fromTUIRequestOptions(options), format)
 }
 
 func (adapter tuiServiceAdapter) GetOperation(

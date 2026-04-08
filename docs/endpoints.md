@@ -171,7 +171,7 @@ Current state:
 
 ## Query and Call-Planning Endpoints (`/v1/*`)
 Current state:
-- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, `/v1/catalog/status`, `/v1/namespaces/count`, `/v1/repos/count`, and `/v1/operations/count` are shipped query/read endpoints
+- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/apis/count`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, `/v1/catalog/status`, `/v1/namespaces/count`, `/v1/repos/count`, and `/v1/operations/count` are shipped query/read endpoints
 - `/v1/call` is shipped as a planning endpoint only; it does not dispatch outbound traffic
 
 ### Registered Surface
@@ -179,6 +179,7 @@ Current state:
 - `GET /v1/operation`
 - `POST /v1/call`
 - `GET /v1/apis`
+- `GET /v1/apis/count`
 - `GET /v1/operations`
 - `GET /v1/namespaces`
 - `GET /v1/repos`
@@ -289,6 +290,7 @@ Legacy path-segment endpoints were removed:
   - optional `revision_id` or `sha`
 - response body is an array of API snapshot rows
 - rows include current API status plus resolved snapshot metadata when present:
+  - `title` (resolved from canonical `spec_json.info.title`, then `display_name`, then `api`)
   - `api`
   - `status`
   - `display_name`
@@ -300,6 +302,13 @@ Legacy path-segment endpoints were removed:
   - `spec_etag`
   - `spec_size_bytes`
   - `operation_count`
+
+### `GET /v1/apis/count`
+- takes no query parameters
+- this endpoint does not accept repo/snapshot selector parameters
+- response body shape:
+  - `total_count` (`count(api_specs where status='active')`)
+  - `max_item_length` (`max(length(root_path))` across active API specs)
 
 ### `GET /v1/operations`
 - supported query parameters:

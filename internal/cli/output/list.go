@@ -47,6 +47,7 @@ type NamespaceRow struct {
 type APIRow struct {
 	Namespace         string `json:"namespace,omitempty"`
 	Repo              string `json:"repo,omitempty"`
+	Title             string `json:"title,omitempty"`
 	API               string `json:"api"`
 	Status            string `json:"status"`
 	DisplayName       string `json:"display_name,omitempty"`
