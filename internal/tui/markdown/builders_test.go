@@ -118,19 +118,19 @@ func TestBuildEndpoint(t *testing.T) {
 					},
 				}),
 			},
-			contains: []string{
-				"## GET /pets/{petId}",
-				"`Operation ID:` `listPets`",
-				"/: Path",
-				"* /{petId}/: string",
-				"?& Query",
-				"&limit: integer = 50",
-				"{} Body",
-				"#### `application/json`",
-				"CreatePetRequest {",
-				"### Responses",
-				"#### `200` Success response.",
-				"#### `400` Bad request.",
+				contains: []string{
+					"## GET /pets/{petId}",
+					"`Operation ID:` `listPets`",
+					"/: Path",
+					"* /{petId}/: string",
+					"?& Query",
+					"&limit: integer = 50",
+					"{} Body REQUIRED",
+					"#### `application/json`",
+					"CreatePetRequest {",
+					"### Responses",
+					"#### `200` Success response.",
+					"#### `400` Bad request.",
 			},
 		},
 	}
@@ -190,11 +190,14 @@ func TestBuildRequest(t *testing.T) {
 	for _, part := range []string{
 		"`Operation ID:` `listPets`",
 		"/: Path",
-		"{} Body",
+		"{} Body REQUIRED",
 	} {
 		if !strings.Contains(output, normalizeWhitespace(part)) {
 			t.Fatalf("expected request markdown to contain %q; output:\n%s", part, output)
 		}
+	}
+	if strings.Contains(output, "`Required:` `true`") {
+		t.Fatalf("expected request markdown to inline required marker in body header; output:\n%s", output)
 	}
 	if strings.Contains(output, "### Responses") {
 		t.Fatalf("expected request markdown to exclude responses; output:\n%s", output)

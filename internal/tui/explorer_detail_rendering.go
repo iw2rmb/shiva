@@ -50,6 +50,8 @@ func styleDetailSectionBadges(rendered string) string {
 			replacement = renderDetailSectionHeader("?&", "QUERY")
 		case "{} Body":
 			replacement = renderDetailSectionHeader("{}", "BODY")
+		case "{} Body REQUIRED":
+			replacement = renderDetailSectionHeaderWithChip("{}", "BODY", "REQUIRED")
 		default:
 			continue
 		}
@@ -65,6 +67,10 @@ func stripANSIEscapeCodes(value string) string {
 
 func renderDetailSectionHeader(badge string, label string) string {
 	return detailSectionHeaderStyle.Render(badge + " " + label)
+}
+
+func renderDetailSectionHeaderWithChip(badge string, label string, chip string) string {
+	return renderDetailSectionHeader(badge, label) + " " + responseErrorChipStyle.Render(chip)
 }
 
 func (model *rootModel) explorerDetailMarkdown() string {

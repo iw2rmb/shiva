@@ -294,13 +294,13 @@ func renderRequestBodySection(requestBody *requestBodyDocument) string {
 			"No documented request body.",
 		}, "\n")
 	}
+	if requestBody.Required {
+		header += " REQUIRED"
+	}
 
 	parts := []string{header}
 	if requestBody.Description != "" {
 		parts = append(parts, requestBody.Description)
-	}
-	if requestBody.Required {
-		parts = append(parts, "`Required:` `true`")
 	}
 
 	contentTypes := sortedKeys(requestBody.Content)

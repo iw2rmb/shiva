@@ -137,11 +137,12 @@ Rules:
     - details pane has no top border and uses a dark-gray left border
     - details pane omits the endpoint identity row (`<method> <endpoint>`) above markdown content
     - request tab body omits the `## Request` heading and omits the ``Summary:`` label
-    - parameter/body section labels use inline badges:
-      - path params: `/: PATH`
-      - query params: `?& QUERY`
-      - request body: `{} BODY`
-    - when operation description is empty, request tab shows gray italic `No decsription`
+	    - parameter/body section labels use inline badges:
+	      - path params: `/: PATH`
+	      - query params: `?& QUERY`
+	      - request body: `{} BODY`
+	      - required request body adds `REQUIRED` chip after `{} BODY` using the same color style as non-2xx response chips
+	    - when operation description is empty, request tab shows gray italic `No decsription`
   - focus/input model:
     - focus target is either `header` or the active list
     - in header focus: `left/right` and `tab/shift+tab` switch header item, `enter` focuses list
