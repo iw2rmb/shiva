@@ -85,7 +85,7 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 			List:     newEndpointList(),
 			Pager:    newPaginator(),
 			Detail: DetailState{
-				ActiveTab: DetailTabEndpoints,
+				ActiveTab: DetailTabRequest,
 				Viewport:  newDetailViewport(defaultListWidth, defaultViewportHeight),
 			},
 			OperationCache: make(map[EndpointIdentity]OperationDetail),
@@ -293,7 +293,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.explorer.OperationCache[detail.Endpoint] = detail
 		model.explorer.Detail.Operation = &detail
 		model.refreshExplorerDetailViewport()
-		return model, model.loadSelectedSpecDetailIfNeeded()
+		return model, nil
 	case specDetailLoadedMsg:
 		if !model.accepts(loadDomainSpecDetail, typed.Token) {
 			return model, nil
@@ -332,7 +332,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model.refreshHomeList()
 		case loadDomainRepoCount, loadDomainOperationCount:
 			model.resizeLists()
-		case loadDomainOperationDetail, loadDomainSpecDetail:
+		case loadDomainOperationDetail:
 			model.refreshExplorerDetailViewport()
 		}
 	}
@@ -680,7 +680,7 @@ func (model *rootModel) resizeLists() {
 		detailWidth = listWidth
 	}
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
-	detailHeight := listHeight - 2
+	detailHeight := listHeight - 3
 	if detailHeight < 1 {
 		detailHeight = 1
 	}
@@ -893,12 +893,18 @@ func (model *rootModel) viewEndpointsWithDetailsPane() string {
 }
 
 func (model *rootModel) endpointDetailsPaneView() string {
+	selected, ok := model.explorer.SelectedEndpoint()
+	endpointRow := ""
+	if ok {
+		endpointRow = methodChip(selected.Identity.Method) + " " + renderPathWithDimmedParams(selected.Identity.Path)
+	}
 	body := strings.Join([]string{
 		model.explorerTabRow(),
 		"",
+		endpointRow,
 		model.explorer.Detail.Viewport.View(),
 	}, "\n")
-	return model.styles.Pane("Details", body, model.explorer.Detail.Viewport.Width())
+	return model.styles.DetailPane(body, model.explorer.Detail.Viewport.Width())
 }
 
 func browserPaneLayout(width int, includeDetails bool) (int, int, int, bool) {

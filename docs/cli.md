@@ -130,7 +130,9 @@ Rules:
       - paginator row (`<current>/<total>`) for the active list scope
       - endpoints scope shows `...` while `/v1/operations/count` is still in-flight
       - help footer row
-    - when `ENDPOINTS` is active, the details pane remains visible with tabs `Endpoints`, `Servers`, `Errors`
+    - when `ENDPOINTS` is active, the details pane remains visible with tabs `REQUEST`, `RESPONSE`, `ERRORS`
+    - details header row renders `/ REQUEST / RESPONSE <2xx chips> / ERRORS <non-2xx/default chips>`
+    - details pane has no top border and uses a dimmed left border
   - focus/input model:
     - focus target is either `header` or the active list
     - in header focus: `left/right` and `tab/shift+tab` switch header item, `enter` focuses list
@@ -146,6 +148,7 @@ Rules:
     - selecting an endpoint auto-sets repo and namespace
   - endpoint catalog loading:
     - endpoint rows are sorted by path, method, operation id, then API
+    - endpoint rows render method chips using one-dark palette mapping: `GET` blue, `POST` green, `PUT` yellow, `PATCH` orange, `DELETE` red, `OPTIONS`/`HEAD` neutral gray
     - endpoint catalog loading is lazy and progressive with bounded concurrency
     - scope is selected repo, else selected namespace, else all repos
     - list queries are paged by visible capacity:
@@ -155,10 +158,9 @@ Rules:
       - endpoint list requests use paged `/v1/operations` reads directly when paging is requested
       - active catalog auto-reloads on terminal resize when visible page size changes
     - operation detail loads lazily for selected endpoint and is cached by endpoint identity
-    - spec detail loads only for `Servers` when operation-level servers are missing/empty and is cached by `(namespace, repo, api)`
-    - detail pane renders inline load failures for operation/spec detail requests
+    - detail pane renders inline load failures for operation detail requests
     - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)
-    - `tab` and `shift+tab` switch detail tabs
+    - `tab` and `shift+tab` switch detail tabs in order `REQUEST -> RESPONSE -> ERRORS`
     - `pgup`, `pgdown`, `home`, `end`, `ctrl+u`, and `ctrl+d` scroll the detail viewport
     - active list width is driven by scoped `max_item_length` count metadata
   - empty catalogs and startup catalog-load failures render explicit deterministic states

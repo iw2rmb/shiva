@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/paginator"
+	"charm.land/lipgloss/v2"
 )
 
 const (
@@ -44,6 +45,17 @@ func newRepoList() list.Model {
 
 func newEndpointList() list.Model {
 	delegate := list.NewDefaultDelegate()
+	delegate.Styles.NormalTitle = lipgloss.NewStyle().Padding(0, 0, 0, 2)
+	delegate.Styles.NormalDesc = lipgloss.NewStyle().Padding(0, 0, 0, 2).Faint(true)
+	delegate.Styles.SelectedTitle = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 0, 0, 1)
+	delegate.Styles.SelectedDesc = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 0, 0, 1).
+		Faint(true)
 	model := list.New(nil, delegate, defaultListWidth, defaultViewportHeight)
 	configureList(&model, "ENDPOINTS", "endpoint", "endpoints")
 	model.SetFilteringEnabled(true)
@@ -298,10 +310,11 @@ func endpointItems(entries []EndpointEntry) []list.Item {
 	items := make([]list.Item, 0, len(entries))
 	multiAPI := hasMultipleAPIs(entries)
 	for _, entry := range entries {
-		title := strings.ToUpper(strings.TrimSpace(entry.Identity.Method)) + " " + strings.TrimSpace(entry.Identity.Path)
-		if strings.TrimSpace(title) == "" {
-			title = "unknown endpoint"
+		path := strings.TrimSpace(entry.Identity.Path)
+		if path == "" {
+			path = "/"
 		}
+		title := methodChip(entry.Identity.Method) + " " + pathBaseStyle.Render(path)
 
 		descriptionParts := make([]string, 0, 2)
 		if entry.Identity.OperationID != "" {

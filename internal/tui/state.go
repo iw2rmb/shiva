@@ -12,9 +12,9 @@ import (
 type DetailTab string
 
 const (
-	DetailTabEndpoints DetailTab = "endpoints"
-	DetailTabServers   DetailTab = "servers"
-	DetailTabErrors    DetailTab = "errors"
+	DetailTabRequest  DetailTab = "request"
+	DetailTabResponse DetailTab = "response"
+	DetailTabErrors   DetailTab = "errors"
 )
 
 type NamespaceEntry struct {

@@ -150,96 +150,60 @@ func TestBuildEndpoint(t *testing.T) {
 	}
 }
 
-func TestBuildServers(t *testing.T) {
+func TestBuildRequest(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name       string
-		operation  map[string]any
-		spec       map[string]any
-		contains   []string
-		notContain []string
-	}{
-		{
-			name: "operation servers override spec servers",
-			operation: map[string]any{
-				"servers": []any{
-					map[string]any{
-						"url":         "https://operation.example.com",
-						"description": "Operation server",
+	output := BuildRequest(EndpointInput{
+		Method: "get",
+		Path:   "/pets/{petId}",
+		Operation: mustRawJSON(t, map[string]any{
+			"operationId": "listPets",
+			"summary":     "List pets",
+			"description": "Returns pets from the catalog.",
+			"parameters": []any{
+				map[string]any{
+					"name":     "petId",
+					"in":       "path",
+					"required": true,
+					"schema": map[string]any{
+						"type": "string",
 					},
 				},
 			},
-			spec: map[string]any{
-				"servers": []any{
-					map[string]any{
-						"url": "https://spec.example.com",
+			"requestBody": map[string]any{
+				"required": true,
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{
+							"type": "object",
+						},
 					},
 				},
 			},
-			contains: []string{
-				"## Servers",
-				"`Source:` `operation`",
-				"https://operation.example.com",
-			},
-			notContain: []string{
-				"https://spec.example.com",
-				"`Source:` `spec`",
-			},
-		},
-		{
-			name: "spec servers used when operation has none",
-			operation: map[string]any{
-				"operationId": "listPets",
-			},
-			spec: map[string]any{
-				"servers": []any{
-					map[string]any{
-						"url":         "https://spec.example.com",
-						"description": "Spec server",
-					},
+			"responses": map[string]any{
+				"200": map[string]any{
+					"description": "OK",
 				},
 			},
-			contains: []string{
-				"`Source:` `spec`",
-				"https://spec.example.com",
-			},
-		},
-		{
-			name: "empty state when no servers are documented",
-			operation: map[string]any{
-				"operationId": "listPets",
-			},
-			spec: map[string]any{
-				"openapi": "3.1.0",
-			},
-			contains: []string{
-				"## Servers",
-				"No servers documented for this endpoint or API spec.",
-			},
-		},
-	}
+		}),
+	})
 
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			output := BuildServers(mustRawJSON(t, tc.operation), mustRawJSON(t, tc.spec))
-			for _, part := range tc.contains {
-				if !strings.Contains(output, part) {
-					t.Fatalf("expected servers markdown to contain %q; output:\n%s", part, output)
-				}
-			}
-			for _, part := range tc.notContain {
-				if strings.Contains(output, part) {
-					t.Fatalf("expected servers markdown to exclude %q; output:\n%s", part, output)
-				}
-			}
-		})
+	for _, part := range []string{
+		"## Request",
+		"`Operation ID:` `listPets`",
+		"### Parameters",
+		"### Request Body",
+	} {
+		if !strings.Contains(output, part) {
+			t.Fatalf("expected request markdown to contain %q; output:\n%s", part, output)
+		}
+	}
+	if strings.Contains(output, "### Responses") {
+		t.Fatalf("expected request markdown to exclude responses; output:\n%s", output)
 	}
 }
 
-func TestBuildErrors(t *testing.T) {
+func TestBuildSuccessResponses(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -249,7 +213,7 @@ func TestBuildErrors(t *testing.T) {
 		notContain []string
 	}{
 		{
-			name: "keeps non-2xx and default only",
+			name: "keeps 2xx responses only",
 			operation: map[string]any{
 				"responses": map[string]any{
 					"200": map[string]any{
@@ -270,28 +234,28 @@ func TestBuildErrors(t *testing.T) {
 				},
 			},
 			contains: []string{
-				"## Errors",
-				"#### `400` Bad request",
-				"#### `500` Unexpected",
-				"#### `default` Generic error",
+				"## Responses",
+				"#### `200` OK",
+				"#### `201` Created",
 			},
 			notContain: []string{
-				"#### `200`",
-				"#### `201`",
+				"#### `400`",
+				"#### `500`",
+				"#### `default`",
 			},
 		},
 		{
-			name: "returns empty-state when no documented errors",
+			name: "returns empty-state when no documented success responses",
 			operation: map[string]any{
 				"responses": map[string]any{
-					"200": map[string]any{
-						"description": "OK",
+					"400": map[string]any{
+						"description": "Bad request",
 					},
 				},
 			},
 			contains: []string{
-				"## Errors",
-				"No documented non-2xx or default responses.",
+				"## Responses",
+				"No documented 2xx responses.",
 			},
 		},
 	}
@@ -300,15 +264,15 @@ func TestBuildErrors(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			output := BuildErrors(mustRawJSON(t, tc.operation))
+			output := BuildSuccessResponses(mustRawJSON(t, tc.operation))
 			for _, part := range tc.contains {
 				if !strings.Contains(output, part) {
-					t.Fatalf("expected errors markdown to contain %q; output:\n%s", part, output)
+					t.Fatalf("expected responses markdown to contain %q; output:\n%s", part, output)
 				}
 			}
 			for _, part := range tc.notContain {
 				if strings.Contains(output, part) {
-					t.Fatalf("expected errors markdown to exclude %q; output:\n%s", part, output)
+					t.Fatalf("expected responses markdown to exclude %q; output:\n%s", part, output)
 				}
 			}
 		})
@@ -318,8 +282,8 @@ func TestBuildErrors(t *testing.T) {
 func TestBuildEmptyStateBuilders(t *testing.T) {
 	t.Parallel()
 
-	if got := BuildEmptyServers(); !strings.Contains(got, "No servers documented for this endpoint or API spec.") {
-		t.Fatalf("expected servers empty-state text, got:\n%s", got)
+	if got := BuildEmptySuccessResponses(); !strings.Contains(got, "No documented 2xx responses.") {
+		t.Fatalf("expected responses empty-state text, got:\n%s", got)
 	}
 	if got := BuildEmptyErrors(); !strings.Contains(got, "No documented non-2xx or default responses.") {
 		t.Fatalf("expected errors empty-state text, got:\n%s", got)

@@ -7,14 +7,15 @@ import (
 )
 
 type tuiStyles struct {
-	header     lipgloss.Style
-	subtle     lipgloss.Style
-	tabActive  lipgloss.Style
-	tabIdle    lipgloss.Style
-	paneTitle  lipgloss.Style
-	paneBody   lipgloss.Style
-	errorBlock lipgloss.Style
-	emptyBlock lipgloss.Style
+	header         lipgloss.Style
+	subtle         lipgloss.Style
+	tabActive      lipgloss.Style
+	tabIdle        lipgloss.Style
+	paneTitle      lipgloss.Style
+	paneBody       lipgloss.Style
+	detailPaneBody lipgloss.Style
+	errorBlock     lipgloss.Style
+	emptyBlock     lipgloss.Style
 }
 
 func newTUIStyles() tuiStyles {
@@ -22,12 +23,16 @@ func newTUIStyles() tuiStyles {
 		header: lipgloss.NewStyle().Bold(true),
 		subtle: lipgloss.NewStyle().Faint(true),
 		tabActive: lipgloss.NewStyle().
-			Bold(true).
-			Underline(true),
-		tabIdle:   lipgloss.NewStyle().Faint(true),
+			Bold(true),
+		tabIdle: lipgloss.NewStyle().
+			Faint(true),
 		paneTitle: lipgloss.NewStyle().Bold(true),
 		paneBody: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
+			Padding(0, 1),
+		detailPaneBody: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(lipgloss.Color("240")).
 			Padding(0, 1),
 		errorBlock: lipgloss.NewStyle().
 			BorderLeft(true).
@@ -58,6 +63,14 @@ func (styles tuiStyles) Pane(title string, body string, width int) string {
 		bodyStyle = bodyStyle.Width(width)
 	}
 	return titleView + "\n" + bodyStyle.Render(body)
+}
+
+func (styles tuiStyles) DetailPane(body string, width int) string {
+	bodyStyle := styles.detailPaneBody
+	if width > 0 {
+		bodyStyle = bodyStyle.Width(width)
+	}
+	return bodyStyle.Render(body)
 }
 
 func (styles tuiStyles) ErrorBlock(lines ...string) string {

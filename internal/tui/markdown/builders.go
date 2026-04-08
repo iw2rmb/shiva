@@ -128,17 +128,55 @@ func BuildEndpoint(input EndpointInput) string {
 	return strings.Join(filterNonEmpty(sections), "\n\n")
 }
 
-func BuildServers(operationBody json.RawMessage, specBody json.RawMessage) string {
-	operation, _ := decodeOperation(operationBody)
-	if len(operation.Servers) > 0 {
-		return renderServersSection("operation", operation.Servers)
+func BuildRequest(input EndpointInput) string {
+	operation, ok := decodeOperation(input.Operation)
+	if !ok {
+		return strings.Join([]string{
+			"## Request",
+			"",
+			"_Failed to decode operation payload._",
+		}, "\n")
 	}
 
-	spec, ok := decodeSpec(specBody)
-	if ok && len(spec.Servers) > 0 {
-		return renderServersSection("spec", spec.Servers)
+	sections := []string{"## Request"}
+	if operation.OperationID != "" {
+		sections = append(sections, fmt.Sprintf("`Operation ID:` `%s`", operation.OperationID))
 	}
-	return BuildEmptyServers()
+	if operation.Summary != "" {
+		sections = append(sections, fmt.Sprintf("`Summary:` %s", operation.Summary))
+	}
+	if operation.Description != "" {
+		sections = append(sections, operation.Description)
+	}
+	if operation.Deprecated {
+		sections = append(sections, "`Deprecated:` `true`")
+	}
+	sections = append(sections, renderParametersSection(operation.Parameters))
+	sections = append(sections, renderRequestBodySection(operation.RequestBody))
+	return strings.Join(filterNonEmpty(sections), "\n\n")
+}
+
+func BuildSuccessResponses(operationBody json.RawMessage) string {
+	operation, ok := decodeOperation(operationBody)
+	if !ok {
+		return BuildEmptySuccessResponses()
+	}
+	return renderResponsesSection(
+		operation.Responses,
+		func(code string) bool {
+			return is2xxStatus(code)
+		},
+		"## Responses",
+		"No documented 2xx responses.",
+	)
+}
+
+func BuildEmptySuccessResponses() string {
+	return strings.Join([]string{
+		"## Responses",
+		"",
+		"No documented 2xx responses.",
+	}, "\n")
 }
 
 func BuildErrors(operationBody json.RawMessage) string {
@@ -154,14 +192,6 @@ func BuildErrors(operationBody json.RawMessage) string {
 		"## Errors",
 		"No documented non-2xx or default responses.",
 	)
-}
-
-func BuildEmptyServers() string {
-	return strings.Join([]string{
-		"## Servers",
-		"",
-		"No servers documented for this endpoint or API spec.",
-	}, "\n")
 }
 
 func BuildEmptyErrors() string {

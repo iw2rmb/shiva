@@ -398,38 +398,23 @@ func TestRootModelUnscopedOperationsSelectionUsesRowIdentityForDetails(t *testin
 	}
 }
 
-func TestRootModelExplorerLazySpecLoadForServersTab(t *testing.T) {
+func TestRootModelExplorerLoadsOnlyOperationDetailAcrossTabs(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name           string
-		tab            DetailTab
-		operationBody  []byte
-		expectSpecLoad bool
+		name          string
+		tab           DetailTab
+		operationBody []byte
 	}{
 		{
-			name:           "servers tab loads spec when operation servers missing",
-			tab:            DetailTabServers,
-			operationBody:  []byte(`{"operationId":"listPets"}`),
-			expectSpecLoad: true,
+			name:          "response tab",
+			tab:           DetailTabResponse,
+			operationBody: []byte(`{"operationId":"listPets","responses":{"200":{"description":"ok"}}}`),
 		},
 		{
-			name:           "servers tab loads spec when operation servers empty",
-			tab:            DetailTabServers,
-			operationBody:  []byte(`{"operationId":"listPets","servers":[]}`),
-			expectSpecLoad: true,
-		},
-		{
-			name:           "servers tab skips spec when operation servers present",
-			tab:            DetailTabServers,
-			operationBody:  []byte(`{"operationId":"listPets","servers":[{"url":"https://operation.example"}]}`),
-			expectSpecLoad: false,
-		},
-		{
-			name:           "endpoints tab skips spec when operation servers missing",
-			tab:            DetailTabEndpoints,
-			operationBody:  []byte(`{"operationId":"listPets"}`),
-			expectSpecLoad: false,
+			name:          "request tab",
+			tab:           DetailTabRequest,
+			operationBody: []byte(`{"operationId":"listPets"}`),
 		},
 	}
 
@@ -440,9 +425,8 @@ func TestRootModelExplorerLazySpecLoadForServersTab(t *testing.T) {
 
 			service := &fakeBrowserService{
 				operationBody: tc.operationBody,
-				specBody:      []byte(`{"openapi":"3.1.0","servers":[{"url":"https://spec.example"}]}`),
 			}
-			model, selected := newExplorerModelWithSingleEndpoint(service, tc.tab)
+			model, _ := newExplorerModelWithSingleEndpoint(service, tc.tab)
 
 			cmd := model.loadExplorerDetailForSelection()
 			if cmd == nil {
@@ -451,43 +435,14 @@ func TestRootModelExplorerLazySpecLoadForServersTab(t *testing.T) {
 			operationMsg := cmd()
 			updated, followCmd := model.Update(operationMsg)
 			model = updated.(*rootModel)
-
-			if tc.expectSpecLoad {
-				if followCmd == nil {
-					t.Fatalf("expected lazy spec load command")
-				}
-				specMsg := followCmd()
-				if _, ok := specMsg.(specDetailLoadedMsg); !ok {
-					t.Fatalf("expected specDetailLoadedMsg, got %T", specMsg)
-				}
-				updated, _ = model.Update(specMsg)
-				model = updated.(*rootModel)
-
-				if service.getSpecCall != 1 {
-					t.Fatalf("expected one spec call, got %d", service.getSpecCall)
-				}
-				if service.lastSpecFormat != SpecFormatJSON {
-					t.Fatalf("expected spec format %q, got %q", SpecFormatJSON, service.lastSpecFormat)
-				}
-				if service.lastSpecGet.Namespace != selected.Namespace ||
-					service.lastSpecGet.Repo != selected.Repo ||
-					service.lastSpecGet.API != selected.API {
-					t.Fatalf("unexpected spec selector %+v", service.lastSpecGet)
-				}
-				if model.explorer.Detail.Spec == nil {
-					t.Fatalf("expected spec detail to be set")
-				}
-				return
-			}
-
 			if followCmd != nil {
-				t.Fatalf("expected no spec load command")
+				t.Fatalf("expected no follow-up detail command")
 			}
 			if service.getSpecCall != 0 {
 				t.Fatalf("expected no spec calls, got %d", service.getSpecCall)
 			}
-			if model.explorer.Detail.Spec != nil {
-				t.Fatalf("expected no spec detail, got %+v", model.explorer.Detail.Spec)
+			if model.explorer.Detail.Operation == nil {
+				t.Fatalf("expected operation detail to be set")
 			}
 		})
 	}
@@ -497,28 +452,22 @@ func TestRootModelExplorerDetailLoadUsesSessionCaches(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeBrowserService{
-		operationBody: []byte(`{"operationId":"listPets","servers":[]}`),
-		specBody:      []byte(`{"openapi":"3.1.0","servers":[{"url":"https://spec.example"}]}`),
+		operationBody: []byte(`{"operationId":"listPets","responses":{"200":{"description":"ok"}}}`),
 	}
-	model, _ := newExplorerModelWithSingleEndpoint(service, DetailTabServers)
+	model, _ := newExplorerModelWithSingleEndpoint(service, DetailTabResponse)
 
 	operationCmd := model.loadExplorerDetailForSelection()
 	if operationCmd == nil {
 		t.Fatalf("expected initial operation detail command")
 	}
 	operationMsg := operationCmd()
-	updated, specCmd := model.Update(operationMsg)
+	updated, followCmd := model.Update(operationMsg)
 	model = updated.(*rootModel)
-	if specCmd == nil {
-		t.Fatalf("expected initial spec detail command")
+	if followCmd != nil {
+		t.Fatalf("expected no follow-up detail command")
 	}
-
-	specMsg := specCmd()
-	updated, _ = model.Update(specMsg)
-	model = updated.(*rootModel)
-
-	if service.getOperationCall != 1 || service.getSpecCall != 1 {
-		t.Fatalf("expected one operation and one spec call, got operation=%d spec=%d", service.getOperationCall, service.getSpecCall)
+	if service.getOperationCall != 1 {
+		t.Fatalf("expected one operation call, got %d", service.getOperationCall)
 	}
 
 	model.clearExplorerDetailState()
@@ -529,11 +478,8 @@ func TestRootModelExplorerDetailLoadUsesSessionCaches(t *testing.T) {
 	if model.explorer.Detail.Operation == nil {
 		t.Fatalf("expected cached operation detail")
 	}
-	if model.explorer.Detail.Spec == nil {
-		t.Fatalf("expected cached spec detail")
-	}
-	if service.getOperationCall != 1 || service.getSpecCall != 1 {
-		t.Fatalf("expected cache replay to avoid extra calls, got operation=%d spec=%d", service.getOperationCall, service.getSpecCall)
+	if service.getOperationCall != 1 {
+		t.Fatalf("expected cache replay to avoid extra calls, got operation=%d", service.getOperationCall)
 	}
 }
 
@@ -592,7 +538,7 @@ func TestRootModelExplorerIgnoresStaleOperationResponseAfterRapidSelectionChange
 func TestRootModelExplorerTabSwitchesReplaceViewportContent(t *testing.T) {
 	t.Parallel()
 
-	model, _ := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	model, _ := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabRequest)
 	model.explorer.Detail.Operation = &OperationDetail{
 		Endpoint: model.explorer.Endpoints[0].Identity,
 		Body: json.RawMessage(`{
@@ -605,28 +551,28 @@ func TestRootModelExplorerTabSwitchesReplaceViewportContent(t *testing.T) {
 	model.refreshExplorerDetailViewport()
 
 	endpointRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
-	if !strings.Contains(endpointRendered, "GET /pets") {
-		t.Fatalf("expected endpoint markdown content, got %q", endpointRendered)
+	if !strings.Contains(endpointRendered, "Request") {
+		t.Fatalf("expected request markdown content, got %q", endpointRendered)
 	}
 	selectionBefore := model.explorer.Selected
 
 	updated, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	model = updated.(*rootModel)
-	if model.explorer.Detail.ActiveTab != DetailTabServers {
-		t.Fatalf("expected active tab %q, got %q", DetailTabServers, model.explorer.Detail.ActiveTab)
+	if model.explorer.Detail.ActiveTab != DetailTabResponse {
+		t.Fatalf("expected active tab %q, got %q", DetailTabResponse, model.explorer.Detail.ActiveTab)
 	}
 	if model.explorer.Selected != selectionBefore {
 		t.Fatalf("expected endpoint selection unchanged, got %d", model.explorer.Selected)
 	}
-	serversRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
-	if !strings.Contains(serversRendered, "Servers") {
-		t.Fatalf("expected servers markdown content, got %q", serversRendered)
+	responseRendered := stripANSI(model.explorer.Detail.Viewport.GetContent())
+	if !strings.Contains(responseRendered, "Responses") {
+		t.Fatalf("expected response markdown content, got %q", responseRendered)
 	}
 
 	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	model = updated.(*rootModel)
-	if model.explorer.Detail.ActiveTab != DetailTabEndpoints {
-		t.Fatalf("expected active tab %q, got %q", DetailTabEndpoints, model.explorer.Detail.ActiveTab)
+	if model.explorer.Detail.ActiveTab != DetailTabRequest {
+		t.Fatalf("expected active tab %q, got %q", DetailTabRequest, model.explorer.Detail.ActiveTab)
 	}
 }
 
@@ -651,7 +597,7 @@ func TestRenderExplorerPanesSwitchesBetweenStackedAndSplitLayouts(t *testing.T) 
 func TestRootModelExplorerViewportScrollableWithPageDown(t *testing.T) {
 	t.Parallel()
 
-	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabRequest)
 	lines := make([]string, 0, 80)
 	for i := 0; i < 80; i++ {
 		lines = append(lines, "line")
@@ -679,7 +625,7 @@ func TestRootModelExplorerViewportScrollableWithPageDown(t *testing.T) {
 func TestRootModelExplorerResizeRerendersUsingViewportWidth(t *testing.T) {
 	t.Parallel()
 
-	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabRequest)
 	model.explorer.Detail.Operation = &OperationDetail{
 		Endpoint: selected,
 		Body: json.RawMessage(`{
@@ -709,7 +655,7 @@ func TestRootModelExplorerResizeRerendersUsingViewportWidth(t *testing.T) {
 func TestRootModelExplorerShowsOperationDetailLoadErrorInDetailsPane(t *testing.T) {
 	t.Parallel()
 
-	model, _ := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabEndpoints)
+	model, _ := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabRequest)
 	token := model.beginOperationDetailLoad()
 	updated, _ := model.Update(loadFailedMsg{
 		Domain: loadDomainOperationDetail,
@@ -724,25 +670,21 @@ func TestRootModelExplorerShowsOperationDetailLoadErrorInDetailsPane(t *testing.
 	}
 }
 
-func TestRootModelExplorerShowsSpecDetailLoadErrorInServersTab(t *testing.T) {
+func TestRootModelExplorerShowsResponseDetailLoadErrorInResponseTab(t *testing.T) {
 	t.Parallel()
 
-	model, selected := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabServers)
-	model.explorer.Detail.Operation = &OperationDetail{
-		Endpoint: selected,
-		Body:     json.RawMessage(`{"operationId":"listPets"}`),
-	}
-	token := model.beginSpecDetailLoad()
+	model, _ := newExplorerModelWithSingleEndpoint(&fakeBrowserService{}, DetailTabResponse)
+	token := model.beginOperationDetailLoad()
 	updated, _ := model.Update(loadFailedMsg{
-		Domain: loadDomainSpecDetail,
+		Domain: loadDomainOperationDetail,
 		Token:  token,
-		Err:    errors.New("spec detail request failed"),
+		Err:    errors.New("response detail request failed"),
 	})
 	model = updated.(*rootModel)
 
 	rendered := normalizeViewportText(stripANSI(model.explorer.Detail.Viewport.GetContent()))
-	if !strings.Contains(rendered, "Failed to load detail: spec detail request failed") {
-		t.Fatalf("expected spec detail load error in servers pane, got %q", rendered)
+	if !strings.Contains(rendered, "Failed to load detail: response detail request failed") {
+		t.Fatalf("expected response detail load error in response pane, got %q", rendered)
 	}
 }
 

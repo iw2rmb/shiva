@@ -35,62 +35,44 @@ func (model *rootModel) explorerDetailMarkdown() string {
 	}
 
 	switch model.explorer.Detail.ActiveTab {
-	case DetailTabEndpoints:
+	case DetailTabRequest:
 		if model.explorer.Detail.Operation == nil {
 			if model.async.OperationDetail.LastError != nil {
-				return renderDetailLoadError("Endpoint", model.async.OperationDetail.LastError)
+				return renderDetailLoadError("Request", model.async.OperationDetail.LastError)
 			}
 			if model.async.OperationDetail.Loading {
 				return strings.Join([]string{
-					"## Endpoint",
+					"## Request",
 					"",
-					"Loading endpoint detail...",
+					"Loading request detail...",
 				}, "\n")
 			}
 			return strings.Join([]string{
-				"## Endpoint",
+				"## Request",
 				"",
-				"No operation detail available for the selected endpoint.",
+				"No request detail available for the selected endpoint.",
 			}, "\n")
 		}
-		return markdown.BuildEndpoint(markdown.EndpointInput{
+		return markdown.BuildRequest(markdown.EndpointInput{
 			Method:    selected.Identity.Method,
 			Path:      selected.Identity.Path,
 			Operation: model.explorer.Detail.Operation.Body,
 		})
-	case DetailTabServers:
+	case DetailTabResponse:
 		if model.explorer.Detail.Operation == nil {
 			if model.async.OperationDetail.LastError != nil {
-				return renderDetailLoadError("Servers", model.async.OperationDetail.LastError)
+				return renderDetailLoadError("Response", model.async.OperationDetail.LastError)
 			}
 			if model.async.OperationDetail.Loading {
 				return strings.Join([]string{
-					"## Servers",
+					"## Response",
 					"",
-					"Loading endpoint detail...",
+					"Loading response detail...",
 				}, "\n")
 			}
-			return markdown.BuildEmptyServers()
+			return markdown.BuildEmptySuccessResponses()
 		}
-		if model.shouldLoadSelectedSpecDetail() && model.explorer.Detail.Spec == nil {
-			if model.async.SpecDetail.LastError != nil {
-				return renderDetailLoadError("Servers", model.async.SpecDetail.LastError)
-			}
-			if model.async.SpecDetail.Loading {
-				return strings.Join([]string{
-					"## Servers",
-					"",
-					"Loading spec-level servers...",
-				}, "\n")
-			}
-			return markdown.BuildEmptyServers()
-		}
-
-		var specBody []byte
-		if model.explorer.Detail.Spec != nil {
-			specBody = model.explorer.Detail.Spec.Body
-		}
-		return markdown.BuildServers(model.explorer.Detail.Operation.Body, specBody)
+		return markdown.BuildSuccessResponses(model.explorer.Detail.Operation.Body)
 	case DetailTabErrors:
 		if model.explorer.Detail.Operation == nil {
 			if model.async.OperationDetail.LastError != nil {

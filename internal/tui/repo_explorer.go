@@ -112,29 +112,38 @@ func (model *rootModel) explorerDetailPane() string {
 }
 
 func (model *rootModel) explorerTabRow() string {
-	labels := make([]string, 0, 3)
-	for _, tab := range []DetailTab{DetailTabEndpoints, DetailTabServers, DetailTabErrors} {
-		label := detailTabLabel(tab)
-		labels = append(labels, model.styles.Tab(label, tab == model.explorer.Detail.ActiveTab))
+	successCodes, errorCodes := model.availableResponseChips()
+	requestLabel := model.styles.Tab(detailTabLabel(DetailTabRequest), model.explorer.Detail.ActiveTab == DetailTabRequest)
+	responseLabel := model.styles.Tab(detailTabLabel(DetailTabResponse), model.explorer.Detail.ActiveTab == DetailTabResponse)
+	errorsLabel := model.styles.Tab(detailTabLabel(DetailTabErrors), model.explorer.Detail.ActiveTab == DetailTabErrors)
+
+	responseSegment := responseLabel
+	if len(successCodes) > 0 {
+		responseSegment += " " + strings.Join(successCodes, " ")
 	}
-	return strings.Join(labels, "  ")
+	errorSegment := errorsLabel
+	if len(errorCodes) > 0 {
+		errorSegment += " " + strings.Join(errorCodes, " ")
+	}
+
+	return "/ " + requestLabel + " / " + responseSegment + " / " + errorSegment
 }
 
 func detailTabLabel(tab DetailTab) string {
 	switch tab {
-	case DetailTabEndpoints:
-		return "Endpoints"
-	case DetailTabServers:
-		return "Servers"
+	case DetailTabRequest:
+		return "REQUEST"
+	case DetailTabResponse:
+		return "RESPONSE"
 	case DetailTabErrors:
-		return "Errors"
+		return "ERRORS"
 	default:
 		return string(tab)
 	}
 }
 
 func (model *rootModel) switchExplorerTab(delta int) tea.Cmd {
-	tabs := []DetailTab{DetailTabEndpoints, DetailTabServers, DetailTabErrors}
+	tabs := []DetailTab{DetailTabRequest, DetailTabResponse, DetailTabErrors}
 	index := 0
 	for i, tab := range tabs {
 		if tab == model.explorer.Detail.ActiveTab {
@@ -146,7 +155,7 @@ func (model *rootModel) switchExplorerTab(delta int) tea.Cmd {
 	index = (index + delta + len(tabs)) % len(tabs)
 	model.explorer.Detail.ActiveTab = tabs[index]
 	model.refreshExplorerDetailViewport()
-	return model.loadSelectedSpecDetailIfNeeded()
+	return nil
 }
 
 func shouldRouteKeyToDetailViewport(msg tea.KeyPressMsg) bool {

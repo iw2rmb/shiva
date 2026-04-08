@@ -37,8 +37,8 @@ func TestNewRootModelSeedsRouteSpecificState(t *testing.T) {
 	if model.explorer.Namespace != "acme" || model.explorer.Repo != "platform" {
 		t.Fatalf("expected explorer route to seed from initial route, got %+v", model.explorer)
 	}
-	if model.explorer.Detail.ActiveTab != DetailTabEndpoints {
-		t.Fatalf("expected default detail tab %q, got %q", DetailTabEndpoints, model.explorer.Detail.ActiveTab)
+	if model.explorer.Detail.ActiveTab != DetailTabRequest {
+		t.Fatalf("expected default detail tab %q, got %q", DetailTabRequest, model.explorer.Detail.ActiveTab)
 	}
 	if model.namespaces.List.Title != "NAMESPACES" {
 		t.Fatalf("expected namespace list to initialize, got %q", model.namespaces.List.Title)
