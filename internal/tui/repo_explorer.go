@@ -174,7 +174,7 @@ func shouldRouteKeyToDetailViewport(msg tea.KeyPressMsg) bool {
 func renderExplorerPanes(styles tuiStyles, left string, right string, width int) string {
 	leftWidth, rightWidth, _, stacked := explorerPaneLayout(width, defaultViewportHeight)
 	leftPane := styles.Pane("Endpoints", left, leftWidth)
-	rightPane := styles.Pane("Details", right, rightWidth)
+	rightPane := styles.paneTitle.Render("Details") + "\n" + styles.DetailPane(right, rightWidth)
 	if stacked {
 		return strings.Join([]string{
 			leftPane,

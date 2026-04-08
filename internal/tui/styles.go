@@ -32,7 +32,7 @@ func newTUIStyles() tuiStyles {
 			Padding(0, 1),
 		detailPaneBody: lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(lipgloss.Color("#555555")).
+			BorderForeground(lipgloss.Color("238")).
 			Padding(0, 1),
 		errorBlock: lipgloss.NewStyle().
 			BorderLeft(true).
