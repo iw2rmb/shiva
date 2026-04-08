@@ -13,8 +13,8 @@ var (
 	methodChipBaseStyle    = lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	pathBaseStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
 	pathParamStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Faint(true)
-	responseSuccessStyle   = lipgloss.NewStyle().Bold(true).Padding(0, 1).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("114"))
-	responseErrorChipStyle = lipgloss.NewStyle().Bold(true).Padding(0, 1).Foreground(lipgloss.Color("15")).Background(lipgloss.Color("168"))
+	responseSuccessStyle   = lipgloss.NewStyle().Bold(true).Padding(0, 1).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#6d8f56"))
+	responseErrorChipStyle = lipgloss.NewStyle().Bold(true).Padding(0, 1).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#c96169"))
 )
 
 func methodChip(method string) string {
@@ -22,18 +22,18 @@ func methodChip(method string) string {
 	if method == "" {
 		method = "UNKNOWN"
 	}
-	style := methodChipBaseStyle.Foreground(lipgloss.Color("15"))
+	style := methodChipBaseStyle.Foreground(lipgloss.Color("#FFFFFF"))
 	switch method {
 	case "GET":
-		style = style.Background(lipgloss.Color("75"))
+		style = style.Background(lipgloss.Color("#4779c4"))
 	case "POST":
-		style = style.Background(lipgloss.Color("114"))
+		style = style.Background(lipgloss.Color("#6d8f56"))
 	case "PUT":
-		style = style.Foreground(lipgloss.Color("16")).Background(lipgloss.Color("180"))
+		style = style.Background(lipgloss.Color("180"))
 	case "PATCH":
 		style = style.Background(lipgloss.Color("173"))
 	case "DELETE":
-		style = style.Background(lipgloss.Color("168"))
+		style = style.Background(lipgloss.Color("#c96169"))
 	case "OPTIONS", "HEAD":
 		style = style.Background(lipgloss.Color("240"))
 	default:
