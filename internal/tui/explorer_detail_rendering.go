@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
+	"charm.land/lipgloss/v2"
 	"github.com/iw2rmb/shiva/internal/tui/markdown"
 )
 
@@ -21,7 +22,44 @@ func (model *rootModel) refreshExplorerDetailViewport() {
 	markdownBody := model.explorerDetailMarkdown()
 	width := model.explorer.Detail.Viewport.Width()
 	rendered := model.markdown.Render(markdownBody, width)
+	rendered = styleDetailSectionBadges(rendered)
 	model.explorer.Detail.Viewport.SetContent(rendered)
+}
+
+var (
+	detailSectionBadgeStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color("#FFFFFF")).
+				Padding(0, 1)
+	detailSectionLabelStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#FFFFFF"))
+)
+
+func styleDetailSectionBadges(rendered string) string {
+	lines := strings.Split(rendered, "\n")
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		var replacement string
+		switch trimmed {
+		case "/: Path":
+			replacement = renderDetailSectionHeader("/:", "Path")
+		case "?& Query":
+			replacement = renderDetailSectionHeader("?&", "Query")
+		case "{} Body":
+			replacement = renderDetailSectionHeader("{}", "Body")
+		default:
+			continue
+		}
+		prefixLen := len(line) - len(strings.TrimLeft(line, " \t"))
+		lines[index] = line[:prefixLen] + replacement
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderDetailSectionHeader(badge string, label string) string {
+	return detailSectionBadgeStyle.Render(badge) + " " + detailSectionLabelStyle.Render(label)
 }
 
 func (model *rootModel) explorerDetailMarkdown() string {

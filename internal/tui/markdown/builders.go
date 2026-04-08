@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"charm.land/lipgloss/v2"
 )
 
 type EndpointInput struct {
@@ -84,17 +82,6 @@ type schemaNode struct {
 	AllOf       []schemaNode          `json:"allOf"`
 }
 
-var (
-	detailHeaderBadgeStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#000000")).
-				Background(lipgloss.Color("#FFFFFF")).
-				Padding(0, 1)
-	detailHeaderLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#FFFFFF"))
-)
-
 func BuildEndpoint(input EndpointInput) string {
 	method := strings.ToUpper(strings.TrimSpace(input.Method))
 	if method == "" {
@@ -156,7 +143,7 @@ func BuildRequest(input EndpointInput) string {
 	if operation.Description != "" {
 		sections = append(sections, operation.Description)
 	} else {
-		sections = append(sections, lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true).Render("No decsription"))
+		sections = append(sections, "_No decsription_")
 	}
 	if operation.Deprecated {
 		sections = append(sections, "`Deprecated:` `true`")
@@ -299,7 +286,7 @@ func renderParametersSection(parameters []parameterDocument) string {
 }
 
 func renderRequestBodySection(requestBody *requestBodyDocument) string {
-	header := detailHeaderBadgeStyle.Render("{}") + " " + detailHeaderLabelStyle.Render("Body")
+	header := "{} Body"
 	if requestBody == nil {
 		return strings.Join([]string{
 			header,
@@ -337,9 +324,9 @@ func renderRequestBodySection(requestBody *requestBodyDocument) string {
 func renderParameterSectionHeader(location string) string {
 	switch location {
 	case "path":
-		return detailHeaderBadgeStyle.Render("/:") + " " + detailHeaderLabelStyle.Render("Path")
+		return "/: Path"
 	case "query":
-		return detailHeaderBadgeStyle.Render("?&") + " " + detailHeaderLabelStyle.Render("Query")
+		return "?& Query"
 	default:
 		return fmt.Sprintf("#### %s Parameters", strings.Title(location))
 	}
