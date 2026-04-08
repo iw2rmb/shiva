@@ -2,12 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
 	"github.com/iw2rmb/shiva/internal/tui/markdown"
 )
+
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func newDetailViewport(width int, height int) viewport.Model {
 	model := viewport.New(
@@ -27,28 +30,26 @@ func (model *rootModel) refreshExplorerDetailViewport() {
 }
 
 var (
-	detailSectionBadgeStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#000000")).
-				Background(lipgloss.Color("#FFFFFF")).
-				Padding(0, 1)
-	detailSectionLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#FFFFFF"))
+	detailSectionHeaderStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#000000")).
+		Background(lipgloss.Color("#FFFFFF")).
+		Padding(0, 1)
 )
 
 func styleDetailSectionBadges(rendered string) string {
 	lines := strings.Split(rendered, "\n")
 	for index, line := range lines {
 		trimmed := strings.TrimSpace(line)
+		normalized := strings.Join(strings.Fields(stripANSIEscapeCodes(trimmed)), " ")
 		var replacement string
-		switch trimmed {
+		switch normalized {
 		case "/: Path":
-			replacement = renderDetailSectionHeader("/:", "Path")
+			replacement = renderDetailSectionHeader("/:", "PATH")
 		case "?& Query":
-			replacement = renderDetailSectionHeader("?&", "Query")
+			replacement = renderDetailSectionHeader("?&", "QUERY")
 		case "{} Body":
-			replacement = renderDetailSectionHeader("{}", "Body")
+			replacement = renderDetailSectionHeader("{}", "BODY")
 		default:
 			continue
 		}
@@ -58,8 +59,12 @@ func styleDetailSectionBadges(rendered string) string {
 	return strings.Join(lines, "\n")
 }
 
+func stripANSIEscapeCodes(value string) string {
+	return ansiEscapePattern.ReplaceAllString(value, "")
+}
+
 func renderDetailSectionHeader(badge string, label string) string {
-	return detailSectionBadgeStyle.Render(badge) + " " + detailSectionLabelStyle.Render(label)
+	return detailSectionHeaderStyle.Render(badge + " " + label)
 }
 
 func (model *rootModel) explorerDetailMarkdown() string {

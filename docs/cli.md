@@ -138,9 +138,9 @@ Rules:
     - details pane omits the endpoint identity row (`<method> <endpoint>`) above markdown content
     - request tab body omits the `## Request` heading and omits the ``Summary:`` label
     - parameter/body section labels use inline badges:
-      - path params: `/: Path`
-      - query params: `?& Query`
-      - request body: `{} Body`
+      - path params: `/: PATH`
+      - query params: `?& QUERY`
+      - request body: `{} BODY`
     - when operation description is empty, request tab shows gray italic `No decsription`
   - focus/input model:
     - focus target is either `header` or the active list
