@@ -329,7 +329,7 @@ func (s *RuntimeService) ListOperations(
 		return nil, err
 	}
 
-	body, err := client.ListOperations(ctx, normalized)
+	var body []byte
 	query := strings.TrimSpace(options.Query)
 	usedServerFiltering := false
 	usedServerPaging := false
@@ -338,12 +338,18 @@ func (s *RuntimeService) ListOperations(
 			body, err = filtered.ListOperationsPageFiltered(ctx, normalized, query, options.Limit, options.Offset)
 			usedServerFiltering = true
 			usedServerPaging = true
+		} else {
+			body, err = client.ListOperations(ctx, normalized)
 		}
 	} else if options.Limit > 0 || options.Offset > 0 {
 		if paged, ok := client.(pagedTransportClient); ok {
 			body, err = paged.ListOperationsPage(ctx, normalized, options.Limit, options.Offset)
 			usedServerPaging = true
+		} else {
+			body, err = client.ListOperations(ctx, normalized)
 		}
+	} else {
+		body, err = client.ListOperations(ctx, normalized)
 	}
 	if err != nil {
 		return nil, normalizeServiceError(err)

@@ -47,12 +47,17 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 	snapshotQuery := query.Snapshot
 
 	if snapshotQuery.Repo == "" {
-		items, listErr := s.readStore.ListOperationCatalogInventory(c.Context(), snapshotQuery.Namespace)
+		items, listErr := s.readStore.ListOperationCatalogInventoryPage(
+			c.Context(),
+			snapshotQuery.Namespace,
+			"",
+			query.Query,
+			query.Limit,
+			query.Offset,
+		)
 		if listErr != nil {
 			return s.writeQueryError(c, listErr)
 		}
-		items = filterOperationsByQuery(items, query.Query)
-		items = pagedSlice(items, query.Offset, query.Limit)
 
 		itemsResponse, mapErr := mapOperationSnapshots(items, true)
 		if mapErr != nil {
@@ -84,33 +89,35 @@ func (s *Server) handleListOperations(c *fiber.Ctx) error {
 			)
 		}
 
-		items, err := s.readStore.ListOperationInventoryByRepoRevisionAndAPI(
+		items, err := s.readStore.ListOperationInventoryByRepoRevisionAndAPIPage(
 			c.Context(),
 			resolved.Repo.ID,
 			snapshotQuery.APIPath,
 			resolved.Revision.ID,
+			query.Query,
+			query.Limit,
+			query.Offset,
 		)
 		if err != nil {
 			return s.writeQueryError(c, err)
 		}
-		items = filterOperationsByQuery(items, query.Query)
-		items = pagedSlice(items, query.Offset, query.Limit)
 
 		itemsResponse, err = mapOperationSnapshots(items, true)
 		if err != nil {
 			return s.writeQueryError(c, err)
 		}
 	} else {
-		items, err := s.readStore.ListOperationInventoryByRepoRevision(
+		items, err := s.readStore.ListOperationInventoryByRepoRevisionPage(
 			c.Context(),
 			resolved.Repo.ID,
 			resolved.Revision.ID,
+			query.Query,
+			query.Limit,
+			query.Offset,
 		)
 		if err != nil {
 			return s.writeQueryError(c, err)
 		}
-		items = filterOperationsByQuery(items, query.Query)
-		items = pagedSlice(items, query.Offset, query.Limit)
 
 		itemsResponse, err = mapOperationSnapshots(items, true)
 		if err != nil {
@@ -245,59 +252,42 @@ func (s *Server) handleCountOperations(c *fiber.Ctx) error {
 	if err != nil {
 		return s.writeQueryError(c, err)
 	}
-
-	repos, err := s.readStore.ListRepoCatalogInventory(c.Context())
-	if err != nil {
-		return s.writeQueryError(c, err)
-	}
-
-	scoped := make([]store.RepoCatalogEntry, 0, len(repos))
-	for _, repo := range repos {
-		if query.Namespace != "" && repo.Repo.Namespace != query.Namespace {
-			continue
-		}
-		if query.Repo != "" && repo.Repo.Repo != query.Repo {
-			continue
-		}
-		scoped = append(scoped, repo)
-	}
-
-	totalCount := int64(0)
-	maxItemLength := int64(0)
-	for _, repo := range scoped {
+	queryPrefix := strings.TrimSpace(query.Query)
+	if query.Repo != "" {
 		resolved, resolveErr := s.readStore.ResolveReadSnapshot(c.Context(), store.ResolveReadSnapshotInput{
-			Namespace: repo.Repo.Namespace,
-			Repo:      repo.Repo.Repo,
+			Namespace: query.Namespace,
+			Repo:      query.Repo,
 		})
 		if resolveErr != nil {
 			return s.writeQueryError(c, resolveErr)
 		}
-
-		operations, operationsErr := s.readStore.ListOperationInventoryByRepoRevision(
+		count, countErr := s.readStore.CountOperationInventoryByRepoRevision(
 			c.Context(),
 			resolved.Repo.ID,
 			resolved.Revision.ID,
+			queryPrefix,
 		)
-		if operationsErr != nil {
-			return s.writeQueryError(c, operationsErr)
+		if countErr != nil {
+			return s.writeQueryError(c, countErr)
 		}
-
-		for _, operation := range operations {
-			if !matchesOperationQuery(operation, query.Query) {
-				continue
-			}
-			totalCount++
-			label := strings.ToUpper(strings.TrimSpace(operation.Method)) + " " + strings.TrimSpace(operation.Path)
-			length := int64(utf8.RuneCountInString(strings.TrimSpace(label)))
-			if length > maxItemLength {
-				maxItemLength = length
-			}
-		}
+		return c.Status(fiber.StatusOK).JSON(catalogCountResponse{
+			TotalCount:    count.TotalCount,
+			MaxItemLength: count.MaxItemLength,
+		})
 	}
 
+	count, countErr := s.readStore.CountOperationCatalogInventory(
+		c.Context(),
+		query.Namespace,
+		"",
+		queryPrefix,
+	)
+	if countErr != nil {
+		return s.writeQueryError(c, countErr)
+	}
 	return c.Status(fiber.StatusOK).JSON(catalogCountResponse{
-		TotalCount:    totalCount,
-		MaxItemLength: maxItemLength,
+		TotalCount:    count.TotalCount,
+		MaxItemLength: count.MaxItemLength,
 	})
 }
 

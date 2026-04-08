@@ -362,6 +362,7 @@ Legacy path-segment endpoints were removed:
   - optional `namespace`
   - optional `repo` (requires `namespace`)
 - this endpoint does not accept `api`, `revision_id`, or `sha`
+- count/max-length are computed through aggregate catalog/snapshot queries; the endpoint does not materialize full operation row payloads for counting
 - response body shape:
   - `total_count`
   - `max_item_length` (`max(length(UPPER(method) + " " + path))` within scope)

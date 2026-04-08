@@ -298,10 +298,21 @@ func TestRootModelExplorerLoadsSelectedEndpointDetailUsingExactIdentity(t *testi
 		t.Fatalf("expected selected endpoint")
 	}
 
-	msg := cmd()
-	loaded, ok := msg.(operationDetailLoadedMsg)
-	if !ok {
-		t.Fatalf("expected operationDetailLoadedMsg, got %T", msg)
+	var msg tea.Msg
+	var loaded operationDetailLoadedMsg
+	found := false
+	for _, candidate := range collectCmdMessages(cmd) {
+		typed, ok := candidate.(operationDetailLoadedMsg)
+		if !ok {
+			continue
+		}
+		loaded = typed
+		msg = candidate
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("expected operationDetailLoadedMsg in command batch")
 	}
 
 	if service.getOperationCall != 1 {

@@ -250,6 +250,9 @@ func TestRuntimeServiceListOperationsPagedTransportDoesNotRepaginateLocally(t *t
 	if len(rows) != 1 || rows[0].OperationID != "listPets" {
 		t.Fatalf("expected paged row to survive without local re-pagination, got %+v", rows)
 	}
+	if client.operationsCalls != 0 {
+		t.Fatalf("expected paged listing to avoid base operations call, got %d", client.operationsCalls)
+	}
 }
 
 func TestRuntimeServiceGetOperationOfflineUsesCachedResponseOnly(t *testing.T) {

@@ -302,6 +302,8 @@ type fakeCLICatalogQueries struct {
 	operationInventoryRows        []sqlc.ListOperationInventoryByRepoRevisionRow
 	operationCatalogInventoryRows []sqlc.ListOperationCatalogInventoryRow
 	operationInventoryByAPIRows   []sqlc.ListOperationInventoryByRepoRevisionAndAPIRow
+	operationInventoryCountRow    sqlc.CountOperationInventoryByRepoRevisionRow
+	operationCatalogCountRow      sqlc.CountOperationCatalogInventoryRow
 
 	operationRowsByID            []sqlc.FindOperationCandidatesByRepoRevisionAndOperationIDRow
 	operationRowsByAPIID         []sqlc.FindOperationCandidatesByRepoRevisionAndAPIAndOperationIDRow
@@ -365,6 +367,38 @@ func (f *fakeCLICatalogQueries) ListOperationInventoryByRepoRevision(
 	return f.operationInventoryRows, nil
 }
 
+func (f *fakeCLICatalogQueries) ListOperationInventoryByRepoRevisionPage(
+	_ context.Context,
+	_ sqlc.ListOperationInventoryByRepoRevisionPageParams,
+) ([]sqlc.ListOperationInventoryByRepoRevisionPageRow, error) {
+	rows := make([]sqlc.ListOperationInventoryByRepoRevisionPageRow, 0, len(f.operationInventoryRows))
+	for _, row := range f.operationInventoryRows {
+		rows = append(rows, sqlc.ListOperationInventoryByRepoRevisionPageRow{
+			ApiSpecID:         row.ApiSpecID,
+			Api:               row.Api,
+			Status:            row.Status,
+			ApiSpecRevisionID: row.ApiSpecRevisionID,
+			IngestEventID:     row.IngestEventID,
+			IngestEventSha:    row.IngestEventSha,
+			IngestEventBranch: row.IngestEventBranch,
+			Method:            row.Method,
+			Path:              row.Path,
+			OperationID:       row.OperationID,
+			Summary:           row.Summary,
+			Deprecated:        row.Deprecated,
+			RawJson:           row.RawJson,
+		})
+	}
+	return rows, nil
+}
+
+func (f *fakeCLICatalogQueries) CountOperationInventoryByRepoRevision(
+	_ context.Context,
+	_ sqlc.CountOperationInventoryByRepoRevisionParams,
+) (sqlc.CountOperationInventoryByRepoRevisionRow, error) {
+	return f.operationInventoryCountRow, nil
+}
+
 func (f *fakeCLICatalogQueries) ListOperationCatalogInventory(
 	_ context.Context,
 	_ string,
@@ -372,11 +406,70 @@ func (f *fakeCLICatalogQueries) ListOperationCatalogInventory(
 	return f.operationCatalogInventoryRows, nil
 }
 
+func (f *fakeCLICatalogQueries) ListOperationCatalogInventoryPage(
+	_ context.Context,
+	_ sqlc.ListOperationCatalogInventoryPageParams,
+) ([]sqlc.ListOperationCatalogInventoryPageRow, error) {
+	rows := make([]sqlc.ListOperationCatalogInventoryPageRow, 0, len(f.operationCatalogInventoryRows))
+	for _, row := range f.operationCatalogInventoryRows {
+		rows = append(rows, sqlc.ListOperationCatalogInventoryPageRow{
+			Namespace:         row.Namespace,
+			Repo:              row.Repo,
+			ApiSpecID:         row.ApiSpecID,
+			Api:               row.Api,
+			Status:            row.Status,
+			ApiSpecRevisionID: row.ApiSpecRevisionID,
+			IngestEventID:     row.IngestEventID,
+			IngestEventSha:    row.IngestEventSha,
+			IngestEventBranch: row.IngestEventBranch,
+			Method:            row.Method,
+			Path:              row.Path,
+			OperationID:       row.OperationID,
+			Summary:           row.Summary,
+			Deprecated:        row.Deprecated,
+			RawJson:           row.RawJson,
+		})
+	}
+	return rows, nil
+}
+
+func (f *fakeCLICatalogQueries) CountOperationCatalogInventory(
+	_ context.Context,
+	_ sqlc.CountOperationCatalogInventoryParams,
+) (sqlc.CountOperationCatalogInventoryRow, error) {
+	return f.operationCatalogCountRow, nil
+}
+
 func (f *fakeCLICatalogQueries) ListOperationInventoryByRepoRevisionAndAPI(
 	_ context.Context,
 	_ sqlc.ListOperationInventoryByRepoRevisionAndAPIParams,
 ) ([]sqlc.ListOperationInventoryByRepoRevisionAndAPIRow, error) {
 	return f.operationInventoryByAPIRows, nil
+}
+
+func (f *fakeCLICatalogQueries) ListOperationInventoryByRepoRevisionAndAPIPage(
+	_ context.Context,
+	_ sqlc.ListOperationInventoryByRepoRevisionAndAPIPageParams,
+) ([]sqlc.ListOperationInventoryByRepoRevisionAndAPIPageRow, error) {
+	rows := make([]sqlc.ListOperationInventoryByRepoRevisionAndAPIPageRow, 0, len(f.operationInventoryByAPIRows))
+	for _, row := range f.operationInventoryByAPIRows {
+		rows = append(rows, sqlc.ListOperationInventoryByRepoRevisionAndAPIPageRow{
+			ApiSpecID:         row.ApiSpecID,
+			Api:               row.Api,
+			Status:            row.Status,
+			ApiSpecRevisionID: row.ApiSpecRevisionID,
+			IngestEventID:     row.IngestEventID,
+			IngestEventSha:    row.IngestEventSha,
+			IngestEventBranch: row.IngestEventBranch,
+			Method:            row.Method,
+			Path:              row.Path,
+			OperationID:       row.OperationID,
+			Summary:           row.Summary,
+			Deprecated:        row.Deprecated,
+			RawJson:           row.RawJson,
+		})
+	}
+	return rows, nil
 }
 
 func (f *fakeCLICatalogQueries) FindOperationCandidatesByRepoRevisionAndOperationID(

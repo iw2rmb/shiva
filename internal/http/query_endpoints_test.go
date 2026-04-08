@@ -434,10 +434,17 @@ func TestQueryEndpoints_ListOperations_ValidatesExplicitAPI(t *testing.T) {
 	}) {
 		t.Fatalf("unexpected explicit api validation inputs: %+v", readStore.apiSnapshotInputs)
 	}
-	if !reflect.DeepEqual(readStore.operationInventoryByAPIInputs, []operationInventoryByAPIInput{
-		{RepoID: 77, API: "apis/pets/openapi.yaml", RevisionID: 42},
+	if !reflect.DeepEqual(readStore.operationInventoryByAPIPageInputs, []operationInventoryByAPIPageInput{
+		{
+			RepoID:      77,
+			API:         "apis/pets/openapi.yaml",
+			RevisionID:  42,
+			QueryPrefix: "",
+			Limit:       200,
+			Offset:      0,
+		},
 	}) {
-		t.Fatalf("unexpected api-scoped operation inventory inputs: %+v", readStore.operationInventoryByAPIInputs)
+		t.Fatalf("unexpected api-scoped operation inventory page inputs: %+v", readStore.operationInventoryByAPIPageInputs)
 	}
 
 	var rows []operationSnapshotResponse
@@ -482,8 +489,14 @@ func TestQueryEndpoints_ListOperations_AllowsGlobalAndNamespaceScope(t *testing.
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected status 200, got %d", resp.StatusCode)
 		}
-		if !reflect.DeepEqual(readStore.operationCatalogInventoryInputs, []string{""}) {
-			t.Fatalf("unexpected operation catalog scope input: %+v", readStore.operationCatalogInventoryInputs)
+		if !reflect.DeepEqual(readStore.operationCatalogPageInputs, []operationCatalogPageInput{{
+			Namespace:   "",
+			Repo:        "",
+			QueryPrefix: "",
+			Limit:       200,
+			Offset:      0,
+		}}) {
+			t.Fatalf("unexpected operation catalog page input: %+v", readStore.operationCatalogPageInputs)
 		}
 		if len(readStore.resolveReadSnapshotInputs) != 0 {
 			t.Fatalf("did not expect snapshot resolution, got %+v", readStore.resolveReadSnapshotInputs)
@@ -507,8 +520,14 @@ func TestQueryEndpoints_ListOperations_AllowsGlobalAndNamespaceScope(t *testing.
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected status 200, got %d", resp.StatusCode)
 		}
-		if !reflect.DeepEqual(readStore.operationCatalogInventoryInputs, []string{"acme"}) {
-			t.Fatalf("unexpected operation catalog scope input: %+v", readStore.operationCatalogInventoryInputs)
+		if !reflect.DeepEqual(readStore.operationCatalogPageInputs, []operationCatalogPageInput{{
+			Namespace:   "acme",
+			Repo:        "",
+			QueryPrefix: "",
+			Limit:       200,
+			Offset:      0,
+		}}) {
+			t.Fatalf("unexpected operation catalog page input: %+v", readStore.operationCatalogPageInputs)
 		}
 		if len(readStore.resolveReadSnapshotInputs) != 0 {
 			t.Fatalf("did not expect snapshot resolution, got %+v", readStore.resolveReadSnapshotInputs)
@@ -804,17 +823,13 @@ func TestQueryEndpoints_CountOperations_UsesRepoScope(t *testing.T) {
 	t.Parallel()
 
 	readStore := &fakeQueryReadStore{
-		repoInventoryResult: []store.RepoCatalogEntry{
-			{Repo: store.Repo{ID: 1, Namespace: "acme", Repo: "gateway"}},
-			{Repo: store.Repo{ID: 2, Namespace: "acme", Repo: "platform"}},
-		},
 		resolveReadSnapshotResult: store.ResolvedReadSnapshot{
 			Repo:     store.Repo{ID: 2, Namespace: "acme", Repo: "platform"},
 			Revision: store.Revision{ID: 21},
 		},
-		operationInventoryResult: []store.OperationSnapshot{
-			{Method: "get", Path: "/accounts"},
-			{Method: "post", Path: "/accounts/{id}"},
+		operationInventoryCountResult: store.OperationCatalogCount{
+			TotalCount:    2,
+			MaxItemLength: int64(len("POST /accounts/{id}")),
 		},
 	}
 	server := newQueryTestServer(readStore)
@@ -837,11 +852,12 @@ func TestQueryEndpoints_CountOperations_UsesRepoScope(t *testing.T) {
 	}}) {
 		t.Fatalf("unexpected snapshot resolution inputs: %+v", readStore.resolveReadSnapshotInputs)
 	}
-	if !reflect.DeepEqual(readStore.operationInventoryInputs, []operationInventoryInput{{
-		RepoID:     2,
-		RevisionID: 21,
+	if !reflect.DeepEqual(readStore.operationInventoryCountInputs, []operationInventoryCountInput{{
+		RepoID:      2,
+		RevisionID:  21,
+		QueryPrefix: "",
 	}}) {
-		t.Fatalf("unexpected operation inventory inputs: %+v", readStore.operationInventoryInputs)
+		t.Fatalf("unexpected operation inventory count inputs: %+v", readStore.operationInventoryCountInputs)
 	}
 	var body struct {
 		TotalCount    int64 `json:"total_count"`
@@ -855,6 +871,41 @@ func TestQueryEndpoints_CountOperations_UsesRepoScope(t *testing.T) {
 	}
 	if body.MaxItemLength != int64(len("POST /accounts/{id}")) {
 		t.Fatalf("expected max_item_length=%d, got %d", len("POST /accounts/{id}"), body.MaxItemLength)
+	}
+}
+
+func TestQueryEndpoints_CountOperations_UsesCatalogScope(t *testing.T) {
+	t.Parallel()
+
+	readStore := &fakeQueryReadStore{
+		operationCatalogCountResult: store.OperationCatalogCount{
+			TotalCount:    3,
+			MaxItemLength: int64(len("POST /accounts/{id}")),
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(
+		httptest.NewRequest(http.MethodGet, "/v1/operations/count?namespace=acme&query=get%20/", nil),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if len(readStore.resolveReadSnapshotInputs) != 0 {
+		t.Fatalf("did not expect snapshot resolution, got %+v", readStore.resolveReadSnapshotInputs)
+	}
+	if !reflect.DeepEqual(readStore.operationCatalogCountInputs, []operationCatalogCountInput{{
+		Namespace:   "acme",
+		Repo:        "",
+		QueryPrefix: "get /",
+	}}) {
+		t.Fatalf("unexpected operation catalog count inputs: %+v", readStore.operationCatalogCountInputs)
 	}
 }
 
@@ -898,15 +949,24 @@ type fakeQueryReadStore struct {
 	apiSnapshotFound  bool
 	apiSnapshotErr    error
 
-	operationInventoryInputs        []operationInventoryInput
-	operationInventoryResult        []store.OperationSnapshot
-	operationInventoryErr           error
-	operationCatalogInventoryInputs []string
-	operationCatalogInventoryResult []store.OperationSnapshot
-	operationCatalogInventoryErr    error
-	operationInventoryByAPIInputs   []operationInventoryByAPIInput
-	operationInventoryByAPIResult   []store.OperationSnapshot
-	operationInventoryByAPIErr      error
+	operationInventoryInputs          []operationInventoryInput
+	operationInventoryResult          []store.OperationSnapshot
+	operationInventoryErr             error
+	operationCatalogInventoryInputs   []string
+	operationCatalogInventoryResult   []store.OperationSnapshot
+	operationCatalogInventoryErr      error
+	operationInventoryPageInputs      []operationInventoryPageInput
+	operationCatalogPageInputs        []operationCatalogPageInput
+	operationInventoryByAPIPageInputs []operationInventoryByAPIPageInput
+	operationInventoryCountInputs     []operationInventoryCountInput
+	operationInventoryCountResult     store.OperationCatalogCount
+	operationInventoryCountErr        error
+	operationCatalogCountInputs       []operationCatalogCountInput
+	operationCatalogCountResult       store.OperationCatalogCount
+	operationCatalogCountErr          error
+	operationInventoryByAPIInputs     []operationInventoryByAPIInput
+	operationInventoryByAPIResult     []store.OperationSnapshot
+	operationInventoryByAPIErr        error
 
 	repoInventoryResult      []store.RepoCatalogEntry
 	repoInventoryErr         error
@@ -950,10 +1010,47 @@ type operationInventoryInput struct {
 	RevisionID int64
 }
 
+type operationInventoryPageInput struct {
+	RepoID      int64
+	RevisionID  int64
+	QueryPrefix string
+	Limit       int32
+	Offset      int32
+}
+
+type operationInventoryCountInput struct {
+	RepoID      int64
+	RevisionID  int64
+	QueryPrefix string
+}
+
+type operationCatalogPageInput struct {
+	Namespace   string
+	Repo        string
+	QueryPrefix string
+	Limit       int32
+	Offset      int32
+}
+
+type operationCatalogCountInput struct {
+	Namespace   string
+	Repo        string
+	QueryPrefix string
+}
+
 type operationInventoryByAPIInput struct {
 	RepoID     int64
 	API        string
 	RevisionID int64
+}
+
+type operationInventoryByAPIPageInput struct {
+	RepoID      int64
+	API         string
+	RevisionID  int64
+	QueryPrefix string
+	Limit       int32
+	Offset      int32
 }
 
 func (f *fakeQueryReadStore) ResolveReadSnapshot(
@@ -1062,6 +1159,46 @@ func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevision(
 	return result, nil
 }
 
+func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevisionPage(
+	_ context.Context,
+	repoID int64,
+	snapshotRevisionID int64,
+	queryPrefix string,
+	limit int32,
+	offset int32,
+) ([]store.OperationSnapshot, error) {
+	f.operationInventoryPageInputs = append(f.operationInventoryPageInputs, operationInventoryPageInput{
+		RepoID:      repoID,
+		RevisionID:  snapshotRevisionID,
+		QueryPrefix: queryPrefix,
+		Limit:       limit,
+		Offset:      offset,
+	})
+	if f.operationInventoryErr != nil {
+		return nil, f.operationInventoryErr
+	}
+	result := make([]store.OperationSnapshot, len(f.operationInventoryResult))
+	copy(result, f.operationInventoryResult)
+	return result, nil
+}
+
+func (f *fakeQueryReadStore) CountOperationInventoryByRepoRevision(
+	_ context.Context,
+	repoID int64,
+	snapshotRevisionID int64,
+	queryPrefix string,
+) (store.OperationCatalogCount, error) {
+	f.operationInventoryCountInputs = append(f.operationInventoryCountInputs, operationInventoryCountInput{
+		RepoID:      repoID,
+		RevisionID:  snapshotRevisionID,
+		QueryPrefix: queryPrefix,
+	})
+	if f.operationInventoryCountErr != nil {
+		return store.OperationCatalogCount{}, f.operationInventoryCountErr
+	}
+	return f.operationInventoryCountResult, nil
+}
+
 func (f *fakeQueryReadStore) ListOperationCatalogInventory(
 	_ context.Context,
 	namespace string,
@@ -1075,6 +1212,46 @@ func (f *fakeQueryReadStore) ListOperationCatalogInventory(
 	return result, nil
 }
 
+func (f *fakeQueryReadStore) ListOperationCatalogInventoryPage(
+	_ context.Context,
+	namespace string,
+	repo string,
+	queryPrefix string,
+	limit int32,
+	offset int32,
+) ([]store.OperationSnapshot, error) {
+	f.operationCatalogPageInputs = append(f.operationCatalogPageInputs, operationCatalogPageInput{
+		Namespace:   namespace,
+		Repo:        repo,
+		QueryPrefix: queryPrefix,
+		Limit:       limit,
+		Offset:      offset,
+	})
+	if f.operationCatalogInventoryErr != nil {
+		return nil, f.operationCatalogInventoryErr
+	}
+	result := make([]store.OperationSnapshot, len(f.operationCatalogInventoryResult))
+	copy(result, f.operationCatalogInventoryResult)
+	return result, nil
+}
+
+func (f *fakeQueryReadStore) CountOperationCatalogInventory(
+	_ context.Context,
+	namespace string,
+	repo string,
+	queryPrefix string,
+) (store.OperationCatalogCount, error) {
+	f.operationCatalogCountInputs = append(f.operationCatalogCountInputs, operationCatalogCountInput{
+		Namespace:   namespace,
+		Repo:        repo,
+		QueryPrefix: queryPrefix,
+	})
+	if f.operationCatalogCountErr != nil {
+		return store.OperationCatalogCount{}, f.operationCatalogCountErr
+	}
+	return f.operationCatalogCountResult, nil
+}
+
 func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevisionAndAPI(
 	_ context.Context,
 	repoID int64,
@@ -1085,6 +1262,31 @@ func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevisionAndAPI(
 		RepoID:     repoID,
 		API:        api,
 		RevisionID: snapshotRevisionID,
+	})
+	if f.operationInventoryByAPIErr != nil {
+		return nil, f.operationInventoryByAPIErr
+	}
+	result := make([]store.OperationSnapshot, len(f.operationInventoryByAPIResult))
+	copy(result, f.operationInventoryByAPIResult)
+	return result, nil
+}
+
+func (f *fakeQueryReadStore) ListOperationInventoryByRepoRevisionAndAPIPage(
+	_ context.Context,
+	repoID int64,
+	api string,
+	snapshotRevisionID int64,
+	queryPrefix string,
+	limit int32,
+	offset int32,
+) ([]store.OperationSnapshot, error) {
+	f.operationInventoryByAPIPageInputs = append(f.operationInventoryByAPIPageInputs, operationInventoryByAPIPageInput{
+		RepoID:      repoID,
+		API:         api,
+		RevisionID:  snapshotRevisionID,
+		QueryPrefix: queryPrefix,
+		Limit:       limit,
+		Offset:      offset,
 	})
 	if f.operationInventoryByAPIErr != nil {
 		return nil, f.operationInventoryByAPIErr

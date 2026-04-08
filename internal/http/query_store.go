@@ -35,15 +35,52 @@ type queryReadStore interface {
 		repoID int64,
 		snapshotRevisionID int64,
 	) ([]store.OperationSnapshot, error)
+	ListOperationInventoryByRepoRevisionPage(
+		ctx context.Context,
+		repoID int64,
+		snapshotRevisionID int64,
+		queryPrefix string,
+		limit int32,
+		offset int32,
+	) ([]store.OperationSnapshot, error)
+	CountOperationInventoryByRepoRevision(
+		ctx context.Context,
+		repoID int64,
+		snapshotRevisionID int64,
+		queryPrefix string,
+	) (store.OperationCatalogCount, error)
 	ListOperationCatalogInventory(
 		ctx context.Context,
 		namespace string,
 	) ([]store.OperationSnapshot, error)
+	ListOperationCatalogInventoryPage(
+		ctx context.Context,
+		namespace string,
+		repo string,
+		queryPrefix string,
+		limit int32,
+		offset int32,
+	) ([]store.OperationSnapshot, error)
+	CountOperationCatalogInventory(
+		ctx context.Context,
+		namespace string,
+		repo string,
+		queryPrefix string,
+	) (store.OperationCatalogCount, error)
 	ListOperationInventoryByRepoRevisionAndAPI(
 		ctx context.Context,
 		repoID int64,
 		api string,
 		snapshotRevisionID int64,
+	) ([]store.OperationSnapshot, error)
+	ListOperationInventoryByRepoRevisionAndAPIPage(
+		ctx context.Context,
+		repoID int64,
+		api string,
+		snapshotRevisionID int64,
+		queryPrefix string,
+		limit int32,
+		offset int32,
 	) ([]store.OperationSnapshot, error)
 	ListNamespaceCatalogInventory(
 		ctx context.Context,

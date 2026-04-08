@@ -31,6 +31,167 @@ func (q *Queries) CountNamespaceCatalogInventory(ctx context.Context, queryPrefi
 	return total_count, err
 }
 
+const countOperationCatalogInventory = `-- name: CountOperationCatalogInventory :one
+WITH repos_in_scope AS (
+    SELECT
+        repos.id AS repo_id,
+        namespaces.namespace,
+        repos.repo,
+        repos.default_branch
+    FROM repos
+    JOIN namespaces ON namespaces.id = repos.namespace_id
+    WHERE ($1::TEXT = '' OR namespaces.namespace = $1)
+      AND ($2::TEXT = '' OR repos.repo = $2)
+      AND EXISTS (
+          SELECT 1
+          FROM api_specs
+          WHERE api_specs.repo_id = repos.id
+            AND api_specs.status = 'active'
+      )
+),
+head_processed AS (
+    SELECT repos_in_scope.repo_id
+    FROM repos_in_scope
+    JOIN LATERAL (
+        SELECT status
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos_in_scope.repo_id
+          AND ingest_events.branch = repos_in_scope.default_branch
+        ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+        LIMIT 1
+    ) AS head ON TRUE
+    WHERE head.status = 'processed'
+),
+latest_processed_openapi AS (
+    SELECT
+        repos_in_scope.repo_id,
+        latest_openapi.id AS snapshot_revision_id
+    FROM repos_in_scope
+    JOIN head_processed ON head_processed.repo_id = repos_in_scope.repo_id
+    JOIN LATERAL (
+        SELECT id
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos_in_scope.repo_id
+          AND ingest_events.branch = repos_in_scope.default_branch
+          AND ingest_events.status = 'processed'
+          AND ingest_events.openapi_changed = TRUE
+        ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
+        LIMIT 1
+    ) AS latest_openapi ON TRUE
+),
+repo_specs AS (
+    SELECT
+        api_specs.id AS api_spec_id,
+        api_specs.repo_id
+    FROM api_specs
+    JOIN repos_in_scope ON repos_in_scope.repo_id = api_specs.repo_id
+    WHERE api_specs.status = 'active'
+),
+matched_operations AS (
+    SELECT
+        endpoint_index.method,
+        endpoint_index.path
+    FROM latest_processed_openapi
+    JOIN repo_specs ON repo_specs.repo_id = latest_processed_openapi.repo_id
+    JOIN api_spec_revisions
+      ON api_spec_revisions.api_spec_id = repo_specs.api_spec_id
+     AND api_spec_revisions.ingest_event_id = latest_processed_openapi.snapshot_revision_id
+     AND api_spec_revisions.build_status = 'processed'
+    JOIN endpoint_index ON endpoint_index.api_spec_revision_id = api_spec_revisions.id
+    WHERE (
+        $3::TEXT = ''
+        OR (UPPER(TRIM(endpoint_index.method)) || ' ' || TRIM(endpoint_index.path)) ILIKE $3::TEXT || '%'
+        OR COALESCE(endpoint_index.operation_id, '') ILIKE $3::TEXT || '%'
+    )
+)
+SELECT
+    COUNT(*)::BIGINT AS total_count,
+    COALESCE(MAX(CHAR_LENGTH(UPPER(TRIM(method)) || ' ' || TRIM(path))), 0)::BIGINT AS max_item_length
+FROM matched_operations
+`
+
+type CountOperationCatalogInventoryParams struct {
+	Namespace   string `json:"namespace"`
+	Repo        string `json:"repo"`
+	QueryPrefix string `json:"query_prefix"`
+}
+
+type CountOperationCatalogInventoryRow struct {
+	TotalCount    int64 `json:"total_count"`
+	MaxItemLength int64 `json:"max_item_length"`
+}
+
+func (q *Queries) CountOperationCatalogInventory(ctx context.Context, arg CountOperationCatalogInventoryParams) (CountOperationCatalogInventoryRow, error) {
+	row := q.db.QueryRow(ctx, countOperationCatalogInventory, arg.Namespace, arg.Repo, arg.QueryPrefix)
+	var i CountOperationCatalogInventoryRow
+	err := row.Scan(&i.TotalCount, &i.MaxItemLength)
+	return i, err
+}
+
+const countOperationInventoryByRepoRevision = `-- name: CountOperationInventoryByRepoRevision :one
+WITH RECURSIVE snapshot_ancestors AS (
+    SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
+    FROM ingest_events
+    WHERE ingest_events.repo_id = $1
+      AND ingest_events.id = $2
+    UNION ALL
+    SELECT parent.id, parent.repo_id, parent.sha, parent.parent_sha, snapshot_ancestors.distance + 1
+    FROM ingest_events AS parent
+    JOIN snapshot_ancestors
+      ON parent.repo_id = snapshot_ancestors.repo_id
+     AND parent.sha = snapshot_ancestors.parent_sha
+),
+repo_specs AS (
+    SELECT id, root_path, status
+    FROM api_specs
+    WHERE api_specs.repo_id = $1
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.api_spec_id,
+        api_spec_revisions.id AS api_spec_revision_id
+    FROM api_spec_revisions
+    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+    JOIN snapshot_ancestors ON snapshot_ancestors.id = api_spec_revisions.ingest_event_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, snapshot_ancestors.distance ASC, api_spec_revisions.id DESC
+),
+matched_operations AS (
+    SELECT
+        endpoint_index.method,
+        endpoint_index.path
+    FROM latest_processed
+    JOIN endpoint_index ON endpoint_index.api_spec_revision_id = latest_processed.api_spec_revision_id
+    WHERE (
+        $3::TEXT = ''
+        OR (UPPER(TRIM(endpoint_index.method)) || ' ' || TRIM(endpoint_index.path)) ILIKE $3::TEXT || '%'
+        OR COALESCE(endpoint_index.operation_id, '') ILIKE $3::TEXT || '%'
+    )
+)
+SELECT
+    COUNT(*)::BIGINT AS total_count,
+    COALESCE(MAX(CHAR_LENGTH(UPPER(TRIM(method)) || ' ' || TRIM(path))), 0)::BIGINT AS max_item_length
+FROM matched_operations
+`
+
+type CountOperationInventoryByRepoRevisionParams struct {
+	RepoID             int64  `json:"repo_id"`
+	SnapshotRevisionID int64  `json:"snapshot_revision_id"`
+	QueryPrefix        string `json:"query_prefix"`
+}
+
+type CountOperationInventoryByRepoRevisionRow struct {
+	TotalCount    int64 `json:"total_count"`
+	MaxItemLength int64 `json:"max_item_length"`
+}
+
+func (q *Queries) CountOperationInventoryByRepoRevision(ctx context.Context, arg CountOperationInventoryByRepoRevisionParams) (CountOperationInventoryByRepoRevisionRow, error) {
+	row := q.db.QueryRow(ctx, countOperationInventoryByRepoRevision, arg.RepoID, arg.SnapshotRevisionID, arg.QueryPrefix)
+	var i CountOperationInventoryByRepoRevisionRow
+	err := row.Scan(&i.TotalCount, &i.MaxItemLength)
+	return i, err
+}
+
 const findOperationCandidatesByRepoRevisionAndAPIAndMethodPath = `-- name: FindOperationCandidatesByRepoRevisionAndAPIAndMethodPath :many
 WITH RECURSIVE snapshot_ancestors AS (
     SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
@@ -991,6 +1152,167 @@ func (q *Queries) ListOperationCatalogInventory(ctx context.Context, namespace s
 	return items, nil
 }
 
+const listOperationCatalogInventoryPage = `-- name: ListOperationCatalogInventoryPage :many
+WITH repos_in_scope AS (
+    SELECT
+        repos.id AS repo_id,
+        namespaces.namespace,
+        repos.repo,
+        repos.default_branch
+    FROM repos
+    JOIN namespaces ON namespaces.id = repos.namespace_id
+    WHERE ($4::TEXT = '' OR namespaces.namespace = $4)
+      AND ($5::TEXT = '' OR repos.repo = $5)
+      AND EXISTS (
+          SELECT 1
+          FROM api_specs
+          WHERE api_specs.repo_id = repos.id
+            AND api_specs.status = 'active'
+      )
+),
+head_processed AS (
+    SELECT repos_in_scope.repo_id
+    FROM repos_in_scope
+    JOIN LATERAL (
+        SELECT status
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos_in_scope.repo_id
+          AND ingest_events.branch = repos_in_scope.default_branch
+        ORDER BY ingest_events.received_at DESC, ingest_events.id DESC
+        LIMIT 1
+    ) AS head ON TRUE
+    WHERE head.status = 'processed'
+),
+latest_processed_openapi AS (
+    SELECT
+        repos_in_scope.repo_id,
+        latest_openapi.id AS snapshot_revision_id
+    FROM repos_in_scope
+    JOIN head_processed ON head_processed.repo_id = repos_in_scope.repo_id
+    JOIN LATERAL (
+        SELECT id
+        FROM ingest_events
+        WHERE ingest_events.repo_id = repos_in_scope.repo_id
+          AND ingest_events.branch = repos_in_scope.default_branch
+          AND ingest_events.status = 'processed'
+          AND ingest_events.openapi_changed = TRUE
+        ORDER BY ingest_events.processed_at DESC NULLS LAST, ingest_events.id DESC
+        LIMIT 1
+    ) AS latest_openapi ON TRUE
+),
+repo_specs AS (
+    SELECT
+        api_specs.id AS api_spec_id,
+        api_specs.repo_id,
+        api_specs.root_path AS api,
+        api_specs.status
+    FROM api_specs
+    JOIN repos_in_scope ON repos_in_scope.repo_id = api_specs.repo_id
+    WHERE api_specs.status = 'active'
+)
+SELECT
+    repos_in_scope.namespace,
+    repos_in_scope.repo,
+    repo_specs.api_spec_id,
+    repo_specs.api,
+    repo_specs.status,
+    api_spec_revisions.id AS api_spec_revision_id,
+    ingest_events.id AS ingest_event_id,
+    ingest_events.sha AS ingest_event_sha,
+    ingest_events.branch AS ingest_event_branch,
+    endpoint_index.method,
+    endpoint_index.path,
+    endpoint_index.operation_id,
+    endpoint_index.summary,
+    endpoint_index.deprecated,
+    endpoint_index.raw_json
+FROM latest_processed_openapi
+JOIN repos_in_scope ON repos_in_scope.repo_id = latest_processed_openapi.repo_id
+JOIN repo_specs ON repo_specs.repo_id = latest_processed_openapi.repo_id
+JOIN api_spec_revisions
+  ON api_spec_revisions.api_spec_id = repo_specs.api_spec_id
+ AND api_spec_revisions.ingest_event_id = latest_processed_openapi.snapshot_revision_id
+ AND api_spec_revisions.build_status = 'processed'
+JOIN ingest_events ON ingest_events.id = api_spec_revisions.ingest_event_id
+JOIN endpoint_index ON endpoint_index.api_spec_revision_id = api_spec_revisions.id
+WHERE (
+    $1::TEXT = ''
+    OR (UPPER(TRIM(endpoint_index.method)) || ' ' || TRIM(endpoint_index.path)) ILIKE $1::TEXT || '%'
+    OR COALESCE(endpoint_index.operation_id, '') ILIKE $1::TEXT || '%'
+)
+ORDER BY repos_in_scope.namespace ASC, repos_in_scope.repo ASC, repo_specs.api ASC, endpoint_index.method ASC, endpoint_index.path ASC
+LIMIT $3
+OFFSET $2
+`
+
+type ListOperationCatalogInventoryPageParams struct {
+	QueryPrefix string `json:"query_prefix"`
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
+	Namespace   string `json:"namespace"`
+	Repo        string `json:"repo"`
+}
+
+type ListOperationCatalogInventoryPageRow struct {
+	Namespace         string      `json:"namespace"`
+	Repo              string      `json:"repo"`
+	ApiSpecID         int64       `json:"api_spec_id"`
+	Api               string      `json:"api"`
+	Status            string      `json:"status"`
+	ApiSpecRevisionID int64       `json:"api_spec_revision_id"`
+	IngestEventID     int64       `json:"ingest_event_id"`
+	IngestEventSha    string      `json:"ingest_event_sha"`
+	IngestEventBranch string      `json:"ingest_event_branch"`
+	Method            string      `json:"method"`
+	Path              string      `json:"path"`
+	OperationID       pgtype.Text `json:"operation_id"`
+	Summary           pgtype.Text `json:"summary"`
+	Deprecated        bool        `json:"deprecated"`
+	RawJson           []byte      `json:"raw_json"`
+}
+
+func (q *Queries) ListOperationCatalogInventoryPage(ctx context.Context, arg ListOperationCatalogInventoryPageParams) ([]ListOperationCatalogInventoryPageRow, error) {
+	rows, err := q.db.Query(ctx, listOperationCatalogInventoryPage,
+		arg.QueryPrefix,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.Namespace,
+		arg.Repo,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOperationCatalogInventoryPageRow{}
+	for rows.Next() {
+		var i ListOperationCatalogInventoryPageRow
+		if err := rows.Scan(
+			&i.Namespace,
+			&i.Repo,
+			&i.ApiSpecID,
+			&i.Api,
+			&i.Status,
+			&i.ApiSpecRevisionID,
+			&i.IngestEventID,
+			&i.IngestEventSha,
+			&i.IngestEventBranch,
+			&i.Method,
+			&i.Path,
+			&i.OperationID,
+			&i.Summary,
+			&i.Deprecated,
+			&i.RawJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOperationInventoryByRepoRevision = `-- name: ListOperationInventoryByRepoRevision :many
 WITH RECURSIVE snapshot_ancestors AS (
     SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
@@ -1178,6 +1500,251 @@ func (q *Queries) ListOperationInventoryByRepoRevisionAndAPI(ctx context.Context
 	items := []ListOperationInventoryByRepoRevisionAndAPIRow{}
 	for rows.Next() {
 		var i ListOperationInventoryByRepoRevisionAndAPIRow
+		if err := rows.Scan(
+			&i.ApiSpecID,
+			&i.Api,
+			&i.Status,
+			&i.ApiSpecRevisionID,
+			&i.IngestEventID,
+			&i.IngestEventSha,
+			&i.IngestEventBranch,
+			&i.Method,
+			&i.Path,
+			&i.OperationID,
+			&i.Summary,
+			&i.Deprecated,
+			&i.RawJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOperationInventoryByRepoRevisionAndAPIPage = `-- name: ListOperationInventoryByRepoRevisionAndAPIPage :many
+WITH RECURSIVE snapshot_ancestors AS (
+    SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
+    FROM ingest_events
+    WHERE ingest_events.repo_id = $4
+      AND ingest_events.id = $5
+    UNION ALL
+    SELECT parent.id, parent.repo_id, parent.sha, parent.parent_sha, snapshot_ancestors.distance + 1
+    FROM ingest_events AS parent
+    JOIN snapshot_ancestors
+      ON parent.repo_id = snapshot_ancestors.repo_id
+     AND parent.sha = snapshot_ancestors.parent_sha
+),
+repo_specs AS (
+    SELECT id, root_path, status
+    FROM api_specs
+    WHERE api_specs.repo_id = $4
+      AND api_specs.root_path = $6
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.api_spec_id,
+        api_spec_revisions.id AS api_spec_revision_id,
+        api_spec_revisions.ingest_event_id
+    FROM api_spec_revisions
+    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+    JOIN snapshot_ancestors ON snapshot_ancestors.id = api_spec_revisions.ingest_event_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, snapshot_ancestors.distance ASC, api_spec_revisions.id DESC
+)
+SELECT
+    repo_specs.id AS api_spec_id,
+    repo_specs.root_path AS api,
+    repo_specs.status,
+    latest_processed.api_spec_revision_id,
+    latest_processed.ingest_event_id,
+    ingest_events.sha AS ingest_event_sha,
+    ingest_events.branch AS ingest_event_branch,
+    endpoint_index.method,
+    endpoint_index.path,
+    endpoint_index.operation_id,
+    endpoint_index.summary,
+    endpoint_index.deprecated,
+    endpoint_index.raw_json
+FROM latest_processed
+JOIN repo_specs ON repo_specs.id = latest_processed.api_spec_id
+JOIN ingest_events ON ingest_events.id = latest_processed.ingest_event_id
+JOIN endpoint_index ON endpoint_index.api_spec_revision_id = latest_processed.api_spec_revision_id
+WHERE (
+    $1::TEXT = ''
+    OR (UPPER(TRIM(endpoint_index.method)) || ' ' || TRIM(endpoint_index.path)) ILIKE $1::TEXT || '%'
+    OR COALESCE(endpoint_index.operation_id, '') ILIKE $1::TEXT || '%'
+)
+ORDER BY endpoint_index.method ASC, endpoint_index.path ASC
+LIMIT $3
+OFFSET $2
+`
+
+type ListOperationInventoryByRepoRevisionAndAPIPageParams struct {
+	QueryPrefix        string `json:"query_prefix"`
+	PageOffset         int32  `json:"page_offset"`
+	PageLimit          int32  `json:"page_limit"`
+	RepoID             int64  `json:"repo_id"`
+	SnapshotRevisionID int64  `json:"snapshot_revision_id"`
+	Api                string `json:"api"`
+}
+
+type ListOperationInventoryByRepoRevisionAndAPIPageRow struct {
+	ApiSpecID         int64       `json:"api_spec_id"`
+	Api               string      `json:"api"`
+	Status            string      `json:"status"`
+	ApiSpecRevisionID int64       `json:"api_spec_revision_id"`
+	IngestEventID     int64       `json:"ingest_event_id"`
+	IngestEventSha    string      `json:"ingest_event_sha"`
+	IngestEventBranch string      `json:"ingest_event_branch"`
+	Method            string      `json:"method"`
+	Path              string      `json:"path"`
+	OperationID       pgtype.Text `json:"operation_id"`
+	Summary           pgtype.Text `json:"summary"`
+	Deprecated        bool        `json:"deprecated"`
+	RawJson           []byte      `json:"raw_json"`
+}
+
+func (q *Queries) ListOperationInventoryByRepoRevisionAndAPIPage(ctx context.Context, arg ListOperationInventoryByRepoRevisionAndAPIPageParams) ([]ListOperationInventoryByRepoRevisionAndAPIPageRow, error) {
+	rows, err := q.db.Query(ctx, listOperationInventoryByRepoRevisionAndAPIPage,
+		arg.QueryPrefix,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.RepoID,
+		arg.SnapshotRevisionID,
+		arg.Api,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOperationInventoryByRepoRevisionAndAPIPageRow{}
+	for rows.Next() {
+		var i ListOperationInventoryByRepoRevisionAndAPIPageRow
+		if err := rows.Scan(
+			&i.ApiSpecID,
+			&i.Api,
+			&i.Status,
+			&i.ApiSpecRevisionID,
+			&i.IngestEventID,
+			&i.IngestEventSha,
+			&i.IngestEventBranch,
+			&i.Method,
+			&i.Path,
+			&i.OperationID,
+			&i.Summary,
+			&i.Deprecated,
+			&i.RawJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOperationInventoryByRepoRevisionPage = `-- name: ListOperationInventoryByRepoRevisionPage :many
+WITH RECURSIVE snapshot_ancestors AS (
+    SELECT id, repo_id, sha, parent_sha, 0::BIGINT AS distance
+    FROM ingest_events
+    WHERE ingest_events.repo_id = $4
+      AND ingest_events.id = $5
+    UNION ALL
+    SELECT parent.id, parent.repo_id, parent.sha, parent.parent_sha, snapshot_ancestors.distance + 1
+    FROM ingest_events AS parent
+    JOIN snapshot_ancestors
+      ON parent.repo_id = snapshot_ancestors.repo_id
+     AND parent.sha = snapshot_ancestors.parent_sha
+),
+repo_specs AS (
+    SELECT id, root_path, status
+    FROM api_specs
+    WHERE api_specs.repo_id = $4
+),
+latest_processed AS (
+    SELECT DISTINCT ON (api_spec_revisions.api_spec_id)
+        api_spec_revisions.api_spec_id,
+        api_spec_revisions.id AS api_spec_revision_id,
+        api_spec_revisions.ingest_event_id
+    FROM api_spec_revisions
+    JOIN repo_specs ON repo_specs.id = api_spec_revisions.api_spec_id
+    JOIN snapshot_ancestors ON snapshot_ancestors.id = api_spec_revisions.ingest_event_id
+    WHERE api_spec_revisions.build_status = 'processed'
+    ORDER BY api_spec_revisions.api_spec_id, snapshot_ancestors.distance ASC, api_spec_revisions.id DESC
+)
+SELECT
+    repo_specs.id AS api_spec_id,
+    repo_specs.root_path AS api,
+    repo_specs.status,
+    latest_processed.api_spec_revision_id,
+    latest_processed.ingest_event_id,
+    ingest_events.sha AS ingest_event_sha,
+    ingest_events.branch AS ingest_event_branch,
+    endpoint_index.method,
+    endpoint_index.path,
+    endpoint_index.operation_id,
+    endpoint_index.summary,
+    endpoint_index.deprecated,
+    endpoint_index.raw_json
+FROM latest_processed
+JOIN repo_specs ON repo_specs.id = latest_processed.api_spec_id
+JOIN ingest_events ON ingest_events.id = latest_processed.ingest_event_id
+JOIN endpoint_index ON endpoint_index.api_spec_revision_id = latest_processed.api_spec_revision_id
+WHERE (
+    $1::TEXT = ''
+    OR (UPPER(TRIM(endpoint_index.method)) || ' ' || TRIM(endpoint_index.path)) ILIKE $1::TEXT || '%'
+    OR COALESCE(endpoint_index.operation_id, '') ILIKE $1::TEXT || '%'
+)
+ORDER BY repo_specs.root_path ASC, endpoint_index.method ASC, endpoint_index.path ASC
+LIMIT $3
+OFFSET $2
+`
+
+type ListOperationInventoryByRepoRevisionPageParams struct {
+	QueryPrefix        string `json:"query_prefix"`
+	PageOffset         int32  `json:"page_offset"`
+	PageLimit          int32  `json:"page_limit"`
+	RepoID             int64  `json:"repo_id"`
+	SnapshotRevisionID int64  `json:"snapshot_revision_id"`
+}
+
+type ListOperationInventoryByRepoRevisionPageRow struct {
+	ApiSpecID         int64       `json:"api_spec_id"`
+	Api               string      `json:"api"`
+	Status            string      `json:"status"`
+	ApiSpecRevisionID int64       `json:"api_spec_revision_id"`
+	IngestEventID     int64       `json:"ingest_event_id"`
+	IngestEventSha    string      `json:"ingest_event_sha"`
+	IngestEventBranch string      `json:"ingest_event_branch"`
+	Method            string      `json:"method"`
+	Path              string      `json:"path"`
+	OperationID       pgtype.Text `json:"operation_id"`
+	Summary           pgtype.Text `json:"summary"`
+	Deprecated        bool        `json:"deprecated"`
+	RawJson           []byte      `json:"raw_json"`
+}
+
+func (q *Queries) ListOperationInventoryByRepoRevisionPage(ctx context.Context, arg ListOperationInventoryByRepoRevisionPageParams) ([]ListOperationInventoryByRepoRevisionPageRow, error) {
+	rows, err := q.db.Query(ctx, listOperationInventoryByRepoRevisionPage,
+		arg.QueryPrefix,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.RepoID,
+		arg.SnapshotRevisionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOperationInventoryByRepoRevisionPageRow{}
+	for rows.Next() {
+		var i ListOperationInventoryByRepoRevisionPageRow
 		if err := rows.Scan(
 			&i.ApiSpecID,
 			&i.Api,

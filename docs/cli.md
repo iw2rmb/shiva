@@ -128,6 +128,7 @@ Rules:
     - active header item determines which list preview is rendered below
     - bottom rows are fixed as:
       - paginator row (`<current>/<total>`) for the active list scope
+      - endpoints scope shows `...` while `/v1/operations/count` is still in-flight
       - help footer row
     - when `ENDPOINTS` is active, the details pane remains visible with tabs `Endpoints`, `Servers`, `Errors`
   - focus/input model:
@@ -151,6 +152,7 @@ Rules:
       - `limit = items_per_page_for_current_height`
       - `offset = current_page * limit`
       - applies to namespace, repo, and endpoint catalog requests
+      - endpoint list requests use paged `/v1/operations` reads directly when paging is requested
       - active catalog auto-reloads on terminal resize when visible page size changes
     - operation detail loads lazily for selected endpoint and is cached by endpoint identity
     - spec detail loads only for `Servers` when operation-level servers are missing/empty and is cached by `(namespace, repo, api)`

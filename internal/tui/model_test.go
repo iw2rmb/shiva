@@ -1200,6 +1200,87 @@ func TestRootModelRendersPaginatorOnBottomRowAboveHelp(t *testing.T) {
 	}
 }
 
+func TestRootModelRendersPaginatorAndHelpOnEndpointsView(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{
+		Kind:      RouteRepoExplorer,
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{})
+	model.activeRoute = RouteRepoExplorer
+	model.height = 12
+	model.width = 60
+	model.resizeLists()
+
+	key := model.endpointScopeKey()
+	model.endpointCatalogByRepo[key] = []EndpointEntry{
+		{Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", API: "a.yaml", Method: "get", Path: "/pets", OperationID: "listPets"}},
+		{Identity: EndpointIdentity{Namespace: "acme", Repo: "platform", API: "a.yaml", Method: "post", Path: "/pets", OperationID: "createPet"}},
+	}
+	model.operationCatalogCount[key] = CatalogCount{TotalCount: 42}
+	model.refreshExplorerList()
+	model.syncPaginator(&model.explorer.Pager, model.operationCatalogCount[key].TotalCount, model.endpointItemsPerPage())
+
+	rendered := stripANSI(model.View().Content)
+	lines := strings.Split(rendered, "\n")
+	lastNonEmpty := -1
+	prevNonEmpty := -1
+	for index := len(lines) - 1; index >= 0; index-- {
+		if strings.TrimSpace(lines[index]) == "" {
+			continue
+		}
+		if lastNonEmpty == -1 {
+			lastNonEmpty = index
+			continue
+		}
+		prevNonEmpty = index
+		break
+	}
+	if lastNonEmpty == -1 || prevNonEmpty == -1 {
+		t.Fatalf("expected non-empty footer and paginator rows, got %q", rendered)
+	}
+	if !strings.Contains(lines[lastNonEmpty], "select endpoint") {
+		t.Fatalf("expected help footer on last non-empty row, got %q", lines[lastNonEmpty])
+	}
+	if !regexp.MustCompile(`\b\d+/\d+\b`).MatchString(lines[prevNonEmpty]) {
+		t.Fatalf("expected paginator row above footer, got %q", lines[prevNonEmpty])
+	}
+}
+
+func TestRootModelEndpointsPaginatorShowsLoadingStateWhileCountInFlight(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{
+		Kind:      RouteRepoExplorer,
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{})
+	model.setHomeSelection(homeItemEndpoints)
+	model.async.OperationCount.Loading = true
+
+	if got := model.activePaginatorLine(); got != "..." {
+		t.Fatalf("expected loading paginator placeholder, got %q", got)
+	}
+}
+
+func TestRootModelEndpointsPaginatorShowsLoadingStateWhenCountUnknown(t *testing.T) {
+	t.Parallel()
+
+	model := newRootModel(&fakeBrowserService{}, InitialRoute{
+		Kind:      RouteRepoExplorer,
+		Namespace: "acme",
+		Repo:      "platform",
+	}, RequestOptions{})
+	model.setHomeSelection(homeItemEndpoints)
+	model.async.OperationCount.Loading = false
+	delete(model.operationCatalogCount, repoPath("acme", "platform"))
+
+	if got := model.activePaginatorLine(); got != "..." {
+		t.Fatalf("expected unknown-count paginator placeholder, got %q", got)
+	}
+}
+
 func TestLayoutScreenWithoutKnownHeightKeepsDefaultSpacing(t *testing.T) {
 	t.Parallel()
 

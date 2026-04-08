@@ -156,9 +156,6 @@ func (model *rootModel) Init() tea.Cmd {
 		if cmd := model.ensureEndpointCatalogLoadCmd(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		if cmd := model.ensureOperationCountLoadCmd(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 	}
 
 	cmds = append(cmds, requestWindowSizeCmd())
@@ -272,7 +269,17 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.endpointHasMoreByScope[key] = int32(len(typed.Entries)) >= limit
 		model.refreshExplorerList()
 		model.refreshExplorerDetailViewport()
-		return model, model.loadExplorerDetailForSelection()
+		detailCmd := model.loadExplorerDetailForSelection()
+		countCmd := tea.Cmd(nil)
+		if !model.async.OperationCount.Loading {
+			if _, ok := model.operationCatalogCount[key]; !ok {
+				countCmd = model.ensureOperationCountLoadCmd()
+			}
+		}
+		if countCmd == nil {
+			return model, detailCmd
+		}
+		return model, batchCmds(detailCmd, countCmd)
 	case operationDetailLoadedMsg:
 		if !model.accepts(loadDomainOperationDetail, typed.Token) {
 			return model, nil
@@ -927,6 +934,11 @@ func (model *rootModel) layoutScreen(body string, footer string) string {
 	if model.height <= 0 {
 		return strings.Join([]string{body, "", paginatorView, footer}, "\n")
 	}
+	maxBodyHeight := model.height - lipgloss.Height(paginatorLine) - lipgloss.Height(footer)
+	if maxBodyHeight < 1 {
+		maxBodyHeight = 1
+	}
+	body = clampRenderHeight(body, maxBodyHeight)
 
 	separatorNewlines := model.height - lipgloss.Height(body) - lipgloss.Height(paginatorLine) - lipgloss.Height(footer) + 1
 	if separatorNewlines < 1 {
@@ -934,6 +946,17 @@ func (model *rootModel) layoutScreen(body string, footer string) string {
 	}
 
 	return body + strings.Repeat("\n", separatorNewlines) + paginatorView + "\n" + footer
+}
+
+func clampRenderHeight(view string, maxHeight int) string {
+	if maxHeight < 1 || lipgloss.Height(view) <= maxHeight {
+		return view
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) <= maxHeight {
+		return view
+	}
+	return strings.Join(lines[:maxHeight], "\n")
 }
 
 func (model *rootModel) setHomeSelection(index int) {
@@ -1307,6 +1330,12 @@ func (model *rootModel) activePaginatorLine() string {
 	case homeItemRepos:
 		pager = model.repoList.Pager
 	case homeItemEndpoints:
+		if model.async.OperationCount.Loading {
+			return "..."
+		}
+		if _, ok := model.operationCatalogCount[repoPath(model.selectedNamespace, model.selectedRepo)]; !ok {
+			return "..."
+		}
 		pager = model.explorer.Pager
 	default:
 		return ""
@@ -1321,7 +1350,7 @@ func (model *rootModel) ensureLoadForActiveSection() tea.Cmd {
 	case homeItemRepos:
 		return batchCmds(model.ensureNamespaceCatalogLoadCmd(), model.ensureRepoCatalogLoadCmd(), model.ensureRepoCountLoadCmd())
 	case homeItemEndpoints:
-		return batchCmds(model.ensureRepoCatalogLoadCmd(), model.ensureEndpointCatalogLoadCmd(), model.ensureOperationCountLoadCmd())
+		return batchCmds(model.ensureRepoCatalogLoadCmd(), model.ensureEndpointCatalogLoadCmd())
 	default:
 		return nil
 	}
