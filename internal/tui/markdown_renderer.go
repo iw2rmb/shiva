@@ -56,5 +56,15 @@ func (renderer *glamourMarkdownRenderer) Render(markdown string, width int) stri
 	if err != nil {
 		return markdown
 	}
-	return strings.TrimRight(rendered, "\n")
+	return trimSingleLeadingIndent(strings.TrimRight(rendered, "\n"))
+}
+
+func trimSingleLeadingIndent(value string) string {
+	lines := strings.Split(value, "\n")
+	for idx, line := range lines {
+		if strings.HasPrefix(line, " ") {
+			lines[idx] = strings.TrimPrefix(line, " ")
+		}
+	}
+	return strings.Join(lines, "\n")
 }

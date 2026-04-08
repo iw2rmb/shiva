@@ -666,6 +666,10 @@ func (model *rootModel) resizeLists() {
 	listWidth := model.activeListWidth(width)
 	// Reserve rows for header+gap and bottom paginator/help shell.
 	listHeight := height - 5
+	if model.home.Selected == homeItemEndpoints {
+		// Endpoints screen renders its own split body; keep it flush with available body height.
+		listHeight = height - 4
+	}
 	if listHeight < 1 {
 		listHeight = 1
 	}
@@ -681,6 +685,10 @@ func (model *rootModel) resizeLists() {
 	}
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
 	detailHeight := listHeight - 3
+	if model.home.Selected == homeItemEndpoints {
+		// Tabs + spacer + endpoint line are rendered outside the viewport.
+		detailHeight = height - 5
+	}
 	if detailHeight < 1 {
 		detailHeight = 1
 	}
@@ -747,10 +755,11 @@ func (model *rootModel) viewBrowser() string {
 	contextPane := model.activeContextPaneView()
 	footer := model.routeHelpView()
 
-	body := contextPane
 	if model.home.Selected == homeItemEndpoints {
-		body = model.viewEndpointsWithDetailsPane()
+		return model.viewEndpointsScreen(header, footer)
 	}
+
+	body := contextPane
 	if model.async.NamespaceCount.LastError != nil {
 		body = strings.Join([]string{
 			body,
@@ -762,6 +771,48 @@ func (model *rootModel) viewBrowser() string {
 		}, "\n")
 	}
 	return model.layoutScreen(strings.Join([]string{header, "", body}, "\n"), footer)
+}
+
+func (model *rootModel) viewEndpointsScreen(header string, footer string) string {
+	left := strings.Join([]string{
+		header,
+		"",
+		model.viewEndpointsPane(),
+	}, "\n")
+	right := model.endpointDetailsPaneView()
+
+	width, _ := listSize(model.width, model.height)
+	leftWidth := model.activeListWidth(width)
+	rightWidth := width - leftWidth - 2
+
+	body := ""
+	if rightWidth < 24 {
+		body = strings.Join([]string{
+			renderPaneAtWidth(left, leftWidth),
+			"",
+			renderPaneAtWidth(right, leftWidth),
+		}, "\n")
+	} else {
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			renderPaneAtWidth(left, leftWidth),
+			"  ",
+			renderPaneAtWidth(right, rightWidth),
+		)
+	}
+
+	if model.async.NamespaceCount.LastError != nil {
+		body = strings.Join([]string{
+			body,
+			"",
+			model.styles.ErrorBlock(
+				"Failed to load namespace total.",
+				model.async.NamespaceCount.LastError.Error(),
+			),
+		}, "\n")
+	}
+
+	return model.layoutScreen(body, footer)
 }
 
 func (model *rootModel) headerView() string {
@@ -871,27 +922,6 @@ func (model *rootModel) viewEndpointsPane() string {
 	return model.explorer.List.View()
 }
 
-func (model *rootModel) viewEndpointsWithDetailsPane() string {
-	left := model.viewEndpointsPane()
-	right := model.endpointDetailsPaneView()
-	width, _ := listSize(model.width, model.height)
-	leftWidth := model.activeListWidth(width)
-	rightWidth := width - leftWidth - 2
-	if rightWidth < 24 {
-		return strings.Join([]string{
-			renderPaneAtWidth(left, leftWidth),
-			"",
-			renderPaneAtWidth(right, leftWidth),
-		}, "\n")
-	}
-	return lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		renderPaneAtWidth(left, leftWidth),
-		"  ",
-		renderPaneAtWidth(right, rightWidth),
-	)
-}
-
 func (model *rootModel) endpointDetailsPaneView() string {
 	selected, ok := model.explorer.SelectedEndpoint()
 	endpointRow := ""
@@ -900,6 +930,7 @@ func (model *rootModel) endpointDetailsPaneView() string {
 	}
 	body := strings.Join([]string{
 		model.explorerTabRow(),
+		"",
 		"",
 		endpointRow,
 		model.explorer.Detail.Viewport.View(),

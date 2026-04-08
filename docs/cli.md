@@ -126,11 +126,13 @@ Rules:
   - layout uses a header-first shell:
     - top header is `SHIVA :// NAMESPACES / REPOS / ENDPOINTS`
     - active header item determines which list preview is rendered below
+    - in `ENDPOINTS`, the screen is split:
+      - left pane: global header + endpoints list
+      - right pane: details pane starts at row 1 with `/ REQUEST / RESPONSE / ERRORS`
     - bottom rows are fixed as:
       - paginator row (`<current>/<total>`) for the active list scope
       - endpoints scope shows `...` while `/v1/operations/count` is still in-flight
       - help footer row
-    - when `ENDPOINTS` is active, the details pane remains visible with tabs `REQUEST`, `RESPONSE`, `ERRORS`
     - details header row renders `/ REQUEST / RESPONSE <2xx chips> / ERRORS <non-2xx/default chips>`
     - details pane has no top border and uses a dimmed left border
   - focus/input model:
@@ -149,6 +151,10 @@ Rules:
   - endpoint catalog loading:
     - endpoint rows are sorted by path, method, operation id, then API
     - endpoint rows render method chips using one-dark palette mapping: `GET` blue, `POST` green, `PUT` yellow, `PATCH` orange, `DELETE` red, `OPTIONS`/`HEAD` neutral gray
+    - endpoint row title uses a fixed 9-cell method lane with right-aligned chip (`left margin = 9 - chip width`)
+    - endpoint subtitle uses a fixed left margin of 10 columns:
+      - `#<operationId> <summary>` when operation id exists
+      - `<summary>` when operation id is empty
     - endpoint catalog loading is lazy and progressive with bounded concurrency
     - scope is selected repo, else selected namespace, else all repos
     - list queries are paged by visible capacity:

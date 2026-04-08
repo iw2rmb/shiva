@@ -308,24 +308,25 @@ func sortedEndpointEntries(entries []EndpointEntry) []EndpointEntry {
 
 func endpointItems(entries []EndpointEntry) []list.Item {
 	items := make([]list.Item, 0, len(entries))
-	multiAPI := hasMultipleAPIs(entries)
 	for _, entry := range entries {
 		path := strings.TrimSpace(entry.Identity.Path)
 		if path == "" {
 			path = "/"
 		}
-		title := methodChip(entry.Identity.Method) + " " + pathBaseStyle.Render(path)
+		title := methodChipWithAlignedGap(entry.Identity.Method) + " " + pathBaseStyle.Render(path)
 
 		descriptionParts := make([]string, 0, 2)
-		if entry.Identity.OperationID != "" {
-			descriptionParts = append(descriptionParts, "#"+entry.Identity.OperationID)
+		operationID := strings.TrimSpace(entry.Identity.OperationID)
+		if operationID != "" {
+			descriptionParts = append(descriptionParts, "#"+operationID)
 		}
-		if multiAPI {
-			descriptionParts = append(descriptionParts, entry.Identity.API)
+		summary := strings.TrimSpace(entry.Row.Summary)
+		if summary != "" {
+			descriptionParts = append(descriptionParts, summary)
 		}
-		description := "endpoint"
-		if len(descriptionParts) > 0 {
-			description = strings.Join(descriptionParts, "  ")
+		description := strings.Join(descriptionParts, " ")
+		if description != "" {
+			description = strings.Repeat(" ", 10) + description
 		}
 
 		items = append(items, endpointListItem{
@@ -335,6 +336,16 @@ func endpointItems(entries []EndpointEntry) []list.Item {
 		})
 	}
 	return items
+}
+
+func methodChipWithAlignedGap(method string) string {
+	chip := methodChip(method)
+	const chipColumnWidth = 9
+	gap := chipColumnWidth - lipgloss.Width(chip)
+	if gap < 0 {
+		gap = 0
+	}
+	return strings.Repeat(" ", gap) + chip
 }
 
 func hasMultipleAPIs(entries []EndpointEntry) bool {

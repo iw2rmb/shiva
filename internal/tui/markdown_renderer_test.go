@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"charm.land/glamour/v2"
@@ -47,5 +48,23 @@ func TestGlamourRendererCachesRendererByWrapWidth(t *testing.T) {
 	_ = renderer.Render("## narrow", 10)
 	if got := len(renderer.renderers); got != 2 {
 		t.Fatalf("expected second cached renderer for clamped width, got %d", got)
+	}
+}
+
+func TestTrimSingleLeadingIndentRemovesAtMostOneLeadingSpacePerLine(t *testing.T) {
+	input := strings.Join([]string{
+		"  first",
+		" second",
+		"third",
+	}, "\n")
+
+	got := trimSingleLeadingIndent(input)
+	want := strings.Join([]string{
+		" first",
+		"second",
+		"third",
+	}, "\n")
+	if got != want {
+		t.Fatalf("expected trimmed value %q, got %q", want, got)
 	}
 }
