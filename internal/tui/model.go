@@ -89,6 +89,12 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 			Selected: -1,
 			List:     newAPIList(),
 			Pager:    newPaginator(),
+			Detail: APIDetailState{
+				ActiveTab: APIDetailTabData,
+				Viewport:  newDetailViewport(defaultListWidth, defaultViewportHeight),
+			},
+			SpecCache:  make(map[SpecIdentity]SpecDetail),
+			IssueCache: make(map[SpecIdentity]APIIssuesDetail),
 		},
 		explorer: RepoExplorerRouteState{
 			Selected: -1,
@@ -118,6 +124,7 @@ func newRootModel(service BrowserService, route InitialRoute, options RequestOpt
 	model.refreshAPIList()
 	model.refreshExplorerList()
 	model.resizeLists()
+	model.refreshAPIDetailViewport()
 	model.refreshExplorerDetailViewport()
 	return model
 }
@@ -227,6 +234,7 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.height = typed.Height
 		model.resizeLists()
 		model.syncKnownPaginators()
+		model.refreshAPIDetailViewportIfVisible()
 		model.refreshExplorerDetailViewportIfVisible()
 		if model.activePageSizeChanged(
 			previousNamespacePerPage,
@@ -264,10 +272,14 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		key := apiScopeKey(typed.Namespace, typed.Repo)
 		model.apiCatalogByScope[key] = append([]APIEntry(nil), typed.Rows...)
 		model.refreshAPIList()
+		model.refreshAPIDetailViewportIfVisible()
 		model.refreshHomeEntryPresentation()
 		model.refreshHomeList()
 		if model.home.Selected == homeItemEndpoints {
 			return model, model.ensureEndpointCatalogLoadCmd()
+		}
+		if model.home.Selected == homeItemAPIs {
+			return model, model.ensureAPIDetailLoadForTab()
 		}
 		return model, nil
 	case namespaceCatalogLoadedMsg:
@@ -395,6 +407,53 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.explorer.SpecCache[received] = detail
 		model.explorer.Detail.Spec = &detail
 		model.refreshExplorerDetailViewport()
+	case apiSpecDetailLoadedMsg:
+		if !model.accepts(loadDomainAPISpecDetail, typed.Token) {
+			return model, nil
+		}
+		model.finishLoad(loadDomainAPISpecDetail, typed.Token, nil)
+		selected, ok := model.selectedAPIEntry()
+		if !ok {
+			return model, nil
+		}
+		identity := SpecIdentity{
+			Namespace: selected.Namespace,
+			Repo:      selected.Repo,
+			API:       selected.API,
+		}
+		received := SpecIdentity{
+			Namespace: typed.Detail.Namespace,
+			Repo:      typed.Detail.Repo,
+			API:       typed.Detail.API,
+		}
+		if identity != received {
+			return model, nil
+		}
+		detail := typed.Detail
+		model.apiList.SpecCache[received] = detail
+		model.apiList.Detail.Spec = &detail
+		model.refreshAPIDetailViewport()
+	case apiIssuesLoadedMsg:
+		if !model.accepts(loadDomainAPIIssues, typed.Token) {
+			return model, nil
+		}
+		model.finishLoad(loadDomainAPIIssues, typed.Token, nil)
+		selected, ok := model.selectedAPIEntry()
+		if !ok {
+			return model, nil
+		}
+		expected := SpecIdentity{
+			Namespace: selected.Namespace,
+			Repo:      selected.Repo,
+			API:       selected.API,
+		}
+		if expected != typed.Detail.API {
+			return model, nil
+		}
+		detail := typed.Detail
+		model.apiList.IssueCache[expected] = detail
+		model.apiList.Detail.Issues = &detail
+		model.refreshAPIDetailViewport()
 	case loadFailedMsg:
 		if !model.accepts(typed.Domain, typed.Token) {
 			return model, nil
@@ -415,6 +474,8 @@ func (model *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model.resizeLists()
 		case loadDomainOperationDetail:
 			model.refreshExplorerDetailViewport()
+		case loadDomainAPISpecDetail, loadDomainAPIIssues:
+			model.refreshAPIDetailViewport()
 		}
 	}
 
@@ -484,13 +545,13 @@ func (model *rootModel) updateActiveRouteList(msg tea.Msg) (tea.Model, tea.Cmd) 
 		var cmd tea.Cmd
 		beforeFilter := model.apiList.List.FilterValue()
 		model.apiList.List, cmd = model.apiList.List.Update(msg)
-		model.syncAPISelection()
+		detailCmd := model.syncAPISelection()
 		if beforeFilter != model.apiList.List.FilterValue() {
 			model.apiList.Query = strings.TrimSpace(model.apiList.List.FilterValue())
 			model.apiList.Pager.Page = 0
-			return model, batchCmds(cmd, model.ensureAPICountLoadCmd(), model.ensureAPICatalogLoadCmd())
+			return model, batchCmds(cmd, detailCmd, model.ensureAPICountLoadCmd(), model.ensureAPICatalogLoadCmd())
 		}
-		return model, batchCmds(cmd, model.ensureAPICatalogLoadCmd())
+		return model, batchCmds(cmd, detailCmd, model.ensureAPICatalogLoadCmd())
 	case RouteRepoExplorer:
 		var cmd tea.Cmd
 		beforeFilter := model.explorer.List.FilterValue()
@@ -633,6 +694,10 @@ func (model *rootModel) updateAPIsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		model.activeRoute = RouteHome
 		model.syncHomeSelection()
 		return model, nil
+	case "tab":
+		return model, model.switchAPIDetailTab(1)
+	case "shift+tab":
+		return model, model.switchAPIDetailTab(-1)
 	case "enter":
 		if model.apiList.Selected < 0 || model.apiList.Selected >= len(model.apiList.Entries) {
 			return model, nil
@@ -646,18 +711,22 @@ func (model *rootModel) updateAPIsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		pageBefore := model.apiList.Pager.Page
 		model.apiList.Pager, _ = model.apiList.Pager.Update(msg)
 		if model.apiList.Pager.Page != pageBefore {
-			return model, model.ensureAPICatalogLoadCmd()
+			return model, batchCmds(model.ensureAPICatalogLoadCmd(), model.ensureAPIDetailLoadForTab())
 		}
 		var cmd tea.Cmd
 		beforeFilter := model.apiList.List.FilterValue()
 		model.apiList.List, cmd = model.apiList.List.Update(msg)
-		model.syncAPISelection()
+		detailSelectionCmd := model.syncAPISelection()
 		if beforeFilter != model.apiList.List.FilterValue() {
 			model.apiList.Query = strings.TrimSpace(model.apiList.List.FilterValue())
 			model.apiList.Pager.Page = 0
-			return model, batchCmds(cmd, model.ensureAPICountLoadCmd(), model.ensureAPICatalogLoadCmd())
+			return model, batchCmds(cmd, detailSelectionCmd, model.ensureAPICountLoadCmd(), model.ensureAPICatalogLoadCmd())
 		}
-		return model, cmd
+		var viewportCmd tea.Cmd
+		if shouldRouteKeyToDetailViewport(msg) {
+			model.apiList.Detail.Viewport, viewportCmd = model.apiList.Detail.Viewport.Update(msg)
+		}
+		return model, batchCmds(cmd, detailSelectionCmd, viewportCmd)
 	}
 }
 
@@ -833,13 +902,25 @@ func (model *rootModel) syncRepoSelection() {
 	model.repoList.Selected = index
 }
 
-func (model *rootModel) syncAPISelection() {
+func (model *rootModel) syncAPISelection() tea.Cmd {
 	index := model.apiList.List.Index()
 	if len(model.apiList.Entries) == 0 || index < 0 || index >= len(model.apiList.Entries) {
+		previous := model.apiList.Selected
 		model.apiList.Selected = -1
-		return
+		if previous >= 0 {
+			model.clearAPIDetailState()
+			model.refreshAPIDetailViewport()
+		}
+		return nil
 	}
+	previous := model.apiList.Selected
 	model.apiList.Selected = index
+	if previous != index {
+		model.clearAPIDetailState()
+		model.refreshAPIDetailViewport()
+		return model.ensureAPIDetailLoadForTab()
+	}
+	return nil
 }
 
 func (model *rootModel) resizeLists() {
@@ -871,6 +952,7 @@ func (model *rootModel) resizeLists() {
 		detailWidth = listWidth
 	}
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
+	model.apiList.Detail.Viewport.SetWidth(detailWidth)
 	detailHeight := listHeight - 3
 	if model.home.Selected == homeItemEndpoints {
 		// Tabs and spacer are rendered outside the viewport.
@@ -880,6 +962,7 @@ func (model *rootModel) resizeLists() {
 		detailHeight = 1
 	}
 	model.explorer.Detail.Viewport.SetHeight(detailHeight)
+	model.apiList.Detail.Viewport.SetHeight(detailHeight)
 }
 
 func (model *rootModel) activeListWidth(terminalWidth int) int {
@@ -910,6 +993,12 @@ func measuredListWidth(maxLength int64) int {
 func (model *rootModel) refreshExplorerDetailViewportIfVisible() {
 	if model.home.Selected == homeItemEndpoints {
 		model.refreshExplorerDetailViewport()
+	}
+}
+
+func (model *rootModel) refreshAPIDetailViewportIfVisible() {
+	if model.home.Selected == homeItemAPIs {
+		model.refreshAPIDetailViewport()
 	}
 }
 
@@ -946,6 +1035,9 @@ func (model *rootModel) viewBrowser() string {
 	contextPane := model.activeContextPaneView()
 	footer := model.routeHelpView()
 
+	if model.home.Selected == homeItemAPIs {
+		return model.viewAPIsScreen(header, footer)
+	}
 	if model.home.Selected == homeItemEndpoints {
 		return model.viewEndpointsScreen(header, footer)
 	}
@@ -971,6 +1063,49 @@ func (model *rootModel) viewEndpointsScreen(header string, footer string) string
 		model.viewEndpointsPane(),
 	}, "\n")
 	right := model.endpointDetailsPaneView()
+
+	width, _ := listSize(model.width, model.height)
+	leftWidth := model.activeListWidth(width)
+	rightWidth := endpointDetailsTargetWidth(width)
+	stacked := leftWidth+2+rightWidth > width
+
+	body := ""
+	if stacked {
+		body = strings.Join([]string{
+			renderPaneAtWidth(left, leftWidth),
+			"",
+			renderPaneAtWidth(right, leftWidth),
+		}, "\n")
+	} else {
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			renderPaneAtWidth(left, leftWidth),
+			"  ",
+			renderPaneAtWidth(right, rightWidth),
+		)
+	}
+
+	if model.async.NamespaceCount.LastError != nil {
+		body = strings.Join([]string{
+			body,
+			"",
+			model.styles.ErrorBlock(
+				"Failed to load namespace total.",
+				model.async.NamespaceCount.LastError.Error(),
+			),
+		}, "\n")
+	}
+
+	return model.layoutScreen(body, footer)
+}
+
+func (model *rootModel) viewAPIsScreen(header string, footer string) string {
+	left := strings.Join([]string{
+		header,
+		"",
+		model.viewAPIsPane(),
+	}, "\n")
+	right := model.apiDetailsPaneView()
 
 	width, _ := listSize(model.width, model.height)
 	leftWidth := model.activeListWidth(width)
@@ -1141,6 +1276,15 @@ func (model *rootModel) endpointDetailsPaneView() string {
 	return model.styles.DetailPane(body, model.explorer.Detail.Viewport.Width())
 }
 
+func (model *rootModel) apiDetailsPaneView() string {
+	body := strings.Join([]string{
+		model.apiTabRow(),
+		"",
+		model.apiList.Detail.Viewport.View(),
+	}, "\n")
+	return model.styles.DetailPane(body, model.apiList.Detail.Viewport.Width())
+}
+
 func endpointDetailsTargetWidth(viewportWidth int) int {
 	width := viewportWidth / 3
 	if width < 90 {
@@ -1253,6 +1397,7 @@ func (model *rootModel) clearActiveSelection() {
 	case homeItemAPIs:
 		model.selectedAPI = ""
 		model.selectedEndpoint = nil
+		model.clearAPIDetailState()
 	case homeItemEndpoints:
 		model.selectedEndpoint = nil
 	}
@@ -1261,6 +1406,7 @@ func (model *rootModel) clearActiveSelection() {
 	model.refreshRepoList()
 	model.refreshAPIList()
 	model.refreshExplorerList()
+	model.refreshAPIDetailViewport()
 	model.refreshExplorerDetailViewport()
 }
 
@@ -1269,6 +1415,7 @@ func (model *rootModel) setNamespaceSelection(namespace string) {
 		model.selectedRepo = ""
 		model.selectedAPI = ""
 		model.selectedEndpoint = nil
+		model.clearAPIDetailState()
 		model.repoList.Pager.Page = 0
 		model.apiList.Pager.Page = 0
 		model.explorer.Pager.Page = 0
@@ -1283,6 +1430,7 @@ func (model *rootModel) setNamespaceSelection(namespace string) {
 	model.refreshRepoList()
 	model.refreshAPIList()
 	model.refreshExplorerList()
+	model.refreshAPIDetailViewport()
 	model.refreshExplorerDetailViewport()
 }
 
@@ -1298,6 +1446,7 @@ func (model *rootModel) setRepoSelection(namespace string, repo string) {
 	model.apiList.Repo = repo
 	if namespaceChanged || repoChanged {
 		model.selectedEndpoint = nil
+		model.clearAPIDetailState()
 		model.apiList.Pager.Page = 0
 		model.explorer.Pager.Page = 0
 	}
@@ -1306,6 +1455,7 @@ func (model *rootModel) setRepoSelection(namespace string, repo string) {
 	model.refreshRepoList()
 	model.refreshAPIList()
 	model.refreshExplorerList()
+	model.refreshAPIDetailViewport()
 	model.refreshExplorerDetailViewport()
 }
 
@@ -1315,6 +1465,7 @@ func (model *rootModel) setAPISelection(entry APIEntry) {
 	repo := strings.TrimSpace(entry.Repo)
 	if model.selectedAPI != api || model.selectedNamespace != namespace || model.selectedRepo != repo {
 		model.selectedEndpoint = nil
+		model.clearAPIDetailState()
 		model.explorer.Pager.Page = 0
 	}
 	if namespace != "" {
@@ -1333,6 +1484,7 @@ func (model *rootModel) setAPISelection(entry APIEntry) {
 	model.refreshRepoList()
 	model.refreshAPIList()
 	model.refreshExplorerList()
+	model.refreshAPIDetailViewport()
 	model.refreshExplorerDetailViewport()
 }
 
@@ -1351,6 +1503,7 @@ func (model *rootModel) setEndpointSelection(identity EndpointIdentity) {
 	model.refreshRepoList()
 	model.refreshAPIList()
 	model.refreshExplorerList()
+	model.refreshAPIDetailViewport()
 	model.refreshExplorerDetailViewport()
 }
 
@@ -1751,7 +1904,12 @@ func (model *rootModel) ensureLoadForActiveSection() tea.Cmd {
 	case homeItemRepos:
 		return batchCmds(model.ensureNamespaceCatalogLoadCmd(), model.ensureRepoCatalogLoadCmd(), model.ensureRepoCountLoadCmd())
 	case homeItemAPIs:
-		return batchCmds(model.ensureRepoCatalogLoadCmd(), model.ensureAPICountLoadCmd(), model.ensureAPICatalogLoadCmd())
+		return batchCmds(
+			model.ensureRepoCatalogLoadCmd(),
+			model.ensureAPICountLoadCmd(),
+			model.ensureAPICatalogLoadCmd(),
+			model.ensureAPIDetailLoadForTab(),
+		)
 	case homeItemEndpoints:
 		return batchCmds(model.ensureRepoCatalogLoadCmd(), model.ensureAPICountLoadCmd(), model.ensureAPICatalogLoadCmd(), model.ensureEndpointCatalogLoadCmd())
 	default:
@@ -1773,6 +1931,14 @@ func (model *rootModel) beginOperationDetailLoad() RequestToken {
 
 func (model *rootModel) beginSpecDetailLoad() RequestToken {
 	return model.beginLoad(loadDomainSpecDetail)
+}
+
+func (model *rootModel) beginAPISpecDetailLoad() RequestToken {
+	return model.beginLoad(loadDomainAPISpecDetail)
+}
+
+func (model *rootModel) beginAPIIssuesLoad() RequestToken {
+	return model.beginLoad(loadDomainAPIIssues)
 }
 
 func (model *rootModel) beginLoad(domain loadDomain) RequestToken {
@@ -1820,6 +1986,10 @@ func (model *rootModel) loadState(domain loadDomain) *asyncLoadState {
 		return &model.async.OperationDetail
 	case loadDomainSpecDetail:
 		return &model.async.SpecDetail
+	case loadDomainAPISpecDetail:
+		return &model.async.APISpecDetail
+	case loadDomainAPIIssues:
+		return &model.async.APIIssues
 	default:
 		panic(fmt.Sprintf("unsupported load domain %q", domain))
 	}

@@ -67,6 +67,7 @@ Rules:
 ## Transport and Execution
 - Spec fetch uses `GET /v1/spec`.
 - Operation fetch uses `GET /v1/operation`.
+- API vacuum issues fetch uses `GET /v1/apis/issues`.
 - `@shiva` calls dispatch to `POST /v1/call`.
 - Direct targets resolve the operation from `GET /v1/operations` and dispatch the final HTTP request from the CLI process.
 - `shiva health` uses `GET /healthz`.
@@ -127,6 +128,9 @@ Rules:
     - in `ENDPOINTS`, the screen is split:
       - left pane: global header + endpoints list
       - right pane: details pane starts at row 1 with `/ REQUEST / RESPONSE / ERRORS` and uses width `max(viewport_width/3, 90)` when side-by-side layout fits
+    - in `APIS`, the screen is split:
+      - left pane: global header + API list
+      - right pane: details pane starts at row 1 with `/ DATA / ISSUES` and uses width `max(viewport_width/3, 90)` when side-by-side layout fits
     - bottom rows are fixed as:
       - paginator row (`<current>/<total>`) for the active list scope
       - help footer row
@@ -178,9 +182,14 @@ Rules:
       - endpoint list requests use paged `/v1/operations` reads directly when paging is requested
       - active catalog auto-reloads on terminal resize when visible page size changes
     - operation detail loads lazily for selected endpoint and is cached by endpoint identity
+    - API detail loads lazily for selected API:
+      - `DATA` tab loads spec JSON from `/v1/spec` and caches by API identity
+      - `ISSUES` tab loads vacuum issues from `/v1/apis/issues` and caches by API identity
     - detail pane renders inline load failures for operation detail requests
     - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)
-    - `tab` and `shift+tab` switch detail tabs in order `REQUEST -> RESPONSE -> ERRORS`
+    - `tab` and `shift+tab` switch detail tabs in order:
+      - APIs route: `DATA -> ISSUES`
+      - Endpoints route: `REQUEST -> RESPONSE -> ERRORS`
     - `pgup`, `pgdown`, `home`, `end`, `ctrl+u`, and `ctrl+d` scroll the detail viewport
     - active list width is driven by scoped `max_item_length` count metadata
   - empty catalogs and startup catalog-load failures render explicit deterministic states

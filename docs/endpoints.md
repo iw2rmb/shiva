@@ -171,7 +171,7 @@ Current state:
 
 ## Query and Call-Planning Endpoints (`/v1/*`)
 Current state:
-- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/apis/count`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, `/v1/catalog/status`, `/v1/namespaces/count`, `/v1/repos/count`, and `/v1/operations/count` are shipped query/read endpoints
+- `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/apis/issues`, `/v1/apis/count`, `/v1/operations`, `/v1/namespaces`, `/v1/repos`, `/v1/catalog/status`, `/v1/namespaces/count`, `/v1/repos/count`, and `/v1/operations/count` are shipped query/read endpoints
 - `/v1/call` is shipped as a planning endpoint only; it does not dispatch outbound traffic
 
 ### Registered Surface
@@ -179,6 +179,7 @@ Current state:
 - `GET /v1/operation`
 - `POST /v1/call`
 - `GET /v1/apis`
+- `GET /v1/apis/issues`
 - `GET /v1/apis/count`
 - `GET /v1/operations`
 - `GET /v1/namespaces`
@@ -197,6 +198,7 @@ Legacy path-segment endpoints were removed:
   - required on `/v1/spec`, `/v1/operation`, `/v1/apis`, `/v1/operations`, and `/v1/catalog/status`
   - value is the GitLab project slug
 - `api`
+  - required on `/v1/apis/issues`
   - optional on `/v1/spec`, `/v1/operation`, and `/v1/operations`
   - value is the raw `api_specs.root_path`
 - `revision_id`
@@ -308,6 +310,27 @@ Legacy path-segment endpoints were removed:
   - `spec_etag`
   - `spec_size_bytes`
   - `operation_count`
+
+### `GET /v1/apis/issues`
+- supported query parameters:
+  - `namespace`
+  - `repo`
+  - required `api`
+  - optional `revision_id` or `sha`
+- response body resolves one API snapshot and returns:
+  - `namespace`
+  - `repo`
+  - `api`
+  - `api_spec_revision_id`
+  - `vacuum_status`
+  - `vacuum_error`
+  - `vacuum_validated_at`
+  - `issues`:
+    - `rule_id`
+    - `message`
+    - `json_path`
+    - `range_pos`
+- API snapshots without a resolved processed revision return `404`
 
 ### `GET /v1/apis/count`
 - supported query parameters:

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"time"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/paginator"
@@ -15,6 +16,13 @@ const (
 	DetailTabRequest  DetailTab = "request"
 	DetailTabResponse DetailTab = "response"
 	DetailTabErrors   DetailTab = "errors"
+)
+
+type APIDetailTab string
+
+const (
+	APIDetailTabData   APIDetailTab = "data"
+	APIDetailTabIssues APIDetailTab = "issues"
 )
 
 type NamespaceEntry struct {
@@ -71,6 +79,29 @@ type SpecDetail struct {
 	Body      json.RawMessage
 }
 
+type APIVacuumIssue struct {
+	RuleID   string
+	Message  string
+	JSONPath string
+	RangePos []int32
+}
+
+type APIIssuesDetail struct {
+	API               SpecIdentity
+	APISpecRevisionID int64
+	VacuumStatus      string
+	VacuumError       string
+	VacuumValidatedAt *time.Time
+	Issues            []APIVacuumIssue
+}
+
+type APIDetailState struct {
+	ActiveTab APIDetailTab
+	Spec      *SpecDetail
+	Issues    *APIIssuesDetail
+	Viewport  viewport.Model
+}
+
 type DetailState struct {
 	ActiveTab DetailTab
 	Operation *OperationDetail
@@ -108,13 +139,16 @@ type RepoRouteState struct {
 }
 
 type APIRouteState struct {
-	Namespace string
-	Repo      string
-	Entries   []APIEntry
-	Selected  int
-	List      list.Model
-	Pager     paginator.Model
-	Query     string
+	Namespace  string
+	Repo       string
+	Entries    []APIEntry
+	Selected   int
+	List       list.Model
+	Pager      paginator.Model
+	Query      string
+	Detail     APIDetailState
+	SpecCache  map[SpecIdentity]SpecDetail
+	IssueCache map[SpecIdentity]APIIssuesDetail
 }
 
 type RepoExplorerRouteState struct {
@@ -150,6 +184,8 @@ const (
 	loadDomainOperationList   loadDomain = "operation_list"
 	loadDomainOperationDetail loadDomain = "operation_detail"
 	loadDomainSpecDetail      loadDomain = "spec_detail"
+	loadDomainAPISpecDetail   loadDomain = "api_spec_detail"
+	loadDomainAPIIssues       loadDomain = "api_issues"
 )
 
 type asyncLoadState struct {
@@ -170,4 +206,6 @@ type AsyncState struct {
 	OperationList   asyncLoadState
 	OperationDetail asyncLoadState
 	SpecDetail      asyncLoadState
+	APISpecDetail   asyncLoadState
+	APIIssues       asyncLoadState
 }

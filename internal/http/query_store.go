@@ -19,6 +19,7 @@ type queryReadStore interface {
 		input store.ResolveOperationByMethodPathInput,
 	) (store.ResolvedOperationCandidates, error)
 	GetSpecArtifactByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) (store.SpecArtifact, error)
+	GetAPISpecRevisionByID(ctx context.Context, apiSpecRevisionID int64) (store.APISpecRevision, error)
 	ListAPISnapshotInventoryByRepoRevision(
 		ctx context.Context,
 		repoID int64,
@@ -107,6 +108,7 @@ type queryReadStore interface {
 		ctx context.Context,
 		input store.NamespaceCatalogCountInput,
 	) (int64, error)
+	ListVacuumIssuesByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) ([]store.VacuumIssue, error)
 	ListRepoCatalogInventory(ctx context.Context) ([]store.RepoCatalogEntry, error)
 	GetRepoCatalogFreshness(ctx context.Context, namespace string, repo string) (store.RepoCatalogFreshness, error)
 }

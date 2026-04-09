@@ -531,6 +531,12 @@ func (s *fakeService) GetOperation(ctx context.Context, selector request.Envelop
 	return s.operationBody, nil
 }
 
+func (s *fakeService) GetAPIIssues(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error) {
+	s.lastRequest = selector
+	s.lastOptions = options
+	return []byte(`{"issues":[]}`), nil
+}
+
 func (s *fakeService) ExecuteCall(ctx context.Context, selector request.Envelope, options RequestOptions, format CallFormat) ([]byte, error) {
 	s.callCalls++
 	s.lastRequest = selector

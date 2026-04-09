@@ -33,6 +33,7 @@ type BrowserService interface {
 	ListAPIs(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	ListOperations(ctx context.Context, selector request.Envelope, options RequestOptions, format clioutput.ListFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
+	GetAPIIssues(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
 	GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error)
 }
 

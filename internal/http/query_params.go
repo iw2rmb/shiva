@@ -75,6 +75,10 @@ type operationsCatalogQuery struct {
 	Offset   int32
 }
 
+type apiIssuesQuery struct {
+	Snapshot store.ResolveReadSnapshotInput
+}
+
 const (
 	defaultNamespacesPageLimit int32 = 100
 	maxNamespacesPageLimit     int32 = 1000
@@ -269,6 +273,22 @@ func parseOperationsQuery(c *fiber.Ctx) (operationsCatalogQuery, error) {
 		Limit:  limit,
 		Offset: offset,
 	}, nil
+}
+
+func parseAPIIssuesQuery(c *fiber.Ctx) (apiIssuesQuery, error) {
+	if err := rejectUnsupportedQueryParams(c, "operation_id", "method", "path", "format", "query", "limit", "offset"); err != nil {
+		return apiIssuesQuery{}, err
+	}
+
+	snapshot, err := parseSnapshotQuery(c, snapshotQueryOptions{allowAPI: true})
+	if err != nil {
+		return apiIssuesQuery{}, err
+	}
+	if strings.TrimSpace(snapshot.APIPath) == "" {
+		return apiIssuesQuery{}, invalidQuery("api must not be empty")
+	}
+
+	return apiIssuesQuery{Snapshot: snapshot}, nil
 }
 
 func parseCatalogStatusQuery(c *fiber.Ctx) (string, error) {

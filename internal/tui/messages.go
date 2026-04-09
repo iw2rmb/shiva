@@ -65,6 +65,16 @@ type specDetailLoadedMsg struct {
 	Detail SpecDetail
 }
 
+type apiSpecDetailLoadedMsg struct {
+	Token  RequestToken
+	Detail SpecDetail
+}
+
+type apiIssuesLoadedMsg struct {
+	Token  RequestToken
+	Detail APIIssuesDetail
+}
+
 type resizeMsg struct {
 	Width  int
 	Height int

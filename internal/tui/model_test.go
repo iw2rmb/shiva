@@ -1363,6 +1363,10 @@ type fakeBrowserService struct {
 	lastSpecFormat        SpecFormat
 	specBody              []byte
 	specErr               error
+	getAPIIssuesCall      int
+	lastAPIIssuesGet      request.Envelope
+	apiIssuesBody         []byte
+	apiIssuesErr          error
 	lastContextValue      any
 }
 
@@ -1489,6 +1493,18 @@ func (service *fakeBrowserService) GetSpec(
 	service.lastSpecFormat = format
 	_ = options
 	return service.specBody, service.specErr
+}
+
+func (service *fakeBrowserService) GetAPIIssues(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+) ([]byte, error) {
+	service.lastContextValue = ctx.Value(contextKey("request"))
+	service.getAPIIssuesCall++
+	service.lastAPIIssuesGet = selector
+	_ = options
+	return service.apiIssuesBody, service.apiIssuesErr
 }
 
 type contextKey string

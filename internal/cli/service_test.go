@@ -650,9 +650,11 @@ type recordingTransportClient struct {
 	operationsBody        []byte
 	specBody              []byte
 	operationBody         []byte
+	apiIssuesBody         []byte
 	healthBody            []byte
 	specErr               error
 	operationErr          error
+	apiIssuesErr          error
 	namespaceCountErr     error
 	repoCountErr          error
 	apiCountErr           error
@@ -673,8 +675,10 @@ type recordingTransportClient struct {
 	operationsCalls       int
 	specCalls             int
 	operationCalls        int
+	apiIssuesCalls        int
 	lastSpecSelector      request.Envelope
 	lastOperationSelector request.Envelope
+	lastAPIIssuesSelector request.Envelope
 	lastCatalogRepo       string
 	lastCountNamespace    string
 	lastCountSelector     request.Envelope
@@ -740,6 +744,15 @@ func (c *recordingTransportClient) GetOperation(ctx context.Context, selector re
 		return nil, c.operationErr
 	}
 	return c.operationBody, nil
+}
+
+func (c *recordingTransportClient) GetAPIIssues(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	c.apiIssuesCalls++
+	c.lastAPIIssuesSelector = selector
+	if c.apiIssuesErr != nil {
+		return nil, c.apiIssuesErr
+	}
+	return c.apiIssuesBody, nil
 }
 
 func (c *recordingTransportClient) ListNamespaces(ctx context.Context) ([]byte, error) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	clioutput "github.com/iw2rmb/shiva/internal/cli/output"
@@ -359,6 +360,21 @@ func loadOperationDetailMsg(
 	}
 }
 
+type apiIssuesPayload struct {
+	APISpecRevisionID int64             `json:"api_spec_revision_id"`
+	VacuumStatus      string            `json:"vacuum_status"`
+	VacuumError       string            `json:"vacuum_error"`
+	VacuumValidatedAt *time.Time        `json:"vacuum_validated_at"`
+	Issues            []apiIssuePayload `json:"issues"`
+}
+
+type apiIssuePayload struct {
+	RuleID   string  `json:"rule_id"`
+	Message  string  `json:"message"`
+	JSONPath string  `json:"json_path"`
+	RangePos []int32 `json:"range_pos"`
+}
+
 func loadSpecDetailCmd(
 	ctx context.Context,
 	service BrowserService,
@@ -368,6 +384,32 @@ func loadSpecDetailCmd(
 ) tea.Cmd {
 	return func() tea.Msg {
 		return loadSpecDetailMsg(ctx, service, selector, options, token)
+	}
+}
+
+func loadAPISpecDetailCmd(
+	ctx context.Context,
+	service BrowserService,
+	selector request.Envelope,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		body, err := service.GetSpec(ctx, selector, options, SpecFormatJSON)
+		if err != nil {
+			return loadFailedMsg{Domain: loadDomainAPISpecDetail, Token: token, Err: err}
+		}
+		return apiSpecDetailLoadedMsg{
+			Token: token,
+			Detail: SpecDetail{
+				Namespace: selector.Namespace,
+				Repo:      selector.Repo,
+				API:       selector.API,
+				Revision:  selector.RevisionID,
+				SHA:       selector.SHA,
+				Body:      append(json.RawMessage(nil), body...),
+			},
+		}
 	}
 }
 
@@ -393,5 +435,53 @@ func loadSpecDetailMsg(
 			SHA:       selector.SHA,
 			Body:      append(json.RawMessage(nil), body...),
 		},
+	}
+}
+
+func loadAPIIssuesCmd(
+	ctx context.Context,
+	service BrowserService,
+	selector request.Envelope,
+	options RequestOptions,
+	token RequestToken,
+) tea.Cmd {
+	return func() tea.Msg {
+		body, err := service.GetAPIIssues(ctx, selector, options)
+		if err != nil {
+			return loadFailedMsg{Domain: loadDomainAPIIssues, Token: token, Err: err}
+		}
+
+		var payload apiIssuesPayload
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return loadFailedMsg{
+				Domain: loadDomainAPIIssues,
+				Token:  token,
+				Err:    fmt.Errorf("decode api issues: %w", err),
+			}
+		}
+		issues := make([]APIVacuumIssue, 0, len(payload.Issues))
+		for _, item := range payload.Issues {
+			issues = append(issues, APIVacuumIssue{
+				RuleID:   strings.TrimSpace(item.RuleID),
+				Message:  strings.TrimSpace(item.Message),
+				JSONPath: strings.TrimSpace(item.JSONPath),
+				RangePos: append([]int32(nil), item.RangePos...),
+			})
+		}
+		return apiIssuesLoadedMsg{
+			Token: token,
+			Detail: APIIssuesDetail{
+				API: SpecIdentity{
+					Namespace: selector.Namespace,
+					Repo:      selector.Repo,
+					API:       selector.API,
+				},
+				APISpecRevisionID: payload.APISpecRevisionID,
+				VacuumStatus:      strings.TrimSpace(payload.VacuumStatus),
+				VacuumError:       strings.TrimSpace(payload.VacuumError),
+				VacuumValidatedAt: payload.VacuumValidatedAt,
+				Issues:            issues,
+			},
+		}
 	}
 }

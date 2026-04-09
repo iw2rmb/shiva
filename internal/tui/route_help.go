@@ -66,6 +66,8 @@ func reposRouteHelp() routeHelpKeyMap {
 func apisRouteHelp() routeHelpKeyMap {
 	short := []key.Binding{
 		keyHelp("enter", "select api"),
+		keyHelp("tab/shift+tab", "switch tab"),
+		keyHelp("pgup/pgdown", "scroll details"),
 		keyHelp("esc", "back"),
 		keyHelp("q", "quit"),
 	}

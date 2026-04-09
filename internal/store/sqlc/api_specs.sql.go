@@ -91,6 +91,42 @@ func (q *Queries) CreateAPISpecRevision(ctx context.Context, arg CreateAPISpecRe
 	return i, err
 }
 
+const getAPISpecRevisionByID = `-- name: GetAPISpecRevisionByID :one
+SELECT
+    id,
+    api_spec_id,
+    ingest_event_id,
+    root_path_at_revision,
+    build_status,
+    error,
+    vacuum_status,
+    vacuum_error,
+    vacuum_validated_at,
+    created_at,
+    updated_at
+FROM api_spec_revisions
+WHERE id = $1
+`
+
+func (q *Queries) GetAPISpecRevisionByID(ctx context.Context, apiSpecRevisionID int64) (ApiSpecRevision, error) {
+	row := q.db.QueryRow(ctx, getAPISpecRevisionByID, apiSpecRevisionID)
+	var i ApiSpecRevision
+	err := row.Scan(
+		&i.ID,
+		&i.ApiSpecID,
+		&i.IngestEventID,
+		&i.RootPathAtRevision,
+		&i.BuildStatus,
+		&i.Error,
+		&i.VacuumStatus,
+		&i.VacuumError,
+		&i.VacuumValidatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listAPISpecListingByRepo = `-- name: ListAPISpecListingByRepo :many
 WITH repo_specs AS (
     SELECT id, root_path, status

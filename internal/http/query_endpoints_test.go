@@ -498,6 +498,121 @@ func TestQueryEndpoints_CountAPIs_Global(t *testing.T) {
 	}
 }
 
+func TestQueryEndpoints_GetAPIIssues_UsesResolvedSnapshotAndReturnsVacuumData(t *testing.T) {
+	t.Parallel()
+
+	validatedAt := time.Date(2026, time.April, 9, 10, 11, 12, 0, time.UTC)
+	readStore := &fakeQueryReadStore{
+		resolveReadSnapshotResult: store.ResolvedReadSnapshot{
+			Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
+			Revision: store.Revision{ID: 42},
+		},
+		apiSnapshotResult: store.APISnapshot{
+			API:               "apis/pets/openapi.yaml",
+			HasSnapshot:       true,
+			APISpecRevisionID: 501,
+		},
+		apiSnapshotFound: true,
+		apiSpecRevision: store.APISpecRevision{
+			ID:                501,
+			VacuumStatus:      store.VacuumStatusFailed,
+			VacuumError:       "schema parse failed",
+			VacuumValidatedAt: &validatedAt,
+		},
+		vacuumIssues: []store.VacuumIssue{
+			{
+				RuleID:   "info-description",
+				Message:  "missing description",
+				JSONPath: "$.info",
+				RangePos: []int32{1, 2},
+			},
+		},
+	}
+	server := newQueryTestServer(readStore)
+
+	resp, err := server.App().Test(
+		httptest.NewRequest(
+			http.MethodGet,
+			"/v1/apis/issues?namespace=acme&repo=platform&api=apis%2Fpets%2Fopenapi.yaml&sha=deadbeef",
+			nil,
+		),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if !reflect.DeepEqual(readStore.resolveReadSnapshotInputs, []store.ResolveReadSnapshotInput{{
+		Namespace: "acme",
+		Repo:      "platform",
+		APIPath:   "apis/pets/openapi.yaml",
+		SHA:       "deadbeef",
+	}}) {
+		t.Fatalf("unexpected snapshot query input: %+v", readStore.resolveReadSnapshotInputs)
+	}
+	if !reflect.DeepEqual(readStore.apiSnapshotInputs, []apiSnapshotSelectionInput{{
+		RepoID: 77, API: "apis/pets/openapi.yaml", RevisionID: 42,
+	}}) {
+		t.Fatalf("unexpected api snapshot inputs: %+v", readStore.apiSnapshotInputs)
+	}
+	if !reflect.DeepEqual(readStore.apiSpecRevisionIDs, []int64{501}) {
+		t.Fatalf("unexpected api spec revision lookups: %+v", readStore.apiSpecRevisionIDs)
+	}
+	if !reflect.DeepEqual(readStore.vacuumIssueIDs, []int64{501}) {
+		t.Fatalf("unexpected vacuum issue lookups: %+v", readStore.vacuumIssueIDs)
+	}
+
+	var body struct {
+		APISpecRevisionID int64  `json:"api_spec_revision_id"`
+		VacuumStatus      string `json:"vacuum_status"`
+		VacuumError       string `json:"vacuum_error"`
+		Issues            []struct {
+			RuleID   string  `json:"rule_id"`
+			Message  string  `json:"message"`
+			JSONPath string  `json:"json_path"`
+			RangePos []int32 `json:"range_pos"`
+		} `json:"issues"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode api issues response: %v", err)
+	}
+	if body.APISpecRevisionID != 501 || body.VacuumStatus != store.VacuumStatusFailed || body.VacuumError != "schema parse failed" {
+		t.Fatalf("unexpected body %+v", body)
+	}
+	if len(body.Issues) != 1 || body.Issues[0].RuleID != "info-description" {
+		t.Fatalf("unexpected issues %+v", body.Issues)
+	}
+}
+
+func TestQueryEndpoints_GetAPIIssues_ValidatesRequiredAPI(t *testing.T) {
+	t.Parallel()
+
+	server := newQueryTestServer(&fakeQueryReadStore{})
+	resp, err := server.App().Test(
+		httptest.NewRequest(http.MethodGet, "/v1/apis/issues?namespace=acme&repo=platform", nil),
+		-1,
+	)
+	if err != nil {
+		t.Fatalf("http test request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode validation response: %v", err)
+	}
+	if body["error"] != "api must not be empty" {
+		t.Fatalf("unexpected error response %+v", body)
+	}
+}
+
 func TestQueryEndpoints_ListOperations_ValidatesExplicitAPI(t *testing.T) {
 	t.Parallel()
 
@@ -1094,6 +1209,12 @@ type fakeQueryReadStore struct {
 	specArtifactInputs []int64
 	specArtifactResult store.SpecArtifact
 	specArtifactErr    error
+	apiSpecRevisionIDs []int64
+	apiSpecRevision    store.APISpecRevision
+	apiSpecRevisionErr error
+	vacuumIssueIDs     []int64
+	vacuumIssues       []store.VacuumIssue
+	vacuumIssuesErr    error
 
 	apiInventoryInputs     []apiInventoryInput
 	apiInventoryResult     []store.APISnapshot
@@ -1286,6 +1407,30 @@ func (f *fakeQueryReadStore) GetSpecArtifactByAPISpecRevisionID(
 		return store.SpecArtifact{}, f.specArtifactErr
 	}
 	return f.specArtifactResult, nil
+}
+
+func (f *fakeQueryReadStore) GetAPISpecRevisionByID(
+	_ context.Context,
+	apiSpecRevisionID int64,
+) (store.APISpecRevision, error) {
+	f.apiSpecRevisionIDs = append(f.apiSpecRevisionIDs, apiSpecRevisionID)
+	if f.apiSpecRevisionErr != nil {
+		return store.APISpecRevision{}, f.apiSpecRevisionErr
+	}
+	return f.apiSpecRevision, nil
+}
+
+func (f *fakeQueryReadStore) ListVacuumIssuesByAPISpecRevisionID(
+	_ context.Context,
+	apiSpecRevisionID int64,
+) ([]store.VacuumIssue, error) {
+	f.vacuumIssueIDs = append(f.vacuumIssueIDs, apiSpecRevisionID)
+	if f.vacuumIssuesErr != nil {
+		return nil, f.vacuumIssuesErr
+	}
+	result := make([]store.VacuumIssue, len(f.vacuumIssues))
+	copy(result, f.vacuumIssues)
+	return result, nil
 }
 
 func (f *fakeQueryReadStore) ListAPISnapshotInventoryByRepoRevision(

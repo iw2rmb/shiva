@@ -66,6 +66,24 @@ type operationSnapshotResponse struct {
 	Operation         json.RawMessage `json:"operation,omitempty"`
 }
 
+type vacuumIssueResponse struct {
+	RuleID   string  `json:"rule_id"`
+	Message  string  `json:"message"`
+	JSONPath string  `json:"json_path"`
+	RangePos []int32 `json:"range_pos,omitempty"`
+}
+
+type apiIssuesResponse struct {
+	Namespace         string                `json:"namespace,omitempty"`
+	Repo              string                `json:"repo,omitempty"`
+	API               string                `json:"api"`
+	APISpecRevisionID int64                 `json:"api_spec_revision_id"`
+	VacuumStatus      string                `json:"vacuum_status,omitempty"`
+	VacuumError       string                `json:"vacuum_error,omitempty"`
+	VacuumValidatedAt *time.Time            `json:"vacuum_validated_at,omitempty"`
+	Issues            []vacuumIssueResponse `json:"issues"`
+}
+
 type repoCatalogResponse struct {
 	Namespace          string                        `json:"namespace"`
 	Repo               string                        `json:"repo"`
@@ -305,6 +323,19 @@ func mapOperationSnapshots(items []store.OperationSnapshot, includeOperation boo
 		response = append(response, row)
 	}
 	return response, nil
+}
+
+func mapVacuumIssues(items []store.VacuumIssue) []vacuumIssueResponse {
+	response := make([]vacuumIssueResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, vacuumIssueResponse{
+			RuleID:   item.RuleID,
+			Message:  item.Message,
+			JSONPath: item.JSONPath,
+			RangePos: append([]int32(nil), item.RangePos...),
+		})
+	}
+	return response
 }
 
 func mapRepoCatalogEntries(items []store.RepoCatalogEntry) []repoCatalogResponse {

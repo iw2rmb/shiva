@@ -207,6 +207,14 @@ func (adapter tuiServiceAdapter) GetOperation(
 	return adapter.service.GetOperation(ctx, selector, fromTUIRequestOptions(options))
 }
 
+func (adapter tuiServiceAdapter) GetAPIIssues(
+	ctx context.Context,
+	selector request.Envelope,
+	options tui.RequestOptions,
+) ([]byte, error) {
+	return adapter.service.GetAPIIssues(ctx, selector, fromTUIRequestOptions(options))
+}
+
 func (adapter tuiServiceAdapter) GetSpec(
 	ctx context.Context,
 	selector request.Envelope,

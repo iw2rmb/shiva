@@ -288,6 +288,11 @@ func (c *Client) ListAPIs(ctx context.Context, selector request.Envelope) ([]byt
 	return c.get(ctx, "/v1/apis?"+query.Encode())
 }
 
+func (c *Client) GetAPIIssues(ctx context.Context, selector request.Envelope) ([]byte, error) {
+	query := snapshotQuery(selector)
+	return c.get(ctx, "/v1/apis/issues?"+query.Encode())
+}
+
 func (c *Client) ListAPIsPage(ctx context.Context, selector request.Envelope, limit int32, offset int32) ([]byte, error) {
 	query := snapshotQuery(selector)
 	if limit > 0 {

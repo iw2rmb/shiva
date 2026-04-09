@@ -135,6 +135,7 @@ func (s *Server) registerRoutes() {
 	v1.Get("/operation", s.handleGetOperation)
 	v1.Post("/call", s.handlePostCall)
 	v1.Get("/apis", s.handleListAPIs)
+	v1.Get("/apis/issues", s.handleGetAPIIssues)
 	v1.Get("/operations", s.handleListOperations)
 	v1.Get("/apis/count", s.handleCountAPIs)
 	v1.Get("/namespaces/count", s.handleCountNamespaces)

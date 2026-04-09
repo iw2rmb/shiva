@@ -54,6 +54,22 @@ RETURNING
     created_at,
     updated_at;
 
+-- name: GetAPISpecRevisionByID :one
+SELECT
+    id,
+    api_spec_id,
+    ingest_event_id,
+    root_path_at_revision,
+    build_status,
+    error,
+    vacuum_status,
+    vacuum_error,
+    vacuum_validated_at,
+    created_at,
+    updated_at
+FROM api_spec_revisions
+WHERE id = sqlc.arg(api_spec_revision_id);
+
 -- name: ReplaceAPISpecDependencies :exec
 WITH replaced AS (
     DELETE FROM api_spec_dependencies

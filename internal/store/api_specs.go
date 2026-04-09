@@ -165,6 +165,24 @@ func (s *Store) CreateAPISpecRevision(ctx context.Context, input CreateAPISpecRe
 	return createAPISpecRevision(ctx, sqlc.New(s.pool), normalized)
 }
 
+func (s *Store) GetAPISpecRevisionByID(ctx context.Context, apiSpecRevisionID int64) (APISpecRevision, error) {
+	if s == nil || !s.configured || s.pool == nil {
+		return APISpecRevision{}, ErrStoreNotConfigured
+	}
+	if apiSpecRevisionID < 1 {
+		return APISpecRevision{}, errors.New("api spec revision id must be positive")
+	}
+
+	row, err := sqlc.New(s.pool).GetAPISpecRevisionByID(ctx, apiSpecRevisionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return APISpecRevision{}, fmt.Errorf("%w: id=%d", ErrAPISpecNotFound, apiSpecRevisionID)
+		}
+		return APISpecRevision{}, fmt.Errorf("get api spec revision by id=%d: %w", apiSpecRevisionID, err)
+	}
+	return mapAPISpecRevision(row), nil
+}
+
 func (s *Store) ReplaceAPISpecDependencies(ctx context.Context, input ReplaceAPISpecDependenciesInput) error {
 	if s == nil || !s.configured || s.pool == nil {
 		return ErrStoreNotConfigured

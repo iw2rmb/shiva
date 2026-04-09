@@ -46,6 +46,7 @@ func TestServer_QueryReadSurfaceIsRegistered(t *testing.T) {
 		{name: "operation query endpoint", method: http.MethodGet, path: "/v1/operation?namespace=acme&repo=platform&operation_id=listPets"},
 		{name: "call endpoint", method: http.MethodPost, path: "/v1/call"},
 		{name: "apis query endpoint", method: http.MethodGet, path: "/v1/apis?namespace=acme&repo=platform"},
+		{name: "api issues endpoint", method: http.MethodGet, path: "/v1/apis/issues?namespace=acme&repo=platform&api=apis%2Fpets%2Fopenapi.yaml"},
 		{name: "operations query endpoint", method: http.MethodGet, path: "/v1/operations?namespace=acme&repo=platform"},
 		{name: "apis count endpoint", method: http.MethodGet, path: "/v1/apis/count"},
 		{name: "namespaces count endpoint", method: http.MethodGet, path: "/v1/namespaces/count"},

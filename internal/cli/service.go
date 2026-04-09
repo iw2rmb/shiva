@@ -29,6 +29,7 @@ type RequestOptions struct {
 type Service interface {
 	GetSpec(ctx context.Context, selector request.Envelope, options RequestOptions, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
+	GetAPIIssues(ctx context.Context, selector request.Envelope, options RequestOptions) ([]byte, error)
 	ExecuteCall(ctx context.Context, selector request.Envelope, options RequestOptions, format CallFormat) ([]byte, error)
 	CountNamespaces(ctx context.Context, options RequestOptions) (int64, error)
 	CountNamespaceCatalog(ctx context.Context, options RequestOptions) (CatalogCount, error)
@@ -49,6 +50,7 @@ type Service interface {
 type transportClient interface {
 	GetSpec(ctx context.Context, selector request.Envelope, format SpecFormat) ([]byte, error)
 	GetOperation(ctx context.Context, selector request.Envelope) ([]byte, error)
+	GetAPIIssues(ctx context.Context, selector request.Envelope) ([]byte, error)
 	CountNamespaces(ctx context.Context) ([]byte, error)
 	CountRepos(ctx context.Context, namespace string) ([]byte, error)
 	CountAPIs(ctx context.Context, selector request.Envelope) ([]byte, error)
@@ -177,6 +179,46 @@ func (s *RuntimeService) GetOperation(
 	}
 
 	body, err := client.GetOperation(ctx, normalized)
+	if err != nil {
+		return nil, normalizeServiceError(err)
+	}
+	return body, nil
+}
+
+func (s *RuntimeService) GetAPIIssues(
+	ctx context.Context,
+	selector request.Envelope,
+	options RequestOptions,
+) ([]byte, error) {
+	if s == nil || s.newClient == nil {
+		return nil, fmt.Errorf("CLI service is not configured")
+	}
+
+	normalized, err := request.NormalizeEnvelope(selector, request.NormalizeOptions{
+		DefaultKind:      request.KindSpec,
+		AllowMissingKind: true,
+	})
+	if err != nil {
+		return nil, normalizeCLIValidation(err)
+	}
+	if strings.TrimSpace(normalized.API) == "" {
+		return nil, &InvalidInputError{Message: "api must not be empty"}
+	}
+
+	source, err := s.resolveSource(options.Profile, normalized.Target)
+	if err != nil {
+		return nil, err
+	}
+	if options.Offline {
+		return nil, &InvalidInputError{Message: "offline mode is not supported"}
+	}
+
+	client, err := s.newTransportClient(source)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := client.GetAPIIssues(ctx, normalized)
 	if err != nil {
 		return nil, normalizeServiceError(err)
 	}
