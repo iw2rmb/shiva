@@ -909,11 +909,42 @@ func TestBrowserPaneLayoutGuardsListMinWidth(t *testing.T) {
 func TestEndpointDetailsTargetWidth(t *testing.T) {
 	t.Parallel()
 
-	if got := endpointDetailsTargetWidth(120); got != 90 {
-		t.Fatalf("expected width 90 for viewport 120, got %d", got)
+	if got := endpointDetailsTargetWidth(120); got != 40 {
+		t.Fatalf("expected width 40 for viewport 120, got %d", got)
 	}
 	if got := endpointDetailsTargetWidth(360); got != 120 {
 		t.Fatalf("expected width 120 for viewport 360, got %d", got)
+	}
+}
+
+func TestDetailPaneLayout(t *testing.T) {
+	t.Parallel()
+
+	left, right, stacked := detailPaneLayout(120, 40)
+	if stacked {
+		t.Fatalf("expected side-by-side panes at width 120 with 40-char list")
+	}
+	if left != 78 {
+		t.Fatalf("expected list width 78, got %d", left)
+	}
+	if right != 40 {
+		t.Fatalf("expected detail width 40, got %d", right)
+	}
+
+	_, _, stacked = detailPaneLayout(80, 40)
+	if !stacked {
+		t.Fatalf("expected stacked panes at width 80 with 40-char list")
+	}
+
+	left, right, stacked = detailPaneLayout(160, 140)
+	if stacked {
+		t.Fatalf("expected wide viewport to keep split layout")
+	}
+	if right != 53 {
+		t.Fatalf("expected detail width 53 for viewport 160, got %d", right)
+	}
+	if left+2+right > 160 {
+		t.Fatalf("expected split widths to fit viewport, left=%d right=%d", left, right)
 	}
 }
 

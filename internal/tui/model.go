@@ -935,22 +935,23 @@ func (model *rootModel) resizeLists() {
 	if listHeight < 1 {
 		listHeight = 1
 	}
+	detailWidth := width - listWidth - 2
+	if model.home.Selected == homeItemEndpoints || model.home.Selected == homeItemAPIs {
+		var stacked bool
+		listWidth, detailWidth, stacked = detailPaneLayout(width, listWidth)
+		if stacked {
+			detailWidth = listWidth
+		}
+	} else if detailWidth < 24 {
+		detailWidth = listWidth
+	}
+
 	model.home.List.SetSize(listWidth, listHeight)
 	model.namespaces.List.SetSize(listWidth, listHeight)
 	model.repoList.List.SetSize(listWidth, listHeight)
 	model.apiList.List.SetSize(listWidth, listHeight)
 	model.explorer.List.SetSize(listWidth, listHeight)
 	model.help.SetWidth(width)
-
-	detailWidth := width - listWidth - 2
-	if model.home.Selected == homeItemEndpoints {
-		detailWidth = endpointDetailsTargetWidth(width)
-		if listWidth+2+detailWidth > width {
-			detailWidth = listWidth
-		}
-	} else if detailWidth < 24 {
-		detailWidth = listWidth
-	}
 	model.explorer.Detail.Viewport.SetWidth(detailWidth)
 	model.apiList.Detail.Viewport.SetWidth(detailWidth)
 	detailHeight := listHeight - 3
@@ -1065,16 +1066,14 @@ func (model *rootModel) viewEndpointsScreen(header string, footer string) string
 	right := model.endpointDetailsPaneView()
 
 	width, _ := listSize(model.width, model.height)
-	leftWidth := model.activeListWidth(width)
-	rightWidth := endpointDetailsTargetWidth(width)
-	stacked := leftWidth+2+rightWidth > width
+	leftWidth, rightWidth, stacked := detailPaneLayout(width, model.activeListWidth(width))
 
 	body := ""
 	if stacked {
 		body = strings.Join([]string{
-			renderPaneAtWidth(left, leftWidth),
+			renderPaneAtWidth(left, width),
 			"",
-			renderPaneAtWidth(right, leftWidth),
+			renderPaneAtWidth(right, width),
 		}, "\n")
 	} else {
 		body = lipgloss.JoinHorizontal(
@@ -1108,16 +1107,14 @@ func (model *rootModel) viewAPIsScreen(header string, footer string) string {
 	right := model.apiDetailsPaneView()
 
 	width, _ := listSize(model.width, model.height)
-	leftWidth := model.activeListWidth(width)
-	rightWidth := endpointDetailsTargetWidth(width)
-	stacked := leftWidth+2+rightWidth > width
+	leftWidth, rightWidth, stacked := detailPaneLayout(width, model.activeListWidth(width))
 
 	body := ""
 	if stacked {
 		body = strings.Join([]string{
-			renderPaneAtWidth(left, leftWidth),
+			renderPaneAtWidth(left, width),
 			"",
-			renderPaneAtWidth(right, leftWidth),
+			renderPaneAtWidth(right, width),
 		}, "\n")
 	} else {
 		body = lipgloss.JoinHorizontal(
@@ -1287,10 +1284,23 @@ func (model *rootModel) apiDetailsPaneView() string {
 
 func endpointDetailsTargetWidth(viewportWidth int) int {
 	width := viewportWidth / 3
-	if width < 90 {
-		width = 90
+	if width < defaultListWidth {
+		width = defaultListWidth
 	}
 	return width
+}
+
+func detailPaneLayout(totalWidth int, preferredLeftWidth int) (int, int, bool) {
+	const paneGap = 2
+	rightWidth := endpointDetailsTargetWidth(totalWidth)
+	leftWidth := totalWidth - paneGap - rightWidth
+	if leftWidth >= defaultListWidth {
+		return leftWidth, rightWidth, false
+	}
+	if preferredLeftWidth > totalWidth {
+		preferredLeftWidth = totalWidth
+	}
+	return preferredLeftWidth, totalWidth, true
 }
 
 func browserPaneLayout(width int, includeDetails bool) (int, int, int, bool) {
