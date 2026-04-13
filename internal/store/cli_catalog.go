@@ -77,14 +77,15 @@ type APISnapshot struct {
 
 	DisplayName string
 
-	HasSnapshot       bool
-	APISpecRevisionID int64
-	IngestEventID     int64
-	IngestEventSHA    string
-	IngestEventBranch string
-	SpecETag          string
-	SpecSizeBytes     int64
-	OperationCount    int64
+	HasSnapshot            bool
+	APISpecRevisionID      int64
+	IngestEventID          int64
+	IngestEventSHA         string
+	IngestEventBranch      string
+	IngestEventProcessedAt *time.Time
+	SpecETag               string
+	SpecSizeBytes          int64
+	OperationCount         int64
 }
 
 type OperationSnapshot struct {
@@ -1448,19 +1449,20 @@ func mapCatalogSnapshotRevision(
 
 func mapAPISnapshotInventoryRow(row sqlc.ListAPISnapshotInventoryByRepoRevisionRow) APISnapshot {
 	return APISnapshot{
-		APISpecID:         row.ApiSpecID,
-		API:               row.Api,
-		Title:             strings.TrimSpace(row.Title),
-		Status:            row.Status,
-		DisplayName:       textValue(row.DisplayName),
-		HasSnapshot:       row.ApiSpecRevisionID.Valid,
-		APISpecRevisionID: int8Value(row.ApiSpecRevisionID),
-		IngestEventID:     int8Value(row.IngestEventID),
-		IngestEventSHA:    textValue(row.IngestEventSha),
-		IngestEventBranch: textValue(row.IngestEventBranch),
-		SpecETag:          textValue(row.SpecEtag),
-		SpecSizeBytes:     int8Value(row.SpecSizeBytes),
-		OperationCount:    row.OperationCount,
+		APISpecID:              row.ApiSpecID,
+		API:                    row.Api,
+		Title:                  strings.TrimSpace(row.Title),
+		Status:                 row.Status,
+		DisplayName:            textValue(row.DisplayName),
+		HasSnapshot:            row.ApiSpecRevisionID.Valid,
+		APISpecRevisionID:      int8Value(row.ApiSpecRevisionID),
+		IngestEventID:          int8Value(row.IngestEventID),
+		IngestEventSHA:         textValue(row.IngestEventSha),
+		IngestEventBranch:      textValue(row.IngestEventBranch),
+		IngestEventProcessedAt: timestamptzPtr(row.IngestEventProcessedAt),
+		SpecETag:               textValue(row.SpecEtag),
+		SpecSizeBytes:          int8Value(row.SpecSizeBytes),
+		OperationCount:         row.OperationCount,
 	}
 }
 
@@ -1484,59 +1486,62 @@ func mapAPISnapshotSelectionRow(row sqlc.GetAPISnapshotByRepoRevisionAndAPIRow) 
 
 func mapAPICatalogInventoryRow(row sqlc.ListAPICatalogInventoryRow) APISnapshot {
 	return APISnapshot{
-		Namespace:         row.Namespace,
-		Repo:              row.Repo,
-		APISpecID:         row.ApiSpecID,
-		API:               row.Api,
-		Title:             strings.TrimSpace(row.Title),
-		Status:            row.Status,
-		DisplayName:       textValue(row.DisplayName),
-		HasSnapshot:       row.ApiSpecRevisionID.Valid,
-		APISpecRevisionID: int8Value(row.ApiSpecRevisionID),
-		IngestEventID:     int8Value(row.IngestEventID),
-		IngestEventSHA:    textValue(row.IngestEventSha),
-		IngestEventBranch: textValue(row.IngestEventBranch),
-		SpecETag:          textValue(row.SpecEtag),
-		SpecSizeBytes:     int8Value(row.SpecSizeBytes),
-		OperationCount:    row.OperationCount,
+		Namespace:              row.Namespace,
+		Repo:                   row.Repo,
+		APISpecID:              row.ApiSpecID,
+		API:                    row.Api,
+		Title:                  strings.TrimSpace(row.Title),
+		Status:                 row.Status,
+		DisplayName:            textValue(row.DisplayName),
+		HasSnapshot:            row.ApiSpecRevisionID.Valid,
+		APISpecRevisionID:      int8Value(row.ApiSpecRevisionID),
+		IngestEventID:          int8Value(row.IngestEventID),
+		IngestEventSHA:         textValue(row.IngestEventSha),
+		IngestEventBranch:      textValue(row.IngestEventBranch),
+		IngestEventProcessedAt: timestamptzPtr(row.IngestEventProcessedAt),
+		SpecETag:               textValue(row.SpecEtag),
+		SpecSizeBytes:          int8Value(row.SpecSizeBytes),
+		OperationCount:         row.OperationCount,
 	}
 }
 
 func mapAPISnapshotInventoryPageRow(row sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow) APISnapshot {
 	return APISnapshot{
-		APISpecID:         row.ApiSpecID,
-		API:               row.Api,
-		Title:             strings.TrimSpace(row.Title),
-		Status:            row.Status,
-		DisplayName:       textValue(row.DisplayName),
-		HasSnapshot:       row.ApiSpecRevisionID.Valid,
-		APISpecRevisionID: int8Value(row.ApiSpecRevisionID),
-		IngestEventID:     int8Value(row.IngestEventID),
-		IngestEventSHA:    textValue(row.IngestEventSha),
-		IngestEventBranch: textValue(row.IngestEventBranch),
-		SpecETag:          textValue(row.SpecEtag),
-		SpecSizeBytes:     int8Value(row.SpecSizeBytes),
-		OperationCount:    row.OperationCount,
+		APISpecID:              row.ApiSpecID,
+		API:                    row.Api,
+		Title:                  strings.TrimSpace(row.Title),
+		Status:                 row.Status,
+		DisplayName:            textValue(row.DisplayName),
+		HasSnapshot:            row.ApiSpecRevisionID.Valid,
+		APISpecRevisionID:      int8Value(row.ApiSpecRevisionID),
+		IngestEventID:          int8Value(row.IngestEventID),
+		IngestEventSHA:         textValue(row.IngestEventSha),
+		IngestEventBranch:      textValue(row.IngestEventBranch),
+		IngestEventProcessedAt: timestamptzPtr(row.IngestEventProcessedAt),
+		SpecETag:               textValue(row.SpecEtag),
+		SpecSizeBytes:          int8Value(row.SpecSizeBytes),
+		OperationCount:         row.OperationCount,
 	}
 }
 
 func mapAPICatalogInventoryPageRow(row sqlc.ListAPICatalogInventoryPageRow) APISnapshot {
 	return APISnapshot{
-		Namespace:         row.Namespace,
-		Repo:              row.Repo,
-		APISpecID:         row.ApiSpecID,
-		API:               row.Api,
-		Title:             strings.TrimSpace(row.Title),
-		Status:            row.Status,
-		DisplayName:       textValue(row.DisplayName),
-		HasSnapshot:       row.ApiSpecRevisionID.Valid,
-		APISpecRevisionID: int8Value(row.ApiSpecRevisionID),
-		IngestEventID:     int8Value(row.IngestEventID),
-		IngestEventSHA:    textValue(row.IngestEventSha),
-		IngestEventBranch: textValue(row.IngestEventBranch),
-		SpecETag:          textValue(row.SpecEtag),
-		SpecSizeBytes:     int8Value(row.SpecSizeBytes),
-		OperationCount:    row.OperationCount,
+		Namespace:              row.Namespace,
+		Repo:                   row.Repo,
+		APISpecID:              row.ApiSpecID,
+		API:                    row.Api,
+		Title:                  strings.TrimSpace(row.Title),
+		Status:                 row.Status,
+		DisplayName:            textValue(row.DisplayName),
+		HasSnapshot:            row.ApiSpecRevisionID.Valid,
+		APISpecRevisionID:      int8Value(row.ApiSpecRevisionID),
+		IngestEventID:          int8Value(row.IngestEventID),
+		IngestEventSHA:         textValue(row.IngestEventSha),
+		IngestEventBranch:      textValue(row.IngestEventBranch),
+		IngestEventProcessedAt: timestamptzPtr(row.IngestEventProcessedAt),
+		SpecETag:               textValue(row.SpecEtag),
+		SpecSizeBytes:          int8Value(row.SpecSizeBytes),
+		OperationCount:         row.OperationCount,
 	}
 }
 

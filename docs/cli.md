@@ -184,6 +184,13 @@ Rules:
     - operation detail loads lazily for selected endpoint and is cached by endpoint identity
     - API detail loads lazily for selected API:
       - `DATA` tab loads spec JSON from `/v1/spec` and caches by API identity
+      - `DATA` tab body layout:
+        - `Status: <status>`
+        - `Ingest: <branch> (<sha8>) @ <DD-MM-YY HH:mm:ss>` (from `ingest_event_processed_at`, UTC)
+        - `Revision: <api_spec_revision_id>`
+        - blank line + spec `info.description`
+        - blank line + `Servers:` list as `- <description>: <url>`
+        - blank line + `OpenAPI v<openapi>`
       - `ISSUES` tab loads vacuum issues from `/v1/apis/issues` and caches by API identity
     - detail pane renders inline load failures for operation detail requests
     - markdown style uses `GLAMOUR_STYLE` when set; otherwise defaults to `dark` (no terminal background probe)

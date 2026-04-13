@@ -45,20 +45,21 @@ type NamespaceRow struct {
 }
 
 type APIRow struct {
-	Namespace         string `json:"namespace,omitempty"`
-	Repo              string `json:"repo,omitempty"`
-	Title             string `json:"title,omitempty"`
-	API               string `json:"api"`
-	Status            string `json:"status"`
-	DisplayName       string `json:"display_name,omitempty"`
-	HasSnapshot       bool   `json:"has_snapshot"`
-	APISpecRevisionID int64  `json:"api_spec_revision_id,omitempty"`
-	IngestEventID     int64  `json:"ingest_event_id,omitempty"`
-	IngestEventSHA    string `json:"ingest_event_sha,omitempty"`
-	IngestEventBranch string `json:"ingest_event_branch,omitempty"`
-	SpecETag          string `json:"spec_etag,omitempty"`
-	SpecSizeBytes     int64  `json:"spec_size_bytes,omitempty"`
-	OperationCount    int64  `json:"operation_count"`
+	Namespace              string     `json:"namespace,omitempty"`
+	Repo                   string     `json:"repo,omitempty"`
+	Title                  string     `json:"title,omitempty"`
+	API                    string     `json:"api"`
+	Status                 string     `json:"status"`
+	DisplayName            string     `json:"display_name,omitempty"`
+	HasSnapshot            bool       `json:"has_snapshot"`
+	APISpecRevisionID      int64      `json:"api_spec_revision_id,omitempty"`
+	IngestEventID          int64      `json:"ingest_event_id,omitempty"`
+	IngestEventSHA         string     `json:"ingest_event_sha,omitempty"`
+	IngestEventBranch      string     `json:"ingest_event_branch,omitempty"`
+	IngestEventProcessedAt *time.Time `json:"ingest_event_processed_at,omitempty"`
+	SpecETag               string     `json:"spec_etag,omitempty"`
+	SpecSizeBytes          int64      `json:"spec_size_bytes,omitempty"`
+	OperationCount         int64      `json:"operation_count"`
 }
 
 type OperationRow struct {

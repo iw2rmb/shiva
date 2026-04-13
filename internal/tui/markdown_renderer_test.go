@@ -68,3 +68,31 @@ func TestTrimSingleLeadingIndentRemovesAtMostOneLeadingSpacePerLine(t *testing.T
 		t.Fatalf("expected trimmed value %q, got %q", want, got)
 	}
 }
+
+func TestGlamourRendererPreservesSingleNewlines(t *testing.T) {
+	renderer := &glamourMarkdownRenderer{
+		style:     defaultGlamourStyle,
+		renderers: make(map[int]*glamour.TermRenderer),
+	}
+
+	rendered := renderer.Render(strings.Join([]string{
+		"Status: active",
+		"Ingest: master (97da8339) @ -",
+		"Revision: 3480",
+	}, "\n"), 120)
+	plain := stripANSI(rendered)
+
+	statusIdx := strings.Index(plain, "Status: active")
+	ingestIdx := strings.Index(plain, "Ingest: master (97da8339) @ -")
+	revisionIdx := strings.Index(plain, "Revision: 3480")
+	if statusIdx < 0 || ingestIdx < 0 || revisionIdx < 0 {
+		t.Fatalf("expected all rows present, got %q", plain)
+	}
+
+	if strings.Count(plain[statusIdx:ingestIdx], "\n") < 1 {
+		t.Fatalf("expected newline between status and ingest rows, got %q", plain)
+	}
+	if strings.Count(plain[ingestIdx:revisionIdx], "\n") < 1 {
+		t.Fatalf("expected newline between ingest and revision rows, got %q", plain)
+	}
+}

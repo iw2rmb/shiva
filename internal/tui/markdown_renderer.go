@@ -44,6 +44,7 @@ func (renderer *glamourMarkdownRenderer) Render(markdown string, width int) stri
 		created, err := glamour.NewTermRenderer(
 			glamour.WithStylePath(renderer.style),
 			glamour.WithWordWrap(wrap),
+			glamour.WithPreservedNewLines(),
 		)
 		if err != nil {
 			return markdown

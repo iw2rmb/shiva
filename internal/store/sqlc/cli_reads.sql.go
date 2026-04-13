@@ -1059,6 +1059,7 @@ SELECT
     ingest_events.id AS ingest_event_id,
     ingest_events.sha AS ingest_event_sha,
     ingest_events.branch AS ingest_event_branch,
+    ingest_events.processed_at AS ingest_event_processed_at,
     spec_artifacts.etag AS spec_etag,
     spec_artifacts.size_bytes AS spec_size_bytes,
     COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -1085,20 +1086,21 @@ type ListAPICatalogInventoryParams struct {
 }
 
 type ListAPICatalogInventoryRow struct {
-	Namespace         string      `json:"namespace"`
-	Repo              string      `json:"repo"`
-	ApiSpecID         int64       `json:"api_spec_id"`
-	Api               string      `json:"api"`
-	Title             string      `json:"title"`
-	Status            string      `json:"status"`
-	DisplayName       pgtype.Text `json:"display_name"`
-	ApiSpecRevisionID pgtype.Int8 `json:"api_spec_revision_id"`
-	IngestEventID     pgtype.Int8 `json:"ingest_event_id"`
-	IngestEventSha    pgtype.Text `json:"ingest_event_sha"`
-	IngestEventBranch pgtype.Text `json:"ingest_event_branch"`
-	SpecEtag          pgtype.Text `json:"spec_etag"`
-	SpecSizeBytes     pgtype.Int8 `json:"spec_size_bytes"`
-	OperationCount    int64       `json:"operation_count"`
+	Namespace              string             `json:"namespace"`
+	Repo                   string             `json:"repo"`
+	ApiSpecID              int64              `json:"api_spec_id"`
+	Api                    string             `json:"api"`
+	Title                  string             `json:"title"`
+	Status                 string             `json:"status"`
+	DisplayName            pgtype.Text        `json:"display_name"`
+	ApiSpecRevisionID      pgtype.Int8        `json:"api_spec_revision_id"`
+	IngestEventID          pgtype.Int8        `json:"ingest_event_id"`
+	IngestEventSha         pgtype.Text        `json:"ingest_event_sha"`
+	IngestEventBranch      pgtype.Text        `json:"ingest_event_branch"`
+	IngestEventProcessedAt pgtype.Timestamptz `json:"ingest_event_processed_at"`
+	SpecEtag               pgtype.Text        `json:"spec_etag"`
+	SpecSizeBytes          pgtype.Int8        `json:"spec_size_bytes"`
+	OperationCount         int64              `json:"operation_count"`
 }
 
 func (q *Queries) ListAPICatalogInventory(ctx context.Context, arg ListAPICatalogInventoryParams) ([]ListAPICatalogInventoryRow, error) {
@@ -1122,6 +1124,7 @@ func (q *Queries) ListAPICatalogInventory(ctx context.Context, arg ListAPICatalo
 			&i.IngestEventID,
 			&i.IngestEventSha,
 			&i.IngestEventBranch,
+			&i.IngestEventProcessedAt,
 			&i.SpecEtag,
 			&i.SpecSizeBytes,
 			&i.OperationCount,
@@ -1198,6 +1201,7 @@ resolved_rows AS (
         ingest_events.id AS ingest_event_id,
         ingest_events.sha AS ingest_event_sha,
         ingest_events.branch AS ingest_event_branch,
+        ingest_events.processed_at AS ingest_event_processed_at,
         spec_artifacts.etag AS spec_etag,
         spec_artifacts.size_bytes AS spec_size_bytes,
         COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -1237,6 +1241,7 @@ SELECT
     ingest_event_id,
     ingest_event_sha,
     ingest_event_branch,
+    ingest_event_processed_at,
     spec_etag,
     spec_size_bytes,
     operation_count
@@ -1255,20 +1260,21 @@ type ListAPICatalogInventoryPageParams struct {
 }
 
 type ListAPICatalogInventoryPageRow struct {
-	Namespace         string      `json:"namespace"`
-	Repo              string      `json:"repo"`
-	ApiSpecID         int64       `json:"api_spec_id"`
-	Api               string      `json:"api"`
-	Title             string      `json:"title"`
-	Status            string      `json:"status"`
-	DisplayName       pgtype.Text `json:"display_name"`
-	ApiSpecRevisionID pgtype.Int8 `json:"api_spec_revision_id"`
-	IngestEventID     pgtype.Int8 `json:"ingest_event_id"`
-	IngestEventSha    pgtype.Text `json:"ingest_event_sha"`
-	IngestEventBranch pgtype.Text `json:"ingest_event_branch"`
-	SpecEtag          pgtype.Text `json:"spec_etag"`
-	SpecSizeBytes     pgtype.Int8 `json:"spec_size_bytes"`
-	OperationCount    int64       `json:"operation_count"`
+	Namespace              string             `json:"namespace"`
+	Repo                   string             `json:"repo"`
+	ApiSpecID              int64              `json:"api_spec_id"`
+	Api                    string             `json:"api"`
+	Title                  string             `json:"title"`
+	Status                 string             `json:"status"`
+	DisplayName            pgtype.Text        `json:"display_name"`
+	ApiSpecRevisionID      pgtype.Int8        `json:"api_spec_revision_id"`
+	IngestEventID          pgtype.Int8        `json:"ingest_event_id"`
+	IngestEventSha         pgtype.Text        `json:"ingest_event_sha"`
+	IngestEventBranch      pgtype.Text        `json:"ingest_event_branch"`
+	IngestEventProcessedAt pgtype.Timestamptz `json:"ingest_event_processed_at"`
+	SpecEtag               pgtype.Text        `json:"spec_etag"`
+	SpecSizeBytes          pgtype.Int8        `json:"spec_size_bytes"`
+	OperationCount         int64              `json:"operation_count"`
 }
 
 func (q *Queries) ListAPICatalogInventoryPage(ctx context.Context, arg ListAPICatalogInventoryPageParams) ([]ListAPICatalogInventoryPageRow, error) {
@@ -1298,6 +1304,7 @@ func (q *Queries) ListAPICatalogInventoryPage(ctx context.Context, arg ListAPICa
 			&i.IngestEventID,
 			&i.IngestEventSha,
 			&i.IngestEventBranch,
+			&i.IngestEventProcessedAt,
 			&i.SpecEtag,
 			&i.SpecSizeBytes,
 			&i.OperationCount,
@@ -1355,6 +1362,7 @@ SELECT
     latest_processed.ingest_event_id,
     ingest_events.sha AS ingest_event_sha,
     ingest_events.branch AS ingest_event_branch,
+    ingest_events.processed_at AS ingest_event_processed_at,
     spec_artifacts.etag AS spec_etag,
     spec_artifacts.size_bytes AS spec_size_bytes,
     COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -1376,18 +1384,19 @@ type ListAPISnapshotInventoryByRepoRevisionParams struct {
 }
 
 type ListAPISnapshotInventoryByRepoRevisionRow struct {
-	ApiSpecID         int64       `json:"api_spec_id"`
-	Api               string      `json:"api"`
-	Title             string      `json:"title"`
-	Status            string      `json:"status"`
-	DisplayName       pgtype.Text `json:"display_name"`
-	ApiSpecRevisionID pgtype.Int8 `json:"api_spec_revision_id"`
-	IngestEventID     pgtype.Int8 `json:"ingest_event_id"`
-	IngestEventSha    pgtype.Text `json:"ingest_event_sha"`
-	IngestEventBranch pgtype.Text `json:"ingest_event_branch"`
-	SpecEtag          pgtype.Text `json:"spec_etag"`
-	SpecSizeBytes     pgtype.Int8 `json:"spec_size_bytes"`
-	OperationCount    int64       `json:"operation_count"`
+	ApiSpecID              int64              `json:"api_spec_id"`
+	Api                    string             `json:"api"`
+	Title                  string             `json:"title"`
+	Status                 string             `json:"status"`
+	DisplayName            pgtype.Text        `json:"display_name"`
+	ApiSpecRevisionID      pgtype.Int8        `json:"api_spec_revision_id"`
+	IngestEventID          pgtype.Int8        `json:"ingest_event_id"`
+	IngestEventSha         pgtype.Text        `json:"ingest_event_sha"`
+	IngestEventBranch      pgtype.Text        `json:"ingest_event_branch"`
+	IngestEventProcessedAt pgtype.Timestamptz `json:"ingest_event_processed_at"`
+	SpecEtag               pgtype.Text        `json:"spec_etag"`
+	SpecSizeBytes          pgtype.Int8        `json:"spec_size_bytes"`
+	OperationCount         int64              `json:"operation_count"`
 }
 
 func (q *Queries) ListAPISnapshotInventoryByRepoRevision(ctx context.Context, arg ListAPISnapshotInventoryByRepoRevisionParams) ([]ListAPISnapshotInventoryByRepoRevisionRow, error) {
@@ -1409,6 +1418,7 @@ func (q *Queries) ListAPISnapshotInventoryByRepoRevision(ctx context.Context, ar
 			&i.IngestEventID,
 			&i.IngestEventSha,
 			&i.IngestEventBranch,
+			&i.IngestEventProcessedAt,
 			&i.SpecEtag,
 			&i.SpecSizeBytes,
 			&i.OperationCount,
@@ -1467,6 +1477,7 @@ resolved_rows AS (
         latest_processed.ingest_event_id,
         ingest_events.sha AS ingest_event_sha,
         ingest_events.branch AS ingest_event_branch,
+        ingest_events.processed_at AS ingest_event_processed_at,
         spec_artifacts.etag AS spec_etag,
         spec_artifacts.size_bytes AS spec_size_bytes,
         COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -1499,6 +1510,7 @@ SELECT
     ingest_event_id,
     ingest_event_sha,
     ingest_event_branch,
+    ingest_event_processed_at,
     spec_etag,
     spec_size_bytes,
     operation_count
@@ -1517,18 +1529,19 @@ type ListAPISnapshotInventoryByRepoRevisionPageParams struct {
 }
 
 type ListAPISnapshotInventoryByRepoRevisionPageRow struct {
-	ApiSpecID         int64       `json:"api_spec_id"`
-	Api               string      `json:"api"`
-	Title             string      `json:"title"`
-	Status            string      `json:"status"`
-	DisplayName       pgtype.Text `json:"display_name"`
-	ApiSpecRevisionID pgtype.Int8 `json:"api_spec_revision_id"`
-	IngestEventID     pgtype.Int8 `json:"ingest_event_id"`
-	IngestEventSha    pgtype.Text `json:"ingest_event_sha"`
-	IngestEventBranch pgtype.Text `json:"ingest_event_branch"`
-	SpecEtag          pgtype.Text `json:"spec_etag"`
-	SpecSizeBytes     pgtype.Int8 `json:"spec_size_bytes"`
-	OperationCount    int64       `json:"operation_count"`
+	ApiSpecID              int64              `json:"api_spec_id"`
+	Api                    string             `json:"api"`
+	Title                  string             `json:"title"`
+	Status                 string             `json:"status"`
+	DisplayName            pgtype.Text        `json:"display_name"`
+	ApiSpecRevisionID      pgtype.Int8        `json:"api_spec_revision_id"`
+	IngestEventID          pgtype.Int8        `json:"ingest_event_id"`
+	IngestEventSha         pgtype.Text        `json:"ingest_event_sha"`
+	IngestEventBranch      pgtype.Text        `json:"ingest_event_branch"`
+	IngestEventProcessedAt pgtype.Timestamptz `json:"ingest_event_processed_at"`
+	SpecEtag               pgtype.Text        `json:"spec_etag"`
+	SpecSizeBytes          pgtype.Int8        `json:"spec_size_bytes"`
+	OperationCount         int64              `json:"operation_count"`
 }
 
 func (q *Queries) ListAPISnapshotInventoryByRepoRevisionPage(ctx context.Context, arg ListAPISnapshotInventoryByRepoRevisionPageParams) ([]ListAPISnapshotInventoryByRepoRevisionPageRow, error) {
@@ -1556,6 +1569,7 @@ func (q *Queries) ListAPISnapshotInventoryByRepoRevisionPage(ctx context.Context
 			&i.IngestEventID,
 			&i.IngestEventSha,
 			&i.IngestEventBranch,
+			&i.IngestEventProcessedAt,
 			&i.SpecEtag,
 			&i.SpecSizeBytes,
 			&i.OperationCount,

@@ -125,23 +125,25 @@ func TestCountNamespaceCatalogInventory_WrapsQueryError(t *testing.T) {
 func TestResolveSpecSnapshots_FiltersToResolvedSpecCandidates(t *testing.T) {
 	t.Parallel()
 
+	processedAt := time.Date(2026, time.April, 9, 10, 11, 12, 0, time.FixedZone("MSK", 3*60*60))
 	queries := newFakeCLICatalogQueries()
 	queries.byID = map[int64]sqlc.GetRevisionStateByIDRow{
 		71: newReadSnapshotTestRevisionByID(71, 44, "processed", boolPtrReadSnapshot(false), "main", "sha"),
 	}
 	queries.apiInventoryRows = []sqlc.ListAPISnapshotInventoryByRepoRevisionRow{
 		{
-			ApiSpecID:         1,
-			Api:               "apis/one.yaml",
-			Status:            "active",
-			DisplayName:       pgText("One"),
-			ApiSpecRevisionID: pgInt8(101),
-			IngestEventID:     pgInt8(71),
-			IngestEventSha:    pgText("sha"),
-			IngestEventBranch: pgText("main"),
-			SpecEtag:          pgText("\"one\""),
-			SpecSizeBytes:     pgInt8(123),
-			OperationCount:    4,
+			ApiSpecID:              1,
+			Api:                    "apis/one.yaml",
+			Status:                 "active",
+			DisplayName:            pgText("One"),
+			ApiSpecRevisionID:      pgInt8(101),
+			IngestEventID:          pgInt8(71),
+			IngestEventSha:         pgText("sha"),
+			IngestEventBranch:      pgText("main"),
+			IngestEventProcessedAt: pgTime(processedAt),
+			SpecEtag:               pgText("\"one\""),
+			SpecSizeBytes:          pgInt8(123),
+			OperationCount:         4,
 		},
 		{
 			ApiSpecID:      2,
@@ -168,6 +170,39 @@ func TestResolveSpecSnapshots_FiltersToResolvedSpecCandidates(t *testing.T) {
 	}
 	if resolved.Candidates[0].API != "apis/one.yaml" {
 		t.Fatalf("unexpected candidate api %q", resolved.Candidates[0].API)
+	}
+	if resolved.Candidates[0].IngestEventProcessedAt == nil || !resolved.Candidates[0].IngestEventProcessedAt.Equal(processedAt.UTC()) {
+		t.Fatalf("expected ingest processed timestamp %s, got %+v", processedAt.UTC().Format(time.RFC3339), resolved.Candidates[0].IngestEventProcessedAt)
+	}
+}
+
+func TestListAPICatalogInventory_MapsIngestProcessedAt(t *testing.T) {
+	t.Parallel()
+
+	processedAt := time.Date(2026, time.April, 9, 10, 11, 12, 0, time.FixedZone("MSK", 3*60*60))
+	queries := &fakeCLICatalogQueries{
+		apiCatalogRows: []sqlc.ListAPICatalogInventoryRow{
+			{
+				Namespace:              "acme",
+				Repo:                   "platform",
+				ApiSpecID:              7,
+				Api:                    "apis/users.yaml",
+				Title:                  "Users",
+				Status:                 "active",
+				IngestEventProcessedAt: pgTime(processedAt),
+			},
+		},
+	}
+
+	items, err := listAPICatalogInventory(context.Background(), queries, "acme", "platform")
+	if err != nil {
+		t.Fatalf("listAPICatalogInventory() unexpected error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one api inventory item, got %d", len(items))
+	}
+	if items[0].IngestEventProcessedAt == nil || !items[0].IngestEventProcessedAt.Equal(processedAt.UTC()) {
+		t.Fatalf("expected ingest processed timestamp %s, got %+v", processedAt.UTC().Format(time.RFC3339), items[0].IngestEventProcessedAt)
 	}
 }
 
@@ -358,18 +393,19 @@ func (f *fakeCLICatalogQueries) ListAPISnapshotInventoryByRepoRevisionPage(
 	rows := make([]sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow, 0, len(f.apiInventoryRows))
 	for _, row := range f.apiInventoryRows {
 		rows = append(rows, sqlc.ListAPISnapshotInventoryByRepoRevisionPageRow{
-			ApiSpecID:         row.ApiSpecID,
-			Api:               row.Api,
-			Title:             row.Title,
-			Status:            row.Status,
-			DisplayName:       row.DisplayName,
-			ApiSpecRevisionID: row.ApiSpecRevisionID,
-			IngestEventID:     row.IngestEventID,
-			IngestEventSha:    row.IngestEventSha,
-			IngestEventBranch: row.IngestEventBranch,
-			SpecEtag:          row.SpecEtag,
-			SpecSizeBytes:     row.SpecSizeBytes,
-			OperationCount:    row.OperationCount,
+			ApiSpecID:              row.ApiSpecID,
+			Api:                    row.Api,
+			Title:                  row.Title,
+			Status:                 row.Status,
+			DisplayName:            row.DisplayName,
+			ApiSpecRevisionID:      row.ApiSpecRevisionID,
+			IngestEventID:          row.IngestEventID,
+			IngestEventSha:         row.IngestEventSha,
+			IngestEventBranch:      row.IngestEventBranch,
+			IngestEventProcessedAt: row.IngestEventProcessedAt,
+			SpecEtag:               row.SpecEtag,
+			SpecSizeBytes:          row.SpecSizeBytes,
+			OperationCount:         row.OperationCount,
 		})
 	}
 	return rows, nil
@@ -389,20 +425,21 @@ func (f *fakeCLICatalogQueries) ListAPICatalogInventoryPage(
 	rows := make([]sqlc.ListAPICatalogInventoryPageRow, 0, len(f.apiCatalogRows))
 	for _, row := range f.apiCatalogRows {
 		rows = append(rows, sqlc.ListAPICatalogInventoryPageRow{
-			Namespace:         row.Namespace,
-			Repo:              row.Repo,
-			ApiSpecID:         row.ApiSpecID,
-			Api:               row.Api,
-			Title:             row.Title,
-			Status:            row.Status,
-			DisplayName:       row.DisplayName,
-			ApiSpecRevisionID: row.ApiSpecRevisionID,
-			IngestEventID:     row.IngestEventID,
-			IngestEventSha:    row.IngestEventSha,
-			IngestEventBranch: row.IngestEventBranch,
-			SpecEtag:          row.SpecEtag,
-			SpecSizeBytes:     row.SpecSizeBytes,
-			OperationCount:    row.OperationCount,
+			Namespace:              row.Namespace,
+			Repo:                   row.Repo,
+			ApiSpecID:              row.ApiSpecID,
+			Api:                    row.Api,
+			Title:                  row.Title,
+			Status:                 row.Status,
+			DisplayName:            row.DisplayName,
+			ApiSpecRevisionID:      row.ApiSpecRevisionID,
+			IngestEventID:          row.IngestEventID,
+			IngestEventSha:         row.IngestEventSha,
+			IngestEventBranch:      row.IngestEventBranch,
+			IngestEventProcessedAt: row.IngestEventProcessedAt,
+			SpecEtag:               row.SpecEtag,
+			SpecSizeBytes:          row.SpecSizeBytes,
+			OperationCount:         row.OperationCount,
 		})
 	}
 	return rows, nil

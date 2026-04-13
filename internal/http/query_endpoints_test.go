@@ -331,6 +331,7 @@ func TestQueryEndpoints_GetOperation_AmbiguityIncludesCandidates(t *testing.T) {
 func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 	t.Parallel()
 
+	processedAt := time.Date(2026, time.April, 9, 10, 11, 12, 0, time.UTC)
 	readStore := &fakeQueryReadStore{
 		resolveReadSnapshotResult: store.ResolvedReadSnapshot{
 			Repo:     store.Repo{ID: 77, Namespace: "acme", Repo: "platform"},
@@ -341,18 +342,19 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 		},
 		apiInventoryResult: []store.APISnapshot{
 			{
-				Title:             "Pets From Info",
-				API:               "apis/pets/openapi.yaml",
-				Status:            "active",
-				DisplayName:       "Pets API",
-				HasSnapshot:       true,
-				APISpecRevisionID: 501,
-				IngestEventID:     42,
-				IngestEventSHA:    "aaaaaaaa",
-				IngestEventBranch: "main",
-				SpecETag:          "\"etag-501\"",
-				SpecSizeBytes:     123,
-				OperationCount:    2,
+				Title:                  "Pets From Info",
+				API:                    "apis/pets/openapi.yaml",
+				Status:                 "active",
+				DisplayName:            "Pets API",
+				HasSnapshot:            true,
+				APISpecRevisionID:      501,
+				IngestEventID:          42,
+				IngestEventSHA:         "aaaaaaaa",
+				IngestEventBranch:      "main",
+				IngestEventProcessedAt: &processedAt,
+				SpecETag:               "\"etag-501\"",
+				SpecSizeBytes:          123,
+				OperationCount:         2,
 			},
 			{
 				Title:          "Deleted API",
@@ -399,8 +401,14 @@ func TestQueryEndpoints_ListAPIs_UsesResolvedSnapshot(t *testing.T) {
 	if body[0]["title"] != "Pets From Info" {
 		t.Fatalf("expected first row title from spec info.title, got %#v", body[0]["title"])
 	}
+	if body[0]["ingest_event_processed_at"] != processedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("expected first row ingest_event_processed_at %q, got %#v", processedAt.Format(time.RFC3339Nano), body[0]["ingest_event_processed_at"])
+	}
 	if body[1]["title"] != "Deleted API" {
 		t.Fatalf("expected second row title from display_name fallback, got %#v", body[1]["title"])
+	}
+	if _, ok := body[1]["ingest_event_processed_at"]; ok {
+		t.Fatalf("expected second row ingest_event_processed_at to be omitted, got %#v", body[1]["ingest_event_processed_at"])
 	}
 }
 

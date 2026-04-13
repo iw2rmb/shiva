@@ -194,6 +194,7 @@ SELECT
     latest_processed.ingest_event_id,
     ingest_events.sha AS ingest_event_sha,
     ingest_events.branch AS ingest_event_branch,
+    ingest_events.processed_at AS ingest_event_processed_at,
     spec_artifacts.etag AS spec_etag,
     spec_artifacts.size_bytes AS spec_size_bytes,
     COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -252,6 +253,7 @@ resolved_rows AS (
         latest_processed.ingest_event_id,
         ingest_events.sha AS ingest_event_sha,
         ingest_events.branch AS ingest_event_branch,
+        ingest_events.processed_at AS ingest_event_processed_at,
         spec_artifacts.etag AS spec_etag,
         spec_artifacts.size_bytes AS spec_size_bytes,
         COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -284,6 +286,7 @@ SELECT
     ingest_event_id,
     ingest_event_sha,
     ingest_event_branch,
+    ingest_event_processed_at,
     spec_etag,
     spec_size_bytes,
     operation_count
@@ -353,6 +356,7 @@ SELECT
     ingest_events.id AS ingest_event_id,
     ingest_events.sha AS ingest_event_sha,
     ingest_events.branch AS ingest_event_branch,
+    ingest_events.processed_at AS ingest_event_processed_at,
     spec_artifacts.etag AS spec_etag,
     spec_artifacts.size_bytes AS spec_size_bytes,
     COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -434,6 +438,7 @@ resolved_rows AS (
         ingest_events.id AS ingest_event_id,
         ingest_events.sha AS ingest_event_sha,
         ingest_events.branch AS ingest_event_branch,
+        ingest_events.processed_at AS ingest_event_processed_at,
         spec_artifacts.etag AS spec_etag,
         spec_artifacts.size_bytes AS spec_size_bytes,
         COALESCE(operation_counts.operation_count, 0)::BIGINT AS operation_count
@@ -473,6 +478,7 @@ SELECT
     ingest_event_id,
     ingest_event_sha,
     ingest_event_branch,
+    ingest_event_processed_at,
     spec_etag,
     spec_size_bytes,
     operation_count

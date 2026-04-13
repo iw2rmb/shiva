@@ -33,20 +33,21 @@ var supportedHTTPMethods = map[string]struct{}{
 }
 
 type apiSnapshotResponse struct {
-	Namespace         string `json:"namespace,omitempty"`
-	Repo              string `json:"repo,omitempty"`
-	Title             string `json:"title"`
-	API               string `json:"api"`
-	Status            string `json:"status"`
-	DisplayName       string `json:"display_name,omitempty"`
-	HasSnapshot       bool   `json:"has_snapshot"`
-	APISpecRevisionID int64  `json:"api_spec_revision_id,omitempty"`
-	IngestEventID     int64  `json:"ingest_event_id,omitempty"`
-	IngestEventSHA    string `json:"ingest_event_sha,omitempty"`
-	IngestEventBranch string `json:"ingest_event_branch,omitempty"`
-	SpecETag          string `json:"spec_etag,omitempty"`
-	SpecSizeBytes     int64  `json:"spec_size_bytes,omitempty"`
-	OperationCount    int64  `json:"operation_count"`
+	Namespace              string     `json:"namespace,omitempty"`
+	Repo                   string     `json:"repo,omitempty"`
+	Title                  string     `json:"title"`
+	API                    string     `json:"api"`
+	Status                 string     `json:"status"`
+	DisplayName            string     `json:"display_name,omitempty"`
+	HasSnapshot            bool       `json:"has_snapshot"`
+	APISpecRevisionID      int64      `json:"api_spec_revision_id,omitempty"`
+	IngestEventID          int64      `json:"ingest_event_id,omitempty"`
+	IngestEventSHA         string     `json:"ingest_event_sha,omitempty"`
+	IngestEventBranch      string     `json:"ingest_event_branch,omitempty"`
+	IngestEventProcessedAt *time.Time `json:"ingest_event_processed_at,omitempty"`
+	SpecETag               string     `json:"spec_etag,omitempty"`
+	SpecSizeBytes          int64      `json:"spec_size_bytes,omitempty"`
+	OperationCount         int64      `json:"operation_count"`
 }
 
 type operationSnapshotResponse struct {
@@ -230,20 +231,21 @@ func mapAPISnapshots(items []store.APISnapshot) []apiSnapshotResponse {
 			title = strings.TrimSpace(item.API)
 		}
 		response = append(response, apiSnapshotResponse{
-			Namespace:         item.Namespace,
-			Repo:              item.Repo,
-			Title:             title,
-			API:               item.API,
-			Status:            item.Status,
-			DisplayName:       item.DisplayName,
-			HasSnapshot:       item.HasSnapshot,
-			APISpecRevisionID: item.APISpecRevisionID,
-			IngestEventID:     item.IngestEventID,
-			IngestEventSHA:    item.IngestEventSHA,
-			IngestEventBranch: item.IngestEventBranch,
-			SpecETag:          item.SpecETag,
-			SpecSizeBytes:     item.SpecSizeBytes,
-			OperationCount:    item.OperationCount,
+			Namespace:              item.Namespace,
+			Repo:                   item.Repo,
+			Title:                  title,
+			API:                    item.API,
+			Status:                 item.Status,
+			DisplayName:            item.DisplayName,
+			HasSnapshot:            item.HasSnapshot,
+			APISpecRevisionID:      item.APISpecRevisionID,
+			IngestEventID:          item.IngestEventID,
+			IngestEventSHA:         item.IngestEventSHA,
+			IngestEventBranch:      item.IngestEventBranch,
+			IngestEventProcessedAt: item.IngestEventProcessedAt,
+			SpecETag:               item.SpecETag,
+			SpecSizeBytes:          item.SpecSizeBytes,
+			OperationCount:         item.OperationCount,
 		})
 	}
 	return response

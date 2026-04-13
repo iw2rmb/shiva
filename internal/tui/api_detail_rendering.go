@@ -6,12 +6,19 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/iw2rmb/shiva/internal/textutil"
 )
 
 type apiSpecSummary struct {
 	OpenAPIVersion string
 	Description    string
-	Servers        []string
+	Servers        []apiSpecServerSummary
+}
+
+type apiSpecServerSummary struct {
+	Description string
+	URL         string
 }
 
 type apiSpecDocument struct {
@@ -20,7 +27,8 @@ type apiSpecDocument struct {
 		Description string `json:"description"`
 	} `json:"info"`
 	Servers []struct {
-		URL string `json:"url"`
+		Description string `json:"description"`
+		URL         string `json:"url"`
 	} `json:"servers"`
 }
 
@@ -76,31 +84,26 @@ func (model *rootModel) apiDetailMarkdown() string {
 func buildAPIDataMarkdown(selected APIEntry, detail *SpecDetail) string {
 	summary := parseAPISpecSummary(detail.Body)
 	rows := []string{
-		"## Data",
+		"Status: " + valueOrDash(selected.Row.Status),
+		"Ingest: " + formatAPIIngest(
+			selected.Row.IngestEventBranch,
+			selected.Row.IngestEventSHA,
+			selected.Row.IngestEventProcessedAt,
+		),
+		"Revision: " + int64OrDash(selected.Row.APISpecRevisionID),
 		"",
-		fmt.Sprintf("`Repo:` `%s/%s`", valueOrDash(selected.Namespace), valueOrDash(selected.Repo)),
-		fmt.Sprintf("`API:` `%s`", valueOrDash(selected.API)),
-		fmt.Sprintf("`Title:` %s", valueOrDash(selected.Title)),
-		fmt.Sprintf("`Description:` %s", valueOrDash(summary.Description)),
-		fmt.Sprintf("`OpenAPI:` `%s`", valueOrDash(summary.OpenAPIVersion)),
-		fmt.Sprintf("`Status:` `%s`", valueOrDash(strings.TrimSpace(selected.Row.Status))),
-		fmt.Sprintf("`Has Snapshot:` `%t`", selected.Row.HasSnapshot),
-		fmt.Sprintf("`API Spec Revision:` `%s`", int64OrDash(selected.Row.APISpecRevisionID)),
-		fmt.Sprintf("`Ingest SHA:` `%s`", valueOrDash(strings.TrimSpace(selected.Row.IngestEventSHA))),
-		fmt.Sprintf("`Ingest Branch:` `%s`", valueOrDash(strings.TrimSpace(selected.Row.IngestEventBranch))),
-		fmt.Sprintf("`Operation Count:` `%d`", selected.Row.OperationCount),
-		fmt.Sprintf("`Spec ETag:` `%s`", valueOrDash(strings.TrimSpace(selected.Row.SpecETag))),
-		fmt.Sprintf("`Spec Size:` `%s`", sizeOrDash(selected.Row.SpecSizeBytes)),
+		valueOrDash(summary.Description),
 		"",
-		"## Servers",
+		"Servers:",
 	}
 	if len(summary.Servers) == 0 {
 		rows = append(rows, "- -")
 	} else {
 		for _, server := range summary.Servers {
-			rows = append(rows, "- `"+server+"`")
+			rows = append(rows, fmt.Sprintf("- %s: %s", valueOrDash(server.Description), valueOrDash(server.URL)))
 		}
 	}
+	rows = append(rows, "", "OpenAPI v"+valueOrDash(summary.OpenAPIVersion))
 	return strings.Join(rows, "\n")
 }
 
@@ -146,17 +149,29 @@ func parseAPISpecSummary(raw json.RawMessage) apiSpecSummary {
 	}
 	seen := make(map[string]struct{}, len(document.Servers))
 	for _, server := range document.Servers {
+		description := strings.TrimSpace(server.Description)
 		url := strings.TrimSpace(server.URL)
-		if url == "" {
+		if description == "" && url == "" {
 			continue
 		}
-		if _, ok := seen[url]; ok {
+		key := description + "\x00" + url
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[url] = struct{}{}
-		summary.Servers = append(summary.Servers, url)
+		seen[key] = struct{}{}
+		summary.Servers = append(summary.Servers, apiSpecServerSummary{
+			Description: description,
+			URL:         url,
+		})
 	}
-	sort.Strings(summary.Servers)
+	sort.Slice(summary.Servers, func(i int, j int) bool {
+		left := summary.Servers[i]
+		right := summary.Servers[j]
+		if left.Description != right.Description {
+			return left.Description < right.Description
+		}
+		return left.URL < right.URL
+	})
 	return summary
 }
 
@@ -175,11 +190,20 @@ func int64OrDash(value int64) string {
 	return fmt.Sprintf("%d", value)
 }
 
-func sizeOrDash(value int64) string {
-	if value < 1 {
+func formatAPIIngest(branch string, sha string, processedAt *time.Time) string {
+	return fmt.Sprintf(
+		"%s (%s) @ %s",
+		valueOrDash(branch),
+		valueOrDash(textutil.ShortSHA(sha)),
+		ingestProcessedAtOrDash(processedAt),
+	)
+}
+
+func ingestProcessedAtOrDash(value *time.Time) string {
+	if value == nil {
 		return "-"
 	}
-	return fmt.Sprintf("%d bytes", value)
+	return value.UTC().Format("02-01-06 15:04:05")
 }
 
 func timeOrDash(value *time.Time) string {

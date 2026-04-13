@@ -307,6 +307,7 @@ Legacy path-segment endpoints were removed:
   - `ingest_event_id`
   - `ingest_event_sha`
   - `ingest_event_branch`
+  - `ingest_event_processed_at`
   - `spec_etag`
   - `spec_size_bytes`
   - `operation_count`
