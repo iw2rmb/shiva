@@ -3,6 +3,34 @@ SELECT rule_id, severity, type, category_id, category_name, description, how_to_
 FROM vacuum_rules
 ORDER BY rule_id ASC;
 
+-- name: EnsureVacuumRule :exec
+WITH rule_input AS (
+    SELECT sqlc.arg(rule_id)::TEXT AS rule_id
+)
+INSERT INTO vacuum_rules (
+    rule_id,
+    severity,
+    type,
+    category_id,
+    category_name,
+    description,
+    how_to_fix,
+    given_path,
+    rule_json
+)
+SELECT
+    rule_input.rule_id,
+    'warn',
+    'validation',
+    'validation',
+    'Validation',
+    'Rule metadata is not present in Shiva seed; issue was recorded with fallback metadata.',
+    'Update Shiva vacuum rule seed to include this rule identifier.',
+    '$',
+    jsonb_build_object('id', rule_input.rule_id, 'generated_by', 'shiva-fallback')
+FROM rule_input
+ON CONFLICT (rule_id) DO NOTHING;
+
 -- name: CreateVacuumIssue :one
 INSERT INTO vacuum_issues (
     api_spec_revision_id,

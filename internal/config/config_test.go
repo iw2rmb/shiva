@@ -32,6 +32,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 			"SHIVA_METRICS_PATH",
 			"SHIVA_TRACING_ENABLED",
 			"SHIVA_TRACING_STDOUT",
+			"SHIVA_GITLAB_NAMESPACES",
 		} {
 			os.Unsetenv(name)
 		}
@@ -91,6 +92,9 @@ func TestLoad_DefaultValues(t *testing.T) {
 	}
 	if cfg.TracingStdout {
 		t.Fatalf("expected tracing stdout disabled by default")
+	}
+	if len(cfg.GitLabNamespaces) != 0 {
+		t.Fatalf("expected no gitlab namespace filter by default, got %v", cfg.GitLabNamespaces)
 	}
 }
 
@@ -238,7 +242,54 @@ func TestLoad_IngressAndTracingConfig(t *testing.T) {
 	}
 }
 
+func TestLoad_GitLabNamespaces(t *testing.T) {
+	setRequiredConfigEnv(t)
+
+	t.Setenv("SHIVA_GITLAB_NAMESPACES", " acme/core , acme/tools/sub ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	want := []string{"acme/core", "acme/tools/sub"}
+	if len(cfg.GitLabNamespaces) != len(want) {
+		t.Fatalf("expected %d namespaces, got %d", len(want), len(cfg.GitLabNamespaces))
+	}
+	for i := range want {
+		if cfg.GitLabNamespaces[i] != want[i] {
+			t.Fatalf("expected namespace %d to be %q, got %q", i, want[i], cfg.GitLabNamespaces[i])
+		}
+	}
+}
+
+func TestLoad_RejectsEmptyGitLabNamespaces(t *testing.T) {
+	setRequiredConfigEnv(t)
+
+	t.Setenv("SHIVA_GITLAB_NAMESPACES", " , ")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected error for empty SHIVA_GITLAB_NAMESPACES")
+	}
+	if err.Error() != "invalid SHIVA_GITLAB_NAMESPACES: must contain at least one non-empty value" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func setRequiredConfigEnv(t *testing.T) {
 	t.Helper()
+
+	if previousValue, exists := os.LookupEnv("SHIVA_GITLAB_NAMESPACES"); exists {
+		t.Cleanup(func() {
+			_ = os.Setenv("SHIVA_GITLAB_NAMESPACES", previousValue)
+		})
+	} else {
+		t.Cleanup(func() {
+			_ = os.Unsetenv("SHIVA_GITLAB_NAMESPACES")
+		})
+	}
+	_ = os.Unsetenv("SHIVA_GITLAB_NAMESPACES")
+
 	t.Setenv("SHIVA_DATABASE_URL", "postgres://localhost:5432/shiva")
 }

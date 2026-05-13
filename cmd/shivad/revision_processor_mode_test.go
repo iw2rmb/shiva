@@ -37,11 +37,11 @@ func TestRevisionProcessorProcess_ModeSelectionMatrix(t *testing.T) {
 			wantMode:       ingestionModeBootstrap,
 		},
 		{
-			name:           "parent empty active non zero force false selects incremental",
+			name:           "parent empty active non zero force false selects bootstrap",
 			parentSHA:      "",
 			activeAPICount: 2,
 			forceRescan:    false,
-			wantMode:       ingestionModeIncremental,
+			wantMode:       ingestionModeBootstrap,
 		},
 		{
 			name:           "parent empty active non zero force true selects bootstrap",

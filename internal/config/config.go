@@ -29,6 +29,7 @@ type Config struct {
 	DatabaseURL                      string
 	GitLabBaseURL                    string
 	GitLabToken                      string
+	GitLabNamespaces                 []string
 	GitLabWebhookSecret              string
 	WorkerConcurrency                int
 	ShutdownTimeout                  time.Duration
@@ -52,6 +53,7 @@ func Load() (Config, error) {
 		DatabaseURL:                      strings.TrimSpace(os.Getenv("SHIVA_DATABASE_URL")),
 		GitLabBaseURL:                    strings.TrimSpace(os.Getenv("SHIVA_GITLAB_BASE_URL")),
 		GitLabToken:                      strings.TrimSpace(os.Getenv("SHIVA_GITLAB_TOKEN")),
+		GitLabNamespaces:                 nil,
 		GitLabWebhookSecret:              strings.TrimSpace(os.Getenv("SHIVA_GITLAB_WEBHOOK_SECRET")),
 		WorkerConcurrency:                defaultWorkerConcurrency,
 		ShutdownTimeout:                  time.Duration(defaultShutdownTimeoutSecond) * time.Second,
@@ -116,6 +118,14 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid SHIVA_OPENAPI_PATH_GLOBS: %w", err)
 		}
 		cfg.OpenAPIPathGlobs = globs
+	}
+
+	if rawNamespaces, ok := os.LookupEnv("SHIVA_GITLAB_NAMESPACES"); ok {
+		namespaces, err := parseCommaSeparatedValues(rawNamespaces)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid SHIVA_GITLAB_NAMESPACES: %w", err)
+		}
+		cfg.GitLabNamespaces = namespaces
 	}
 
 	if rawMaxFetches, ok := os.LookupEnv("SHIVA_OPENAPI_REF_MAX_FETCHES"); ok {
@@ -270,7 +280,7 @@ func parseCommaSeparatedValues(raw string) ([]string, error) {
 		values = append(values, trimmed)
 	}
 	if len(values) == 0 {
-		return nil, errors.New("must contain at least one non-empty glob")
+		return nil, errors.New("must contain at least one non-empty value")
 	}
 	return values, nil
 }

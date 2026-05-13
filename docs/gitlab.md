@@ -7,7 +7,10 @@ This document describes how Shiva ingests specs from GitLab and turns revisions 
 Startup initialization:
 1. Shiva launches startup indexing in the background during every service startup.
 2. Startup indexing loads `startup_index_state.last_project_id`; when no checkpoint row exists it uses `0`.
-3. Shiva paginates accessible GitLab projects with `order_by=id`, `sort=asc`, and `id_after=<last_project_id>`, skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events` as each page is consumed.
+3. Shiva traverses startup projects in one of two modes:
+   - without `SHIVA_GITLAB_NAMESPACES`: paginates GitLab `/projects` with `order_by=id`, `sort=asc`, and `id_after=<last_project_id>`.
+   - with `SHIVA_GITLAB_NAMESPACES`: iterates each configured namespace via `/groups/:namespace/projects` with `include_subgroups=true`.
+   Shiva then skips projects whose `namespace.kind` is `user`, resolves each remaining default-branch head SHA, and enqueues synthetic ingest events into `ingest_events` as each page is consumed.
 4. After each project is fully handled (enqueued, deduplicated, or skipped by startup-index rules), Shiva advances `startup_index_state.last_project_id` to that project's ID. Projects that fail branch resolution or enqueue do not advance the checkpoint, so the next startup retries them.
 5. Synthetic startup events reuse the same worker path as inbound webhooks and rely on bootstrap mode when the repo has no active APIs yet.
 6. Worker startup does not wait for startup indexing to finish, so processed canonical repo revisions in `ingest_events` can begin appearing while project pagination is still in progress.
@@ -77,6 +80,7 @@ Webhook / worker pipeline:
 
 ## GitLab APIs Used
 - `GET /projects`
+- `GET /groups/:id/projects`
 - `GET /projects/:id/repository/branches/:branch`
 - `GET /projects/:id/repository/compare?from=<fromSHA>&to=<toSHA>`
 - `GET /projects/:id/repository/files/:path?ref=<sha>`

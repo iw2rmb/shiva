@@ -349,6 +349,157 @@ func TestClientVisitProjectsProcessesPageBeforeFetchingNextPage(t *testing.T) {
 	}
 }
 
+func TestClientVisitNamespaceProjects(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected method %s, got %s", http.MethodGet, r.Method)
+		}
+		if r.URL.Path != "/api/v4/groups/acme/core/projects" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		switch r.URL.Query().Get("page") {
+		case "1":
+			if got := r.URL.Query().Get("per_page"); got != "100" {
+				t.Fatalf("expected per_page=100, got %q", got)
+			}
+			if got := r.URL.Query().Get("simple"); got != "true" {
+				t.Fatalf("expected simple=true, got %q", got)
+			}
+			if got := r.URL.Query().Get("archived"); got != "false" {
+				t.Fatalf("expected archived=false, got %q", got)
+			}
+			if got := r.URL.Query().Get("order_by"); got != "id" {
+				t.Fatalf("expected order_by=id, got %q", got)
+			}
+			if got := r.URL.Query().Get("sort"); got != "asc" {
+				t.Fatalf("expected sort=asc, got %q", got)
+			}
+			if got := r.URL.Query().Get("include_subgroups"); got != "true" {
+				t.Fatalf("expected include_subgroups=true, got %q", got)
+			}
+			if got := r.URL.Query().Get("with_shared"); got != "false" {
+				t.Fatalf("expected with_shared=false, got %q", got)
+			}
+			w.Header().Set("X-Next-Page", "2")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":41,"path_with_namespace":"acme/core/svc-a","default_branch":"main","namespace":{"kind":"group"}}
+			]`))
+		case "2":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":42,"path_with_namespace":"acme/core/sub/svc-b","default_branch":"develop","namespace":{"kind":"group"}}
+			]`))
+		default:
+			t.Fatalf("unexpected page: %s", r.URL.Query().Get("page"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "", withSleep(noopSleep))
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+
+	visited := make([]Project, 0, 2)
+	count, err := client.VisitNamespaceProjects(context.Background(), "acme/core", func(project Project) error {
+		visited = append(visited, project)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("VisitNamespaceProjects() unexpected error: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("visited count = %d, want 2", count)
+	}
+
+	expected := []Project{
+		{ID: 41, PathWithNamespace: "acme/core/svc-a", DefaultBranch: "main", NamespaceKind: "group"},
+		{ID: 42, PathWithNamespace: "acme/core/sub/svc-b", DefaultBranch: "develop", NamespaceKind: "group"},
+	}
+	if !reflect.DeepEqual(visited, expected) {
+		t.Fatalf("visited projects mismatch: expected %#v, got %#v", expected, visited)
+	}
+}
+
+func TestClientVisitNamespaceProjectsRejectsEmptyNamespace(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewClient("https://gitlab.example.com", "", withSleep(noopSleep))
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+
+	_, err = client.VisitNamespaceProjects(context.Background(), "  ", func(Project) error { return nil })
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if err.Error() != "namespace must not be empty" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestClientUsesTokenFromBaseURLCredentials(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("PRIVATE-TOKEN"); got != "token-from-url" {
+			t.Fatalf("expected PRIVATE-TOKEN from base URL credentials, got %q", got)
+		}
+		if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "" {
+			t.Fatalf("expected no Authorization header, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	baseURLWithCredentials := strings.Replace(server.URL, "://", "://user:token-from-url@", 1)
+
+	client, err := NewClient(baseURLWithCredentials, "", withSleep(noopSleep))
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+
+	projects, err := client.ListProjects(context.Background(), ProjectListOptions{})
+	if err != nil {
+		t.Fatalf("ListProjects() unexpected error: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Fatalf("expected zero projects, got %d", len(projects))
+	}
+}
+
+func TestClientExplicitTokenOverridesBaseURLCredentials(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("PRIVATE-TOKEN"); got != "explicit-token" {
+			t.Fatalf("expected explicit PRIVATE-TOKEN, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	baseURLWithCredentials := strings.Replace(server.URL, "://", "://user:url-token@", 1)
+
+	client, err := NewClient(baseURLWithCredentials, "explicit-token", withSleep(noopSleep))
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+
+	projects, err := client.ListProjects(context.Background(), ProjectListOptions{})
+	if err != nil {
+		t.Fatalf("ListProjects() unexpected error: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Fatalf("expected zero projects, got %d", len(projects))
+	}
+}
+
 func TestClientGetBranch(t *testing.T) {
 	t.Parallel()
 

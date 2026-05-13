@@ -31,6 +31,15 @@ WITH resolved_namespace AS (
     SET updated_at = NOW()
     RETURNING id
 ),
+namespace_source AS (
+    SELECT id
+    FROM resolved_namespace
+    UNION ALL
+    SELECT namespaces.id
+    FROM namespaces
+    WHERE namespaces.namespace = $1
+      AND NOT EXISTS (SELECT 1 FROM resolved_namespace)
+),
 inserted_repo AS (
     INSERT INTO repos (
         gitlab_project_id,
@@ -40,16 +49,16 @@ inserted_repo AS (
     )
     SELECT
         $2,
-        resolved_namespace.id,
+        namespace_source.id,
         $3,
         $4
-    FROM resolved_namespace
+    FROM namespace_source
     RETURNING id, gitlab_project_id, namespace_id, repo, default_branch, openapi_force_rescan, created_at, updated_at
 )
 SELECT
     inserted_repo.id,
     inserted_repo.gitlab_project_id,
-    namespaces.namespace,
+    $1::TEXT AS namespace,
     inserted_repo.namespace_id,
     inserted_repo.repo,
     inserted_repo.default_branch,
@@ -57,7 +66,6 @@ SELECT
     inserted_repo.created_at,
     inserted_repo.updated_at
 FROM inserted_repo
-JOIN namespaces ON namespaces.id = inserted_repo.namespace_id
 `
 
 type CreateRepoParams struct {
@@ -288,7 +296,7 @@ RETURNING repos.id, repos.gitlab_project_id, repos.namespace_id, repos.repo, rep
 SELECT
     updated_repo.id,
     updated_repo.gitlab_project_id,
-    namespaces.namespace,
+    $1::TEXT AS namespace,
     updated_repo.namespace_id,
     updated_repo.repo,
     updated_repo.default_branch,
@@ -296,7 +304,6 @@ SELECT
     updated_repo.created_at,
     updated_repo.updated_at
 FROM updated_repo
-JOIN namespaces ON namespaces.id = updated_repo.namespace_id
 `
 
 type UpdateRepoMetadataParams struct {

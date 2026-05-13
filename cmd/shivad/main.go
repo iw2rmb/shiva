@@ -335,7 +335,10 @@ const (
 	apiSpecRevisionBuildStatusFailed     = "failed"
 )
 
-func decideIngestionMode(state store.RepoBootstrapState) ingestionMode {
+func decideIngestionMode(state store.RepoBootstrapState, parentSHA string) ingestionMode {
+	if strings.TrimSpace(parentSHA) == "" {
+		return ingestionModeBootstrap
+	}
 	if state.ActiveAPICount == 0 || state.ForceRescan {
 		return ingestionModeBootstrap
 	}
@@ -424,7 +427,7 @@ func (p revisionProcessor) Process(ctx context.Context, job worker.QueueJob) (wo
 		processSpan.SetStatus(codes.Error, "load repo bootstrap state failed")
 		return worker.ProcessResult{}, fmt.Errorf("load repo bootstrap state for repo %d: %w", job.RepoID, err)
 	}
-	mode := decideIngestionMode(bootstrapState)
+	mode := decideIngestionMode(bootstrapState, parentSHA)
 	processSpan.SetAttributes(
 		attribute.String("ingestion.mode", string(mode)),
 		attribute.Int64("repo.active_api_count", bootstrapState.ActiveAPICount),

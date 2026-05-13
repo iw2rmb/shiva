@@ -46,9 +46,11 @@ Query semantics:
    - `SHIVA_DATABASE_URL`
    - `SHIVA_GITLAB_BASE_URL`
    - `SHIVA_GITLAB_WEBHOOK_SECRET`
-2. Start:
+2. Optional startup indexing scope filter:
+   - `SHIVA_GITLAB_NAMESPACES` (comma-separated GitLab namespace path prefixes to crawl)
+3. Start:
    - `go run ./cmd/shivad`
-3. Validate:
+4. Validate:
    - `go test ./...`
 
 ## Documentation

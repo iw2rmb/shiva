@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildCanonicalSpec_IdenticalInputProducesStableOutput(t *testing.T) {
@@ -208,5 +210,58 @@ func TestBuildCanonicalSpec_ExtractsEndpointIndex(t *testing.T) {
 	}
 	if len(second.RawJSON) == 0 {
 		t.Fatalf("expected endpoint raw json")
+	}
+}
+
+func TestBuildCanonicalSpec_SupportsYAMLTimestampScalars(t *testing.T) {
+	t.Parallel()
+
+	result := ResolutionResult{
+		OpenAPIChanged: true,
+		CandidateFiles: []string{"api/openapi.yaml"},
+		Documents: map[string][]byte{
+			"api/openapi.yaml": []byte(
+				"openapi: 3.0.3\n" +
+					"info:\n" +
+					"  title: Timestamp Demo\n" +
+					"  version: 1.0.0\n" +
+					"  x-generated-at: 2026-05-13T14:15:16Z\n" +
+					"paths: {}\n",
+			),
+		},
+	}
+
+	canonical, err := BuildCanonicalSpec(result)
+	if err != nil {
+		t.Fatalf("BuildCanonicalSpec() unexpected error: %v", err)
+	}
+
+	if !strings.Contains(canonical.SpecYAML, "x-generated-at: 2026-05-13T14:15:16Z") {
+		t.Fatalf("expected canonical yaml to keep timestamp scalar, got:\n%s", canonical.SpecYAML)
+	}
+}
+
+func TestToYAMLNode_SupportsTimePointers(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, time.May, 13, 18, 7, 9, 123_000_000, time.UTC)
+
+	node, err := toYAMLNode(&ts)
+	if err != nil {
+		t.Fatalf("toYAMLNode() unexpected error: %v", err)
+	}
+	if node.Tag != "!!timestamp" {
+		t.Fatalf("expected !!timestamp tag, got %q", node.Tag)
+	}
+	if node.Value != "2026-05-13T18:07:09.123Z" {
+		t.Fatalf("unexpected timestamp value %q", node.Value)
+	}
+
+	nilNode, err := toYAMLNode((*time.Time)(nil))
+	if err != nil {
+		t.Fatalf("toYAMLNode(nil) unexpected error: %v", err)
+	}
+	if nilNode.Tag != "!!null" || nilNode.Value != "null" {
+		t.Fatalf("expected null yaml node, got tag=%q value=%q", nilNode.Tag, nilNode.Value)
 	}
 }

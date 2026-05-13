@@ -68,6 +68,40 @@ func (q *Queries) DeleteVacuumIssuesByAPISpecRevisionID(ctx context.Context, api
 	return err
 }
 
+const ensureVacuumRule = `-- name: EnsureVacuumRule :exec
+WITH rule_input AS (
+    SELECT $1::TEXT AS rule_id
+)
+INSERT INTO vacuum_rules (
+    rule_id,
+    severity,
+    type,
+    category_id,
+    category_name,
+    description,
+    how_to_fix,
+    given_path,
+    rule_json
+)
+SELECT
+    rule_input.rule_id,
+    'warn',
+    'validation',
+    'validation',
+    'Validation',
+    'Rule metadata is not present in Shiva seed; issue was recorded with fallback metadata.',
+    'Update Shiva vacuum rule seed to include this rule identifier.',
+    '$',
+    jsonb_build_object('id', rule_input.rule_id, 'generated_by', 'shiva-fallback')
+FROM rule_input
+ON CONFLICT (rule_id) DO NOTHING
+`
+
+func (q *Queries) EnsureVacuumRule(ctx context.Context, ruleID string) error {
+	_, err := q.db.Exec(ctx, ensureVacuumRule, ruleID)
+	return err
+}
+
 const listVacuumIssuesByAPISpecRevisionID = `-- name: ListVacuumIssuesByAPISpecRevisionID :many
 SELECT id, api_spec_revision_id, rule_id, message, json_path, range_pos, created_at
 FROM vacuum_issues

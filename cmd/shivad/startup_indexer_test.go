@@ -12,27 +12,33 @@ import (
 	"github.com/iw2rmb/shiva/internal/config"
 	"github.com/iw2rmb/shiva/internal/gitlab"
 	"github.com/iw2rmb/shiva/internal/store"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestEnqueueStartupIndexing(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                    string
-		lastProjectID           int64
-		getCheckpointErr        error
-		projects                []gitlab.Project
-		branches                map[string]startupIndexBranchResult
-		listProjectsErr         error
-		persistErr              error
-		advanceErrProjectID     int64
-		advanceErr              error
-		wantErr                 string
-		wantVisitProjectsCalls  int
-		wantVisitProjectsOption gitlab.ProjectListOptions
-		wantGetBranchCalls      []startupIndexBranchCall
-		wantPersistProjectIDs   []int64
-		wantAdvanceProjectIDs   []int64
+		name                                string
+		configuredNamespaces                []string
+		lastProjectID                       int64
+		getCheckpointErr                    error
+		projects                            []gitlab.Project
+		namespaceProjects                   map[string][]gitlab.Project
+		branches                            map[string]startupIndexBranchResult
+		listProjectsErr                     error
+		listNamespaceProjectsErr            error
+		listNamespaceProjectsErrByNamespace map[string]error
+		persistErr                          error
+		advanceErrProjectID                 int64
+		advanceErr                          error
+		wantErr                             string
+		wantVisitProjectsCalls              int
+		wantVisitProjectsOption             gitlab.ProjectListOptions
+		wantVisitNamespaceCalls             []string
+		wantGetBranchCalls                  []startupIndexBranchCall
+		wantPersistProjectIDs               []int64
+		wantAdvanceProjectIDs               []int64
 	}{
 		{
 			name: "missing checkpoint starts from zero",
@@ -93,6 +99,51 @@ func TestEnqueueStartupIndexing(t *testing.T) {
 			wantAdvanceProjectIDs: []int64{18, 19},
 		},
 		{
+			name:                 "uses namespace traversal when configured",
+			configuredNamespaces: []string{"acme/core", "acme/tools"},
+			namespaceProjects: map[string][]gitlab.Project{
+				"acme/core": {
+					{ID: 25, PathWithNamespace: "acme/core/svc-a", DefaultBranch: "main", NamespaceKind: "group"},
+				},
+				"acme/tools": {
+					{ID: 27, PathWithNamespace: "acme/tools/sub/svc-c", DefaultBranch: "main", NamespaceKind: "group"},
+				},
+			},
+			branches: map[string]startupIndexBranchResult{
+				"25:main": {branch: gitlab.Branch{Name: "main", CommitID: "aaa111"}},
+				"27:main": {branch: gitlab.Branch{Name: "main", CommitID: "bbb222"}},
+			},
+			wantVisitProjectsCalls:  0,
+			wantVisitNamespaceCalls: []string{"acme/core", "acme/tools"},
+			wantGetBranchCalls: []startupIndexBranchCall{
+				{projectID: 25, branch: "main"},
+				{projectID: 27, branch: "main"},
+			},
+			wantPersistProjectIDs: []int64{25, 27},
+			wantAdvanceProjectIDs: []int64{25, 27},
+		},
+		{
+			name:                 "namespace traversal honors checkpoint window",
+			configuredNamespaces: []string{"acme/core"},
+			lastProjectID:        30,
+			namespaceProjects: map[string][]gitlab.Project{
+				"acme/core": {
+					{ID: 29, PathWithNamespace: "acme/core/old", DefaultBranch: "main", NamespaceKind: "group"},
+					{ID: 31, PathWithNamespace: "acme/core/new", DefaultBranch: "main", NamespaceKind: "group"},
+				},
+			},
+			branches: map[string]startupIndexBranchResult{
+				"31:main": {branch: gitlab.Branch{Name: "main", CommitID: "new31"}},
+			},
+			wantVisitProjectsCalls:  0,
+			wantVisitNamespaceCalls: []string{"acme/core"},
+			wantGetBranchCalls: []startupIndexBranchCall{
+				{projectID: 31, branch: "main"},
+			},
+			wantPersistProjectIDs: []int64{31},
+			wantAdvanceProjectIDs: []int64{31},
+		},
+		{
 			name: "skips projects without usable default branch head",
 			projects: []gitlab.Project{
 				{ID: 21, PathWithNamespace: "group/no-default", DefaultBranch: "", NamespaceKind: "group"},
@@ -131,6 +182,27 @@ func TestEnqueueStartupIndexing(t *testing.T) {
 			},
 		},
 		{
+			name:                 "namespace projects error does not stop other namespaces",
+			configuredNamespaces: []string{"acme/core", "acme/tools"},
+			listNamespaceProjectsErrByNamespace: map[string]error{
+				"acme/core": errors.New("gitlab namespace down"),
+			},
+			namespaceProjects: map[string][]gitlab.Project{
+				"acme/tools": {
+					{ID: 77, PathWithNamespace: "acme/tools/svc-c", DefaultBranch: "main", NamespaceKind: "group"},
+				},
+			},
+			branches: map[string]startupIndexBranchResult{
+				"77:main": {branch: gitlab.Branch{Name: "main", CommitID: "sha77"}},
+			},
+			wantVisitNamespaceCalls: []string{"acme/core", "acme/tools"},
+			wantGetBranchCalls: []startupIndexBranchCall{
+				{projectID: 77, branch: "main"},
+			},
+			wantPersistProjectIDs: []int64{77},
+			wantAdvanceProjectIDs: []int64{77},
+		},
+		{
 			name: "branch load error fails startup indexing without advancing failing project",
 			projects: []gitlab.Project{
 				{ID: 31, PathWithNamespace: "group/service-a", DefaultBranch: "main", NamespaceKind: "group"},
@@ -161,6 +233,26 @@ func TestEnqueueStartupIndexing(t *testing.T) {
 				{projectID: 41, branch: "main"},
 			},
 			wantPersistProjectIDs: []int64{41},
+		},
+		{
+			name: "persist no rows error skips project and continues",
+			projects: []gitlab.Project{
+				{ID: 61, PathWithNamespace: "group/service-a", DefaultBranch: "main", NamespaceKind: "group"},
+				{ID: 62, PathWithNamespace: "group/service-b", DefaultBranch: "main", NamespaceKind: "group"},
+			},
+			branches: map[string]startupIndexBranchResult{
+				"61:main": {branch: gitlab.Branch{Name: "main", CommitID: "fff666"}},
+				"62:main": {branch: gitlab.Branch{Name: "main", CommitID: "ggg777"}},
+			},
+			persistErr:              pgx.ErrNoRows,
+			wantVisitProjectsCalls:  1,
+			wantVisitProjectsOption: gitlab.ProjectListOptions{},
+			wantGetBranchCalls: []startupIndexBranchCall{
+				{projectID: 61, branch: "main"},
+				{projectID: 62, branch: "main"},
+			},
+			wantPersistProjectIDs: []int64{61, 62},
+			wantAdvanceProjectIDs: []int64{61, 62},
 		},
 		{
 			name: "checkpoint advance error fails startup indexing",
@@ -196,14 +288,17 @@ func TestEnqueueStartupIndexing(t *testing.T) {
 				advanceErr:          tc.advanceErr,
 			}
 			clientFake := &fakeStartupIndexingGitLabClient{
-				projects:        tc.projects,
-				branches:        tc.branches,
-				listProjectsErr: tc.listProjectsErr,
+				projects:                            tc.projects,
+				namespaceProjects:                   tc.namespaceProjects,
+				branches:                            tc.branches,
+				listProjectsErr:                     tc.listProjectsErr,
+				listNamespaceProjectsErr:            tc.listNamespaceProjectsErr,
+				listNamespaceProjectsErrByNamespace: tc.listNamespaceProjectsErrByNamespace,
 			}
 
 			err := enqueueStartupIndexing(
 				context.Background(),
-				config.Config{},
+				config.Config{GitLabNamespaces: tc.configuredNamespaces},
 				slog.Default(),
 				storeFake,
 				clientFake,
@@ -231,6 +326,23 @@ func TestEnqueueStartupIndexing(t *testing.T) {
 						"expected visitProjectsOptions[0]=%+v, got %+v",
 						tc.wantVisitProjectsOption,
 						clientFake.visitProjectsOptions[0],
+					)
+				}
+			}
+			if len(clientFake.visitNamespaceProjectsCalls) != len(tc.wantVisitNamespaceCalls) {
+				t.Fatalf(
+					"expected visitNamespaceProjectsCalls=%v, got %v",
+					tc.wantVisitNamespaceCalls,
+					clientFake.visitNamespaceProjectsCalls,
+				)
+			}
+			for idx, wantNamespace := range tc.wantVisitNamespaceCalls {
+				if clientFake.visitNamespaceProjectsCalls[idx] != wantNamespace {
+					t.Fatalf(
+						"expected visitNamespaceProjects call %d to be %q, got %q",
+						idx,
+						wantNamespace,
+						clientFake.visitNamespaceProjectsCalls[idx],
 					)
 				}
 			}
@@ -343,12 +455,16 @@ type startupIndexBranchResult struct {
 }
 
 type fakeStartupIndexingGitLabClient struct {
-	projects             []gitlab.Project
-	branches             map[string]startupIndexBranchResult
-	listProjectsErr      error
-	visitProjectsCalls   int
-	visitProjectsOptions []gitlab.ProjectListOptions
-	getBranchCalls       []startupIndexBranchCall
+	projects                            []gitlab.Project
+	namespaceProjects                   map[string][]gitlab.Project
+	branches                            map[string]startupIndexBranchResult
+	listProjectsErr                     error
+	listNamespaceProjectsErr            error
+	listNamespaceProjectsErrByNamespace map[string]error
+	visitProjectsCalls                  int
+	visitProjectsOptions                []gitlab.ProjectListOptions
+	visitNamespaceProjectsCalls         []string
+	getBranchCalls                      []startupIndexBranchCall
 }
 
 func (f *fakeStartupIndexingGitLabClient) VisitProjects(
@@ -371,6 +487,33 @@ func (f *fakeStartupIndexingGitLabClient) VisitProjects(
 			return count, err
 		}
 	}
+	return count, nil
+}
+
+func (f *fakeStartupIndexingGitLabClient) VisitNamespaceProjects(
+	_ context.Context,
+	namespace string,
+	visit func(gitlab.Project) error,
+) (int, error) {
+	f.visitNamespaceProjectsCalls = append(f.visitNamespaceProjectsCalls, namespace)
+	if f.listNamespaceProjectsErrByNamespace != nil {
+		if err, exists := f.listNamespaceProjectsErrByNamespace[namespace]; exists && err != nil {
+			return 0, err
+		}
+	}
+	if f.listNamespaceProjectsErr != nil {
+		return 0, f.listNamespaceProjectsErr
+	}
+
+	projects := f.namespaceProjects[namespace]
+	count := 0
+	for _, project := range projects {
+		count++
+		if err := visit(project); err != nil {
+			return count, err
+		}
+	}
+
 	return count, nil
 }
 

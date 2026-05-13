@@ -87,6 +87,11 @@ func TestReplaceVacuumIssues_ReplacesRowsByAPISpecRevisionID(t *testing.T) {
 	if len(revision12) != 1 || revision12[0].RuleID != "typed-enum" {
 		t.Fatalf("expected unrelated revision 12 issue to remain unchanged, got %+v", revision12)
 	}
+	for _, ruleID := range []string{"duplicate-paths", "typed-enum", "info-description", "paths-kebab-case"} {
+		if _, ok := queries.rules[ruleID]; !ok {
+			t.Fatalf("expected rule %q to be ensured before issue insertion", ruleID)
+		}
+	}
 }
 
 func TestReplaceVacuumIssues_ZeroIssueReplacementClearsRevisionRows(t *testing.T) {
@@ -374,17 +379,65 @@ func TestNormalizePersistAPISpecRevisionVacuumResultInput_RejectsInvalidStateCom
 	}
 }
 
+func TestNormalizeVacuumIssueMutation_JSONPathDefaulting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		inputJSONPath string
+		wantJSONPath  string
+	}{
+		{
+			name:          "empty json path defaults to root",
+			inputJSONPath: "",
+			wantJSONPath:  "$",
+		},
+		{
+			name:          "non-empty json path preserved",
+			inputJSONPath: "$.paths['/pets']",
+			wantJSONPath:  "$.paths['/pets']",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			issue, err := normalizeVacuumIssueMutation("issue", VacuumIssueMutation{
+				RuleID:   "description-duplication",
+				Message:  "dup",
+				JSONPath: tc.inputJSONPath,
+				RangePos: []int32{1, 1, 1, 1},
+			})
+			if err != nil {
+				t.Fatalf("normalizeVacuumIssueMutation() unexpected error: %v", err)
+			}
+			if issue.JSONPath != tc.wantJSONPath {
+				t.Fatalf("expected json path %q, got %q", tc.wantJSONPath, issue.JSONPath)
+			}
+		})
+	}
+}
+
 type fakeVacuumIssueQueries struct {
 	nextID     int64
 	calls      []string
 	byRevision map[int64][]sqlc.VacuumIssue
+	rules      map[string]struct{}
 }
 
 func newFakeVacuumIssueQueries() *fakeVacuumIssueQueries {
 	return &fakeVacuumIssueQueries{
 		nextID:     1,
 		byRevision: make(map[int64][]sqlc.VacuumIssue),
+		rules:      make(map[string]struct{}),
 	}
+}
+
+func (f *fakeVacuumIssueQueries) EnsureVacuumRule(_ context.Context, ruleID string) error {
+	f.rules[ruleID] = struct{}{}
+	return nil
 }
 
 func (f *fakeVacuumIssueQueries) CreateVacuumIssue(_ context.Context, arg sqlc.CreateVacuumIssueParams) (sqlc.VacuumIssue, error) {
@@ -459,6 +512,10 @@ func newFakeVacuumPersistenceQueries(apiSpecRevisionID int64) *fakeVacuumPersist
 func (f *fakeVacuumPersistenceQueries) CreateVacuumIssue(ctx context.Context, arg sqlc.CreateVacuumIssueParams) (sqlc.VacuumIssue, error) {
 	f.calls = append(f.calls, "create:"+strconv.FormatInt(arg.ApiSpecRevisionID, 10)+":"+arg.RuleID)
 	return f.issueQueries.CreateVacuumIssue(ctx, arg)
+}
+
+func (f *fakeVacuumPersistenceQueries) EnsureVacuumRule(ctx context.Context, ruleID string) error {
+	return f.issueQueries.EnsureVacuumRule(ctx, ruleID)
 }
 
 func (f *fakeVacuumPersistenceQueries) DeleteVacuumIssuesByAPISpecRevisionID(ctx context.Context, apiSpecRevisionID int64) error {

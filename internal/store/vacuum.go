@@ -252,6 +252,7 @@ func (s *Store) PersistAPISpecRevisionVacuumResult(
 }
 
 type vacuumIssueCreateQueries interface {
+	EnsureVacuumRule(ctx context.Context, ruleID string) error
 	CreateVacuumIssue(ctx context.Context, arg sqlc.CreateVacuumIssueParams) (sqlc.VacuumIssue, error)
 }
 
@@ -267,6 +268,10 @@ func createVacuumIssue(
 	queries vacuumIssueCreateQueries,
 	input normalizedCreateVacuumIssueInput,
 ) (sqlc.VacuumIssue, error) {
+	if err := queries.EnsureVacuumRule(ctx, input.Issue.RuleID); err != nil {
+		return sqlc.VacuumIssue{}, fmt.Errorf("ensure vacuum rule %q: %w", input.Issue.RuleID, err)
+	}
+
 	row, err := queries.CreateVacuumIssue(ctx, sqlc.CreateVacuumIssueParams{
 		ApiSpecRevisionID: input.APISpecRevisionID,
 		RuleID:            input.Issue.RuleID,
@@ -522,7 +527,7 @@ func normalizeVacuumIssueMutation(
 
 	jsonPath := strings.TrimSpace(input.JSONPath)
 	if jsonPath == "" {
-		return normalizedVacuumIssueMutation{}, fmt.Errorf("%s.json_path must not be empty", fieldName)
+		jsonPath = "$"
 	}
 
 	rangePos := copyInt32Slice(input.RangePos)

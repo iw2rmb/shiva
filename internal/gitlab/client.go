@@ -87,14 +87,18 @@ type TreeEntry struct {
 }
 
 func NewClient(baseURL, token string, options ...Option) (*Client, error) {
-	normalizedBaseURL, err := normalizeBaseURL(baseURL)
+	normalizedBaseURL, tokenFromBaseURL, err := normalizeBaseURL(baseURL)
 	if err != nil {
 		return nil, err
+	}
+	normalizedToken := strings.TrimSpace(token)
+	if normalizedToken == "" {
+		normalizedToken = tokenFromBaseURL
 	}
 
 	client := &Client{
 		baseURL:             normalizedBaseURL,
-		token:               strings.TrimSpace(token),
+		token:               normalizedToken,
 		httpClient:          &http.Client{},
 		timeout:             defaultHTTPTimeout,
 		maxRetries:          defaultMaxRetries,
@@ -309,9 +313,49 @@ func (c *Client) VisitProjects(ctx context.Context, options ProjectListOptions, 
 		query.Set("id_after", strconv.FormatInt(options.IDAfter, 10))
 	}
 
+	return c.visitProjects(ctx, "/projects", "", query, visit)
+}
+
+func (c *Client) VisitNamespaceProjects(ctx context.Context, namespace string, visit func(Project) error) (int, error) {
+	if visit == nil {
+		return 0, errors.New("project visitor is not configured")
+	}
+
+	normalizedNamespace := strings.Trim(strings.TrimSpace(namespace), "/")
+	if normalizedNamespace == "" {
+		return 0, errors.New("namespace must not be empty")
+	}
+
+	query := url.Values{}
+	query.Set("page", "1")
+	query.Set("per_page", "100")
+	query.Set("simple", "true")
+	query.Set("archived", "false")
+	query.Set("order_by", "id")
+	query.Set("sort", "asc")
+	query.Set("include_subgroups", "true")
+	query.Set("with_shared", "false")
+
+	return c.visitProjects(
+		ctx,
+		"/groups/"+normalizedNamespace+"/projects",
+		"/groups/"+url.PathEscape(normalizedNamespace)+"/projects",
+		query,
+		visit,
+	)
+}
+
+func (c *Client) visitProjects(
+	ctx context.Context,
+	pathSuffix string,
+	rawPathSuffix string,
+	query url.Values,
+	visit func(Project) error,
+) (int, error) {
+
 	projectCount := 0
 	for {
-		requestURL := c.makeRequestURL("/projects", "", query)
+		requestURL := c.makeRequestURL(pathSuffix, rawPathSuffix, query)
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return 0, fmt.Errorf("build list projects request: %w", err)
@@ -478,18 +522,27 @@ func (c *Client) ListRepositoryTree(ctx context.Context, projectID int64, sha, p
 	return entries, nil
 }
 
-func normalizeBaseURL(rawBaseURL string) (*url.URL, error) {
+func normalizeBaseURL(rawBaseURL string) (*url.URL, string, error) {
 	trimmed := strings.TrimSpace(rawBaseURL)
 	if trimmed == "" {
-		return nil, errors.New("gitlab base url must not be empty")
+		return nil, "", errors.New("gitlab base url must not be empty")
 	}
 
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
-		return nil, fmt.Errorf("parse gitlab base url: %w", err)
+		return nil, "", fmt.Errorf("parse gitlab base url: %w", err)
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return nil, errors.New("gitlab base url must include scheme and host")
+		return nil, "", errors.New("gitlab base url must include scheme and host")
+	}
+
+	tokenFromURL := ""
+	if parsed.User != nil {
+		if password, ok := parsed.User.Password(); ok {
+			tokenFromURL = strings.TrimSpace(password)
+		}
+		// Never keep credentials in base URL to avoid leaking them via request URLs and API errors.
+		parsed.User = nil
 	}
 
 	basePath := strings.TrimSuffix(parsed.Path, "/")
@@ -501,7 +554,7 @@ func normalizeBaseURL(rawBaseURL string) (*url.URL, error) {
 	parsed.Path = basePath
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
-	return parsed, nil
+	return parsed, tokenFromURL, nil
 }
 
 func normalizeRepositoryPath(rawPath string) string {

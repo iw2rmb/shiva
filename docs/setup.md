@@ -27,7 +27,11 @@ This document describes runtime setup, configuration, and startup behavior of th
 - Worker pipeline is always enabled when the service starts.
 - Shiva launches startup indexing in the background on every service start.
 - Startup indexing resumes from `startup_index_state.last_project_id`; when no checkpoint row exists it starts with GitLab `id_after=0`.
-- Startup indexing paginates accessible GitLab projects, skips projects in personal (`user`) namespaces by default, resolves each remaining default-branch head SHA, enqueues synthetic ingest events into the normal DB-backed queue as pages are consumed, and advances the checkpoint after each fully handled project.
+- Startup indexing uses one of two project traversal modes:
+  - without `SHIVA_GITLAB_NAMESPACES`: paginates global GitLab projects (`/projects`) and resumes from `startup_index_state.last_project_id`.
+  - with `SHIVA_GITLAB_NAMESPACES`: iterates each configured namespace via `groups/:namespace/projects?include_subgroups=true` and crawls only those namespaces.
+- In both modes Shiva skips personal (`user`) namespaces, resolves each remaining default-branch head SHA, enqueues synthetic ingest events into the normal DB-backed queue as pages are consumed, and advances the checkpoint after each fully handled project.
+- In namespace-scoped mode, a failure while crawling one configured namespace is logged and does not stop crawling the remaining configured namespaces.
 - Worker processing and startup indexing run independently, so processed canonical repo revisions can appear before startup indexing finishes.
 
 ## Environment Variables
@@ -42,6 +46,8 @@ This document describes runtime setup, configuration, and startup behavior of th
 - `SHIVA_GITLAB_BASE_URL` (required).
 - `SHIVA_GITLAB_TOKEN` (optional, but startup indexing and repository processing need whatever access your GitLab APIs require).
 - `SHIVA_GITLAB_WEBHOOK_SECRET` (required for accepting inbound GitLab webhooks).
+- `SHIVA_GITLAB_NAMESPACES` (optional comma-separated GitLab namespace path prefixes; when set, startup indexing crawls only projects under those prefixes).
+- If `SHIVA_GITLAB_TOKEN` is empty and `SHIVA_GITLAB_BASE_URL` contains credentials (`https://<user>:<token>@host`), Shiva uses the URL password as GitLab token and ignores the username.
 
 ### Worker + OpenAPI Resolver
 - `SHIVA_WORKER_CONCURRENCY` (default `4`).

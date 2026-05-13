@@ -1,6 +1,6 @@
 module github.com/iw2rmb/shiva
 
-go 1.25.9
+go 1.25.10
 
 require (
 	charm.land/bubbles/v2 v2.0.0

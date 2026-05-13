@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -422,6 +423,21 @@ func toYAMLNode(value any) (*yaml.Node, error) {
 		}, nil
 	case float64:
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: strconv.FormatFloat(typed, 'g', -1, 64)}, nil
+	case time.Time:
+		return &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!timestamp",
+			Value: typed.UTC().Format(time.RFC3339Nano),
+		}, nil
+	case *time.Time:
+		if typed == nil {
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
+		}
+		return &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!timestamp",
+			Value: typed.UTC().Format(time.RFC3339Nano),
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported yaml node type %T", typed)
 	}
