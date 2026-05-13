@@ -1064,7 +1064,11 @@ func TestLoadOperationDetailMsgUsesCallerContext(t *testing.T) {
 		operationBody: []byte(`{"operationId":"getPet"}`),
 	}
 
-	msg := loadOperationDetailMsg(ctx, service, request.Envelope{
+	msg := loadOperationDetailMsg(ctx, service, EndpointIdentity{
+		Namespace:   "acme",
+		Repo:        "platform",
+		OperationID: "getPet",
+	}, request.Envelope{
 		Namespace:   "acme",
 		Repo:        "platform",
 		OperationID: "getPet",

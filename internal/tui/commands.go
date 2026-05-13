@@ -323,18 +323,20 @@ func decodeOperationEntries(body []byte) ([]EndpointEntry, error) {
 func loadOperationDetailCmd(
 	ctx context.Context,
 	service BrowserService,
+	endpoint EndpointIdentity,
 	selector request.Envelope,
 	options RequestOptions,
 	token RequestToken,
 ) tea.Cmd {
 	return func() tea.Msg {
-		return loadOperationDetailMsg(ctx, service, selector, options, token)
+		return loadOperationDetailMsg(ctx, service, endpoint, selector, options, token)
 	}
 }
 
 func loadOperationDetailMsg(
 	ctx context.Context,
 	service BrowserService,
+	endpoint EndpointIdentity,
 	selector request.Envelope,
 	options RequestOptions,
 	token RequestToken,
@@ -347,14 +349,7 @@ func loadOperationDetailMsg(
 	return operationDetailLoadedMsg{
 		Token: token,
 		Detail: OperationDetail{
-			Endpoint: EndpointIdentity{
-				Namespace:   selector.Namespace,
-				Repo:        selector.Repo,
-				API:         selector.API,
-				OperationID: selector.OperationID,
-				Method:      selector.Method,
-				Path:        selector.Path,
-			},
+			Endpoint: endpoint,
 			Body: append(json.RawMessage(nil), body...),
 		},
 	}

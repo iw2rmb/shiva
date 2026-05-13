@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/iw2rmb/shiva/internal/cli/request"
@@ -55,17 +56,23 @@ func (model *rootModel) loadSelectedOperationDetail() tea.Cmd {
 		return nil
 	}
 
+	selector := request.Envelope{
+		Namespace: selected.Identity.Namespace,
+		Repo:      selected.Identity.Repo,
+		API:       selected.Identity.API,
+	}
+	if strings.TrimSpace(selected.Identity.OperationID) != "" {
+		selector.OperationID = selected.Identity.OperationID
+	} else {
+		selector.Method = selected.Identity.Method
+		selector.Path = selected.Identity.Path
+	}
+
 	return loadOperationDetailCmd(
 		context.Background(),
 		model.service,
-		request.Envelope{
-			Namespace:   selected.Identity.Namespace,
-			Repo:        selected.Identity.Repo,
-			API:         selected.Identity.API,
-			OperationID: selected.Identity.OperationID,
-			Method:      selected.Identity.Method,
-			Path:        selected.Identity.Path,
-		},
+		selected.Identity,
+		selector,
 		model.options,
 		token,
 	)

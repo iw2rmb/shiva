@@ -368,10 +368,11 @@ func TestRootModelExplorerLoadsSelectedEndpointDetailUsingExactIdentity(t *testi
 	if service.lastOperationGet.Namespace != selected.Identity.Namespace ||
 		service.lastOperationGet.Repo != selected.Identity.Repo ||
 		service.lastOperationGet.API != selected.Identity.API ||
-		service.lastOperationGet.OperationID != selected.Identity.OperationID ||
-		service.lastOperationGet.Method != selected.Identity.Method ||
-		service.lastOperationGet.Path != selected.Identity.Path {
-		t.Fatalf("expected exact selected endpoint selector, got %+v", service.lastOperationGet)
+		service.lastOperationGet.OperationID != selected.Identity.OperationID {
+		t.Fatalf("expected operation detail selector to keep namespace/repo/api/operation_id, got %+v", service.lastOperationGet)
+	}
+	if service.lastOperationGet.Method != "" || service.lastOperationGet.Path != "" {
+		t.Fatalf("expected operation detail selector to omit method/path when operation_id is present, got %+v", service.lastOperationGet)
 	}
 
 	updated, specCmd := model.Update(msg)
