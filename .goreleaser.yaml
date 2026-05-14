@@ -1,0 +1,42 @@
+version: 2
+
+project_name: shiva
+
+builds:
+  - id: shiva
+    main: ./cmd/shiva
+    binary: shiva
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+  - id: shivad
+    main: ./cmd/shivad
+    binary: shivad
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: bundles
+    builds:
+      - shiva
+      - shivad
+    name_template: "{{ .ProjectName }}_{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  mode: replace
+  replace_existing_artifacts: true

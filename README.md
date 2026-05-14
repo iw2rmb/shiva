@@ -61,6 +61,7 @@ Query semantics:
 - Inbound/outbound webhook contracts: [docs/webhooks.md](docs/webhooks.md)
 - Test layout and commands: [docs/testing.md](docs/testing.md)
 - Database schema and sqlc generation: [docs/database.md](docs/database.md)
+- Binary release/versioning: [docs/release.md](docs/release.md)
 
 ## Design and Roadmap
 - Architecture/design: [design/shiva.md](design/shiva.md)
