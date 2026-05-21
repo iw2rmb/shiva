@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/iw2rmb/shiva/internal/config"
+	"github.com/iw2rmb/shiva/internal/daemonlog"
 	"github.com/iw2rmb/shiva/internal/gitlab"
 	httpserver "github.com/iw2rmb/shiva/internal/http"
 	"github.com/iw2rmb/shiva/internal/notify"
@@ -28,6 +30,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+var (
+	stdoutWriter io.Writer = os.Stdout
+	stderrWriter io.Writer = os.Stderr
+)
+
 func main() {
 	if err := run(context.Background()); err != nil {
 		logger := slog.Default()
@@ -37,13 +44,15 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+	daemonlog.ConfigureDefault(stdoutWriter, stderrWriter, slog.LevelInfo, daemonlog.FromEnv())
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 
-	logger := config.NewLogger(cfg.LogLevel)
-	slog.SetDefault(logger)
+	daemonlog.ConfigureDefault(stdoutWriter, stderrWriter, cfg.LogLevel, daemonlog.FromEnv())
+	logger := slog.Default()
 
 	telemetry, err := observability.New(cfg, logger)
 	if err != nil {

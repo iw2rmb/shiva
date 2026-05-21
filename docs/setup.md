@@ -39,8 +39,14 @@ This document describes runtime setup, configuration, and startup behavior of th
 ### Core
 - `SHIVA_HTTP_ADDR` (default `:8080`).
 - `SHIVA_DATABASE_URL` (required).
-- `SHIVA_LOG_LEVEL` (default `info`).
+- `SHIVA_LOG_LEVEL` (default `info`; controls daemon log filtering only).
+- `SHIVA_LOG_ENV` (default `prod`; daemon log envelope environment).
+- `SHIVA_LOG_SYSTEM` (default `shiva-server`; daemon log envelope system).
+- `SHIVA_LOG_INST` (default `shiva.t-tech.team`; daemon log envelope instance).
 - `SHIVA_SHUTDOWN_TIMEOUT_SECONDS` (default `15`).
+
+Daemon process logs are always newline-delimited JSON on stdout/stderr. Error
+records are written to stderr; lower-severity records are written to stdout.
 
 ### GitLab + Ingest
 - `SHIVA_GITLAB_BASE_URL` (required).

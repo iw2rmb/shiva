@@ -257,11 +257,6 @@ func parseLogLevel(rawLevel string) (slog.Level, error) {
 	}
 }
 
-func NewLogger(level slog.Level) *slog.Logger {
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level, AddSource: false})
-	return slog.New(handler)
-}
-
 func envValue(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return strings.TrimSpace(value)

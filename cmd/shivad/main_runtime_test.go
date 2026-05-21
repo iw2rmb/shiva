@@ -3,14 +3,56 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestRunConfigLoadFailureLeavesJSONDefaultLogger(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	oldStdout := stdoutWriter
+	oldStderr := stderrWriter
+	oldDefault := slog.Default()
+	stdoutWriter = &stdout
+	stderrWriter = &stderr
+	t.Cleanup(func() {
+		stdoutWriter = oldStdout
+		stderrWriter = oldStderr
+		slog.SetDefault(oldDefault)
+		log.SetOutput(io.Discard)
+	})
+
+	t.Setenv("SHIVA_DATABASE_URL", "")
+
+	err := run(context.Background())
+	if err == nil {
+		t.Fatalf("expected config load error")
+	}
+	slog.Default().Error("shiva startup failed", "error", err)
+
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	var frame map[string]any
+	if decodeErr := json.Unmarshal(stderr.Bytes(), &frame); decodeErr != nil {
+		t.Fatalf("stderr is not JSON: %q: %v", stderr.String(), decodeErr)
+	}
+	if frame["level"] != "ERROR" || frame["msg"] != "shiva startup failed" {
+		t.Fatalf("unexpected log frame: %#v", frame)
+	}
+	if frame["env"] != "prod" || frame["system"] != "shiva-server" || frame["inst"] != "shiva.t-tech.team" {
+		t.Fatalf("unexpected identity: %#v", frame)
+	}
+	if frame["error"] != "SHIVA_DATABASE_URL must not be empty" {
+		t.Fatalf("unexpected error field: %#v", frame)
+	}
+}
 
 func TestStartIngestRuntimeStartsWorkerWithoutWaitingForStartupIndexing(t *testing.T) {
 	t.Parallel()
